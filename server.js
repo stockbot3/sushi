@@ -92,8 +92,8 @@ const ESPN_NEWS = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/ne
 // ─── CACHE ───
 const cache = {};
 const CACHE_TTL = {
-  scoreboard: 15 * 1000,   // 15s during live game
-  summary: 15 * 1000,      // 15s
+  scoreboard: 8 * 1000,    // 8s during live game
+  summary: 8 * 1000,       // 8s — need fresh play data
   roster: 5 * 60 * 1000,   // 5 min (rarely changes)
   team: 10 * 60 * 1000,    // 10 min
   news: 2 * 60 * 1000,     // 2 min
@@ -534,7 +534,8 @@ app.get('/api/news', async (req, res) => {
 // Tracks the last play sequence we generated commentary for
 let lastCommentarySeq = -1;
 let commentaryCache = { data: null, ts: 0 };
-const COMMENTARY_COOLDOWN = 8000; // minimum ms between LLM calls
+const COMMENTARY_COOLDOWN = 5000; // minimum ms between LLM calls
+const STALE_COMMENTARY_MAX = 45000; // force new commentary after 45s even if same play
 
 // Determine if a play is "interesting" enough for commentary
 function isInterestingPlay(play) {
@@ -779,21 +780,13 @@ app.get('/api/commentary', async (req, res) => {
     // Check if this is a new play
     const currentSeq = payload.event.seq;
     const isNewPlay = currentSeq !== lastCommentarySeq;
+    const commentaryAge = now - commentaryCache.ts;
+    const isStale = commentaryAge > STALE_COMMENTARY_MAX;
 
-    // If same play and we have cached commentary, return it
-    if (!isNewPlay && commentaryCache.data?.turns?.length > 0) {
+    // If same play and we have fresh cached commentary, return it
+    // But if commentary is older than STALE_COMMENTARY_MAX, generate new anyway
+    if (!isNewPlay && !isStale && commentaryCache.data?.turns?.length > 0) {
       return res.json(commentaryCache.data);
-    }
-
-    // Check if play is interesting enough
-    const drives = summary.drives || [];
-    const latestDrive = drives[drives.length - 1];
-    const latestPlays = latestDrive?.playList || [];
-    const latestPlay = latestPlays[latestPlays.length - 1];
-
-    if (!isInterestingPlay(latestPlay) && commentaryCache.data?.turns?.length > 0) {
-      // Return stale commentary with a note
-      return res.json({ ...commentaryCache.data, status: 'stale', message: 'Routine play — waiting for action' });
     }
 
     // Call Modal LLM
