@@ -1,0 +1,7 @@
+HTTP/2 303 
+alt-svc: h3=":443"; ma=2592000
+date: Sun, 08 Feb 2026 21:30:57 GMT
+location: https://mousears1090--claudeapps-mistral-mistralmodel-chat.modal.run/?__modal_function_call_id=fc-01KGZJFVRMXYHMHZ4FAJNWAJ7F
+vary: accept-encoding
+content-length: 0
+

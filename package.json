@@ -1,0 +1,14 @@
+{
+  "name": "sushi-superbowl-tracker",
+  "version": "1.0.0",
+  "description": "Super Bowl LIX Tracker - Scores, Players, Betting Odds",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "dev": "node server.js"
+  },
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5"
+  }
+}
