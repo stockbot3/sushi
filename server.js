@@ -3,7 +3,7 @@ const cors = require('cors');
 const path = require('path');
 
 const app = express();
-const PORT = 3007;
+const PORT = process.env.PORT || 3007;
 
 // ─── MODAL LLM ENDPOINT ───
 const MODAL_MISTRAL_URL = process.env.MODAL_MISTRAL_URL || 'https://mousears1090--claudeapps-mistral-mistralmodel-chat.modal.run';
@@ -926,13 +926,7 @@ app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// Export for Firebase Cloud Functions
-module.exports = app;
-
-// Only listen when run directly (not as a Cloud Function)
-if (require.main === module) {
-  app.listen(PORT, '0.0.0.0', () => {
-    console.log(`🏈 Sushi Super Bowl Tracker running on http://localhost:${PORT}`);
-    console.log(`Fetching live data from ESPN API...`);
-  });
-}
+app.listen(PORT, '0.0.0.0', () => {
+  console.log(`🏈 Sushi Super Bowl Tracker running on http://localhost:${PORT}`);
+  console.log(`Fetching live data from ESPN API...`);
+});
