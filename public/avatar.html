@@ -6,20 +6,16 @@
   <title>Sushi - Avatar Commentary</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-  <!-- Local Libraries -->
+  <!-- PixiJS v6 (required for pixi-live2d-display) -->
   <script src="/lib/pixi.min.js"></script>
+  
+  <!-- pixi-live2d-display -->
   <script src="/lib/cubism4.min.js"></script>
   <script src="/lib/index.min.js"></script>
-  
-  <!-- Piper TTS -->
-  <script type="module">
-    import * as piper from 'https://cdn.jsdelivr.net/npm/@piper-tts/web@1.0.0/+esm';
-    window.Piper = piper;
-  </script>
   
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
@@ -57,7 +53,7 @@
     .control-btn.primary { background: linear-gradient(135deg, #FFB81C, #FF6B35); color: #000; }
     .control-btn.secondary { background: rgba(255,255,255,0.1); color: white; }
     .control-btn:disabled { opacity: 0.5; cursor: not-allowed; }
-    .avatar-switcher { position: fixed; bottom: 140px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 8px; border-radius: 24px; gap: 8px; z-index: 100; }
+    .avatar-switcher { position: fixed; bottom: 140px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 8px; border-radius: 24px; gap: 8px; z-index: 100; display: flex; }
     .switcher-dot { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,0.3); cursor: pointer; transition: all 0.2s; }
     .switcher-dot.active { transform: scale(1.2); }
     .ios-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; cursor: pointer; }
@@ -71,121 +67,55 @@
   <div id="root"></div>
   
   <script type="text/babel">
-    const { useState, useEffect, useRef } = React;
+    const { useState, useEffect, useRef, useCallback } = React;
     
-    // Check if libraries loaded
+    // MUST expose PIXI to window BEFORE anything else
+    window.PIXI = PIXI;
+    
+    // Check libraries
     const hasPixi = typeof window.PIXI !== 'undefined';
     const hasLive2D = hasPixi && window.PIXI.live2d;
     
-    console.log('PIXI loaded:', hasPixi);
+    console.log('PIXI loaded:', hasPixi, 'Version:', window.PIXI?.VERSION);
     console.log('Live2D loaded:', hasLive2D);
 
-    // Piper TTS Engine
-    class PiperTTSEngine {
+    // TTS Engine with iOS support
+    class TTSEngine {
       constructor() {
-        this.piper = null;
+        this.synth = window.speechSynthesis;
         this.audioContext = null;
         this.isReady = false;
       }
       
       async init() {
-        try {
-          // Initialize AudioContext (required for iOS)
-          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          if (this.audioContext.state === 'suspended') {
-            await this.audioContext.resume();
-          }
-          
-          // Load Piper
-          if (window.Piper) {
-            this.piper = new window.Piper.Piper();
-            await this.piper.loadVoice('en_US-lessac');
-            this.isReady = true;
-            console.log('Piper TTS ready');
-          } else {
-            console.warn('Piper not available, using fallback');
-          }
-        } catch (err) {
-          console.error('TTS init error:', err);
+        // Initialize AudioContext (required for iOS)
+        this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+        if (this.audioContext.state === 'suspended') {
+          await this.audioContext.resume();
         }
+        this.isReady = true;
+        console.log('TTS initialized');
       }
       
       async speak(text, onLipSync) {
-        if (!this.isReady || !this.piper) {
-          // Fallback to Web Speech
-          return this._speakFallback(text, onLipSync);
-        }
-        
-        try {
-          // Generate speech with Piper
-          const audioData = await this.piper.synthesize(text);
-          
-          // Create audio buffer
-          const audioBuffer = await this.audioContext.decodeAudioData(audioData.buffer.slice(0));
-          
-          // Create source and analyser
-          const source = this.audioContext.createBufferSource();
-          const analyser = this.audioContext.createAnalyser();
-          analyser.fftSize = 256;
-          
-          source.buffer = audioBuffer;
-          source.connect(analyser);
-          analyser.connect(this.audioContext.destination);
-          
-          // Start playback
-          source.start(0);
-          
-          // Analyze audio for lip-sync
-          const dataArray = new Uint8Array(analyser.frequencyBinCount);
-          let isPlaying = true;
-          
-          source.onended = () => {
-            isPlaying = false;
-            if (onLipSync) onLipSync(0);
-          };
-          
-          // Lip-sync loop
-          const analyze = () => {
-            if (!isPlaying) {
-              if (onLipSync) onLipSync(0);
-              return;
-            }
-            
-            analyser.getByteFrequencyData(dataArray);
-            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
-            const normalized = average / 255;
-            
-            if (onLipSync) onLipSync(normalized);
-            
-            requestAnimationFrame(analyze);
-          };
-          
-          analyze();
-          
-          // Return promise that resolves when done
-          return new Promise((resolve) => {
-            source.onended = () => {
-              isPlaying = false;
-              if (onLipSync) onLipSync(0);
-              resolve();
-            };
-          });
-          
-        } catch (err) {
-          console.error('Piper speak error:', err);
-          return this._speakFallback(text, onLipSync);
-        }
-      }
-      
-      _speakFallback(text, onLipSync) {
         return new Promise((resolve) => {
-          const synth = window.speechSynthesis;
-          synth.cancel();
+          this.synth.cancel();
           
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.rate = 1.0;
           utterance.pitch = 1.0;
+          utterance.volume = 1.0;
           
+          // Get good voice
+          const voices = this.synth.getVoices();
+          const goodVoice = voices.find(v => 
+            v.name.includes('Google') || 
+            v.name.includes('Samantha') ||
+            v.lang === 'en-US'
+          );
+          if (goodVoice) utterance.voice = goodVoice;
+          
+          // Lip-sync simulation
           let interval;
           if (onLipSync) {
             interval = setInterval(() => {
@@ -205,16 +135,12 @@
             resolve();
           };
           
-          synth.speak(utterance);
+          this.synth.speak(utterance);
         });
       }
       
       stop() {
-        if (this.audioContext) {
-          this.audioContext.suspend();
-          this.audioContext.resume();
-        }
-        window.speechSynthesis.cancel();
+        this.synth.cancel();
       }
     }
 
@@ -258,18 +184,18 @@
             containerRef.current.appendChild(app.view);
             
             // Load Live2D model
-            console.log('Loading Live2D model:', modelPath);
+            console.log('Loading model:', modelPath);
             model = await Live2DModel.from(modelPath);
             modelRef.current = model;
             
             // Add to stage
             app.stage.addChild(model);
             
-            // Position
+            // Position and scale
             model.anchor.set(0.5, 0.5);
             model.x = 200;
             model.y = 250;
-            model.scale.set(0.4);
+            model.scale.set(0.35);
             
             // Enable interactions
             model.eventMode = 'static';
@@ -278,18 +204,18 @@
             // Animation loop
             app.ticker.add(() => {
               if (model && model.internalModel) {
-                // Apply lip-sync to mouth parameter
+                // Apply lip-sync
                 const currentMouth = model.internalModel.coreModel.getParamValue('ParamMouthOpenY') || 0;
                 const targetMouth = lipSyncTarget.current;
                 const smoothed = currentMouth + (targetMouth - currentMouth) * 0.4;
                 model.internalModel.coreModel.setParamValue('ParamMouthOpenY', smoothed);
                 
-                // Breathing animation
+                // Breathing
                 const time = Date.now() / 1000;
                 const breath = Math.sin(time * 2) * 0.5 + 0.5;
                 model.internalModel.coreModel.setParamValue('ParamBreath', breath * 0.3);
                 
-                // Eye tracking (subtle random movement)
+                // Eye tracking
                 const eyeX = Math.sin(time * 0.5) * 0.3;
                 const eyeY = Math.cos(time * 0.7) * 0.2;
                 model.internalModel.coreModel.setParamValue('ParamEyeBallX', eyeX);
@@ -298,10 +224,10 @@
             });
             
             setIsLoading(false);
-            console.log('Live2D model loaded:', name);
+            console.log('Model loaded:', name);
             
           } catch (err) {
-            console.error('Live2D load error:', err);
+            console.error('Live2D error:', err);
             setError(err.message);
             setIsLoading(false);
           }
@@ -326,7 +252,7 @@
           {error && (
             <div className="loading-overlay">
               <div className="error-box">
-                <div className="text-sm">Failed to load avatar</div>
+                <div className="text-sm">Error loading avatar</div>
                 <div className="text-xs mt-2 text-gray-500">{error}</div>
               </div>
             </div>
@@ -353,13 +279,13 @@
       const [lipSyncA, setLipSyncA] = useState(0);
       const [lipSyncB, setLipSyncB] = useState(0);
       const [currentSpeaker, setCurrentSpeaker] = useState(null);
-      const [subtitle, setSubtitle] = useState({ speaker: '', text: 'Tap Play to start' });
+      const [subtitle, setSubtitle] = useState({ speaker: '', text: 'Tap Play to start commentary' });
       const [showIOSStart, setShowIOSStart] = useState(true);
       const [activeAvatar, setActiveAvatar] = useState('A');
       const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
       const [libsLoaded, setLibsLoaded] = useState(hasPixi && hasLive2D);
       
-      const ttsRef = useRef(new PiperTTSEngine());
+      const ttsRef = useRef(new TTSEngine());
       const isPlayingRef = useRef(false);
       
       useEffect(() => {
@@ -367,15 +293,16 @@
       }, [isPlaying]);
       
       useEffect(() => {
-        // Check library loading
+        // Wait for libraries to be ready
         const checkLibs = setInterval(() => {
           if (typeof window.PIXI !== 'undefined' && window.PIXI.live2d) {
             setLibsLoaded(true);
             clearInterval(checkLibs);
+            console.log('Libraries ready');
           }
-        }, 500);
+        }, 100);
         
-        setTimeout(() => clearInterval(checkLibs), 10000);
+        setTimeout(() => clearInterval(checkLibs), 5000);
         
         const handleResize = () => {
           setIsLandscape(window.innerWidth > window.innerHeight);
@@ -384,14 +311,7 @@
         window.addEventListener('resize', handleResize);
         window.addEventListener('orientationchange', handleResize);
         
-        return () => {
-          clearInterval(checkLibs);
-          window.removeEventListener('resize', handleResize);
-          window.removeEventListener('orientationchange', handleResize);
-        };
-      }, []);
-      
-      useEffect(() => {
+        // Get session
         const params = new URLSearchParams(window.location.search);
         const sessionId = params.get('session');
         if (sessionId) {
@@ -400,6 +320,12 @@
             .then(data => setSession(data))
             .catch(console.error);
         }
+        
+        return () => {
+          clearInterval(checkLibs);
+          window.removeEventListener('resize', handleResize);
+          window.removeEventListener('orientationchange', handleResize);
+        };
       }, []);
       
       const handleIOSStart = async () => {
@@ -457,7 +383,6 @@
           }
         });
         
-        // Ensure lip-sync stops
         setLipSyncA(0);
         setLipSyncB(0);
         
@@ -488,7 +413,8 @@
         return (
           <div className="h-screen flex flex-col items-center justify-center bg-black">
             <div className="spinner"></div>
-            <div className="text-gray-400 mt-4">Loading Live2D libraries...</div>
+            <div className="text-gray-400 mt-4">Loading Live2D...</div>
+            <div className="text-gray-600 text-xs mt-2">Pixi v{window.PIXI?.VERSION || '?'}</div>
           </div>
         );
       }
@@ -539,7 +465,7 @@
             </div>
           </div>
           
-          <div className="avatar-switcher">
+          <div className="avatar-switcher" style={{ display: isLandscape ? 'none' : 'flex' }}>
             <div 
               className={`switcher-dot ${activeAvatar === 'A' ? 'active' : ''}`}
               onClick={() => setActiveAvatar('A')}
