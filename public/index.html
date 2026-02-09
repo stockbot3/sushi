@@ -65,7 +65,7 @@
     .stream-overlay {
       position: fixed; inset: 0; z-index: 9999;
       background: #000;
-      display: flex; flex-direction: column; justify-content: flex-end;
+      display: flex; flex-direction: column;
       cursor: pointer;
       overflow: hidden;
     }
@@ -81,11 +81,12 @@
       background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.008) 2px, rgba(255,255,255,0.008) 4px);
     }
     .stream-scoreboard {
-      position: absolute; top: 0; left: 0; right: 0;
+      position: relative;
       display: flex; align-items: center; justify-content: center;
       padding: 12px 20px;
-      background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+      background: rgba(0,0,0,0.6);
       z-index: 2;
+      flex-shrink: 0;
     }
     .stream-score-box {
       display: flex; align-items: center; gap: 16px;
@@ -116,27 +117,26 @@
     }
     .stream-commentary {
       position: relative; z-index: 2;
-      padding: 0 20px 24px;
-      background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 60%, transparent 100%);
-      min-height: 40vh;
+      padding: 16px 20px 24px;
+      flex: 1; overflow-y: auto;
       display: flex; flex-direction: column; justify-content: flex-end;
+      -ms-overflow-style: none; scrollbar-width: none;
     }
+    .stream-commentary::-webkit-scrollbar { display: none; }
     .stream-play-banner {
-      position: absolute; top: 64px; left: 16px; right: 16px; z-index: 3;
-      background: linear-gradient(135deg, rgba(255,184,28,0.15), rgba(255,107,53,0.08));
-      border: 1px solid rgba(255,184,28,0.25);
+      position: relative; z-index: 3;
+      background: linear-gradient(135deg, rgba(255,184,28,0.12), rgba(255,107,53,0.06));
+      border: 1px solid rgba(255,184,28,0.2);
       border-radius: 14px; padding: 12px 16px;
       backdrop-filter: blur(24px);
+      margin: 0 16px;
+      flex-shrink: 0;
       animation: playSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
     }
-    .stream-play-banner.exit { animation: playSlideOut 0.4s ease-in forwards; }
+    .stream-play-banner.new-play { animation: playSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
     @keyframes playSlideIn {
       0% { opacity: 0; transform: translateY(-20px) scale(0.95); }
       100% { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    @keyframes playSlideOut {
-      0% { opacity: 1; transform: translateY(0) scale(1); }
-      100% { opacity: 0; transform: translateY(-20px) scale(0.95); }
     }
     .stream-play-label {
       display: inline-flex; align-items: center; gap: 5px;
@@ -193,19 +193,19 @@
       font-size: 8px; color: rgba(255,255,255,0.1); letter-spacing: 2px; text-transform: uppercase;
     }
     @media (orientation: landscape) {
-      .stream-commentary { min-height: 50vh; padding-bottom: 16px; }
+      .stream-commentary { padding-bottom: 16px; }
       .stream-bubble { max-width: 70%; }
       .stream-text { font-size: 15px; }
       .stream-team-score { font-size: 36px; }
-      .stream-play-banner { top: 56px; left: 20px; right: 20px; }
+      .stream-play-banner { margin: 0 20px; }
       .stream-play-desc { font-size: 15px; }
     }
     @media (min-width: 768px) {
       .stream-bubble { max-width: 60%; }
       .stream-text { font-size: 16px; }
       .stream-team-score { font-size: 40px; }
-      .stream-commentary { padding: 0 40px 32px; }
-      .stream-play-banner { left: 40px; right: 40px; }
+      .stream-commentary { padding: 16px 40px 32px; }
+      .stream-play-banner { margin: 0 40px; }
       .stream-play-desc { font-size: 16px; }
     }
   </style>
@@ -873,11 +873,9 @@
       const isLive = game?.status?.state === 'in';
 
       const [liveCommentary, setLiveCommentary] = useState(initialCommentary);
-      const [playBanner, setPlayBanner] = useState(null);
-      const [bannerExit, setBannerExit] = useState(false);
+      const [playKey, setPlayKey] = useState(0);
       const lastPlayRef = useRef(initialCommentary?.play?.description || '');
       const pollRef = useRef(null);
-      const bannerTimerRef = useRef(null);
 
       const moodColors = {
         electric: { bg: 'rgba(255,184,28,0.2)', color: '#FFB81C', label: 'ELECTRIC' },
@@ -900,17 +898,10 @@
             const data = await res.json();
             if (data.turns?.length > 0) {
               const newDesc = data.play?.description || '';
-              // Detect new play
+              // Detect new play — bump key to re-trigger animation
               if (newDesc && newDesc !== lastPlayRef.current) {
                 lastPlayRef.current = newDesc;
-                // Show play banner
-                setBannerExit(false);
-                setPlayBanner(data.play);
-                clearTimeout(bannerTimerRef.current);
-                bannerTimerRef.current = setTimeout(() => {
-                  setBannerExit(true);
-                  setTimeout(() => setPlayBanner(null), 400);
-                }, 6000);
+                setPlayKey(k => k + 1);
               }
               setLiveCommentary(data);
             }
@@ -923,7 +914,6 @@
         return () => {
           document.body.style.overflow = '';
           clearInterval(pollRef.current);
-          clearTimeout(bannerTimerRef.current);
         };
       }, [isLive]);
 
@@ -962,28 +952,28 @@
             </div>
           </div>
 
-          {/* New Play Banner — pops in from top */}
-          {playBanner && (
-            <div className={`stream-play-banner ${bannerExit ? 'exit' : ''}`} onClick={(e) => e.stopPropagation()}>
+          {/* Play Banner — always visible below scoreboard */}
+          {commentary?.play && (
+            <div key={playKey} className="stream-play-banner new-play" onClick={(e) => e.stopPropagation()}>
               <div className="stream-play-label">
                 <div className="stream-play-label-dot" />
-                NEW PLAY
+                LATEST PLAY
               </div>
-              <div className="stream-play-type">{playBanner.playType} / {playBanner.result}</div>
-              <div className="stream-play-desc">{playBanner.description}</div>
+              <div className="stream-play-type">{commentary.play.playType} / {commentary.play.result}</div>
+              <div className="stream-play-desc">{commentary.play.description}</div>
               <div className="stream-play-meta">
-                <span className="stream-play-qtr">Q{playBanner.quarter} {playBanner.clock}</span>
-                {playBanner.mood && moodColors[playBanner.mood] && (
+                <span className="stream-play-qtr">Q{commentary.play.quarter} {commentary.play.clock}</span>
+                {commentary.play.mood && moodColors[commentary.play.mood] && (
                   <span className="stream-play-mood"
-                    style={{ background: moodColors[playBanner.mood].bg, color: moodColors[playBanner.mood].color }}>
-                    {moodColors[playBanner.mood].label}
+                    style={{ background: moodColors[commentary.play.mood].bg, color: moodColors[commentary.play.mood].color }}>
+                    {moodColors[commentary.play.mood].label}
                   </span>
                 )}
               </div>
             </div>
           )}
 
-          {/* Commentary overlay at bottom */}
+          {/* Commentary — scrolls underneath */}
           <div className="stream-commentary" style={{ '--stream-color-a': awayColor, '--stream-color-b': homeColor }}>
             <div style={{ display: 'flex', flexDirection: 'column' }}>
               {commentary?.turns?.map((turn, i) => {
