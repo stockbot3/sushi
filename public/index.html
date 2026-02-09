@@ -164,7 +164,7 @@
       CircleDot, Shield, CalendarOff, WifiOff, RefreshCw,
       Loader2, Clock, ExternalLink, Radio, Timer, Hourglass,
       MessageSquare, Mic, Flame, Volume2, Gauge, Maximize2,
-      ArrowLeft, Settings
+      ArrowLeft
     } = LucideReact;
 
     // ─── SPORT ICONS ───
@@ -1279,9 +1279,6 @@
                   <p className="text-[10px] text-gray-500 -mt-0.5">Live Sports Commentary</p>
                 </div>
               </div>
-              <a href="/admin" className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
-                <Settings size={12} /> Admin
-              </a>
             </div>
           </header>
 
@@ -1289,11 +1286,9 @@
             {sessions.length === 0 ? (
               <div className="glass rounded-2xl p-12 text-center animate-fade-in">
                 <div className="text-4xl mb-4">{'\uD83C\uDFC6'}</div>
-                <div className="text-lg font-bold text-white mb-2">No Active Sessions</div>
-                <div className="text-sm text-gray-500 mb-6">Create a session from the admin panel to get started</div>
-                <a href="/admin" className="inline-block px-6 py-2.5 rounded-xl bg-yellow-400/20 text-yellow-400 text-sm font-bold hover:bg-yellow-400/30 transition-colors">
-                  Open Admin Panel
-                </a>
+                <div className="text-lg font-bold text-white mb-2">No Live Games Right Now</div>
+                <div className="text-sm text-gray-500 mb-2">There are no games set up at this time.</div>
+                <div className="text-sm text-gray-600">Check back soon — new games get added regularly!</div>
               </div>
             ) : (
               <div className="grid gap-4 sm:grid-cols-2">

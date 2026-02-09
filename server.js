@@ -565,6 +565,48 @@ app.get('/api/admin/browse/:sport/:league', requireAdmin, async (req, res) => {
   }
 });
 
+// ─── ADMIN ROUTES: COMMENTATOR PRESETS ───
+
+// List saved presets
+app.get('/api/admin/presets', requireAdmin, async (req, res) => {
+  try {
+    const snap = await db.collection('commentator_presets').orderBy('createdAt', 'desc').get();
+    const presets = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    res.json(presets);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list presets' });
+  }
+});
+
+// Save a preset
+app.post('/api/admin/presets', requireAdmin, async (req, res) => {
+  try {
+    const { name, personality, customPrompt } = req.body;
+    if (!name) return res.status(400).json({ error: 'name is required' });
+    const id = crypto.randomBytes(6).toString('hex');
+    const preset = {
+      name,
+      personality: personality || 'barkley',
+      customPrompt: customPrompt || null,
+      createdAt: new Date().toISOString(),
+    };
+    await db.collection('commentator_presets').doc(id).set(preset);
+    res.json({ id, ...preset });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to save preset' });
+  }
+});
+
+// Delete a preset
+app.delete('/api/admin/presets/:id', requireAdmin, async (req, res) => {
+  try {
+    await db.collection('commentator_presets').doc(req.params.id).delete();
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete preset' });
+  }
+});
+
 // ─── ADMIN ROUTES: SESSION CRUD ───
 
 // Create session
