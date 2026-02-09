@@ -60,6 +60,105 @@
     @keyframes moodPulse { 0%, 100% { box-shadow: 0 0 0 0 rgba(255,184,28,0.3); } 50% { box-shadow: 0 0 20px 4px rgba(255,184,28,0.15); } }
     .mood-electric { animation: moodPulse 1.5s ease-in-out infinite; }
     .confidence-bar { transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
+
+    /* ─── STREAM MODE ─── */
+    .stream-overlay {
+      position: fixed; inset: 0; z-index: 9999;
+      background: #000;
+      display: flex; flex-direction: column; justify-content: flex-end;
+      cursor: pointer;
+      overflow: hidden;
+    }
+    .stream-overlay * { cursor: pointer; }
+    .stream-bg {
+      position: absolute; inset: 0;
+      background: radial-gradient(ellipse at 50% 30%, rgba(255,184,28,0.06) 0%, transparent 70%),
+                  radial-gradient(ellipse at 20% 80%, rgba(255,107,53,0.04) 0%, transparent 60%),
+                  #050508;
+    }
+    .stream-scanline {
+      position: absolute; inset: 0; pointer-events: none;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.008) 2px, rgba(255,255,255,0.008) 4px);
+    }
+    .stream-scoreboard {
+      position: absolute; top: 0; left: 0; right: 0;
+      display: flex; align-items: center; justify-content: center;
+      padding: 12px 20px;
+      background: linear-gradient(180deg, rgba(0,0,0,0.8) 0%, transparent 100%);
+      z-index: 2;
+    }
+    .stream-score-box {
+      display: flex; align-items: center; gap: 16px;
+      background: rgba(0,0,0,0.6); backdrop-filter: blur(20px);
+      border: 1px solid rgba(255,255,255,0.08);
+      border-radius: 12px; padding: 8px 20px;
+    }
+    .stream-team { text-align: center; min-width: 50px; }
+    .stream-team-abbr { font-size: 11px; font-weight: 800; letter-spacing: 1px; opacity: 0.7; }
+    .stream-team-score { font-size: 32px; font-weight: 900; line-height: 1; }
+    .stream-divider { font-size: 20px; color: rgba(255,255,255,0.2); font-weight: 300; }
+    .stream-quarter {
+      position: absolute; top: 14px; right: 20px;
+      display: flex; align-items: center; gap: 6px;
+    }
+    .stream-live-badge {
+      display: flex; align-items: center; gap: 4px;
+      background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4);
+      padding: 3px 8px; border-radius: 6px;
+      font-size: 10px; font-weight: 800; color: #ef4444; letter-spacing: 1px;
+    }
+    .stream-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #ef4444; animation: livePulse 1.5s ease-in-out infinite; }
+    .stream-clock { font-size: 11px; color: rgba(255,255,255,0.5); font-weight: 600; font-variant-numeric: tabular-nums; }
+    .stream-hint {
+      position: absolute; top: 16px; left: 20px;
+      font-size: 9px; color: rgba(255,255,255,0.15);
+      letter-spacing: 1px; text-transform: uppercase;
+    }
+    .stream-commentary {
+      position: relative; z-index: 2;
+      padding: 0 20px 24px;
+      background: linear-gradient(0deg, rgba(0,0,0,0.85) 0%, rgba(0,0,0,0.5) 60%, transparent 100%);
+      min-height: 40vh;
+      display: flex; flex-direction: column; justify-content: flex-end;
+    }
+    .stream-play-ctx {
+      font-size: 10px; color: rgba(255,255,255,0.35);
+      margin-bottom: 12px; letter-spacing: 0.5px;
+      max-width: 80%;
+    }
+    .stream-bubble {
+      padding: 10px 14px; border-radius: 12px;
+      margin-bottom: 8px; max-width: 85%;
+      animation: bubbleIn 0.4s ease-out forwards;
+    }
+    .stream-bubble-a {
+      background: linear-gradient(135deg, rgba(255,107,53,0.12), rgba(255,107,53,0.04));
+      border-left: 3px solid var(--stream-color-a, #ff6b35);
+      align-self: flex-start;
+    }
+    .stream-bubble-b {
+      background: linear-gradient(135deg, rgba(74,144,217,0.12), rgba(74,144,217,0.04));
+      border-left: 3px solid var(--stream-color-b, #4a90d9);
+      align-self: flex-end;
+    }
+    .stream-speaker { font-size: 10px; font-weight: 800; margin-bottom: 3px; letter-spacing: 0.5px; }
+    .stream-text { font-size: 14px; line-height: 1.5; color: rgba(255,255,255,0.9); }
+    .stream-powered {
+      text-align: center; padding-top: 12px;
+      font-size: 8px; color: rgba(255,255,255,0.1); letter-spacing: 2px; text-transform: uppercase;
+    }
+    @media (orientation: landscape) {
+      .stream-commentary { min-height: 50vh; padding-bottom: 16px; }
+      .stream-bubble { max-width: 70%; }
+      .stream-text { font-size: 15px; }
+      .stream-team-score { font-size: 36px; }
+    }
+    @media (min-width: 768px) {
+      .stream-bubble { max-width: 60%; }
+      .stream-text { font-size: 16px; }
+      .stream-team-score { font-size: 40px; }
+      .stream-commentary { padding: 0 40px 32px; }
+    }
   </style>
 </head>
 <body class="font-sans text-white min-h-screen">
@@ -76,7 +175,7 @@
       ChevronDown, MoveRight, Play, AlertTriangle,
       CircleDot, Shield, CalendarOff, WifiOff, RefreshCw,
       Loader2, Clock, ExternalLink, Radio, Timer, Hourglass,
-      MessageSquare, Mic, Flame, Volume2, Gauge
+      MessageSquare, Mic, Flame, Volume2, Gauge, Maximize2
     } = LucideReact;
 
     // ─── NAV TABS ───
@@ -716,12 +815,92 @@
       );
     }
 
+    // ─── STREAM OVERLAY ───
+    function StreamOverlay({ commentary, game, onClose }) {
+      const awayColor = game?.away?.color || '#ff6b35';
+      const homeColor = game?.home?.color || '#4a90d9';
+      const awayAbbr = game?.away?.abbreviation || 'AWY';
+      const homeAbbr = game?.home?.abbreviation || 'HME';
+      const isLive = game?.status?.state === 'in';
+
+      useEffect(() => {
+        // Lock to landscape hint + hide scrollbar
+        document.body.style.overflow = 'hidden';
+        return () => { document.body.style.overflow = ''; };
+      }, []);
+
+      return (
+        <div className="stream-overlay" onClick={onClose}>
+          <div className="stream-bg" />
+          <div className="stream-scanline" />
+
+          <div className="stream-hint">tap to exit</div>
+
+          {/* Scoreboard bar */}
+          <div className="stream-scoreboard">
+            <div className="stream-score-box">
+              <div className="stream-team">
+                <div className="stream-team-abbr" style={{ color: awayColor }}>{awayAbbr}</div>
+                <div className="stream-team-score">{commentary?.score ? Object.values(commentary.score)[0] : game?.away?.score || 0}</div>
+              </div>
+              <div className="stream-divider">—</div>
+              <div className="stream-team">
+                <div className="stream-team-abbr" style={{ color: homeColor }}>{homeAbbr}</div>
+                <div className="stream-team-score">{commentary?.score ? Object.values(commentary.score)[1] : game?.home?.score || 0}</div>
+              </div>
+            </div>
+            <div className="stream-quarter">
+              {isLive && (
+                <div className="stream-live-badge">
+                  <div className="stream-live-dot" />
+                  LIVE
+                </div>
+              )}
+              {commentary?.play && (
+                <span className="stream-clock">Q{commentary.play.quarter} {commentary.play.clock}</span>
+              )}
+            </div>
+          </div>
+
+          {/* Commentary overlay at bottom */}
+          <div className="stream-commentary" style={{ '--stream-color-a': awayColor, '--stream-color-b': homeColor }}>
+            {commentary?.play && (
+              <div className="stream-play-ctx">
+                {commentary.play.playType} — {commentary.play.description}
+              </div>
+            )}
+            <div style={{ display: 'flex', flexDirection: 'column' }}>
+              {commentary?.turns?.map((turn, i) => {
+                const isA = turn.speaker === 'A';
+                return (
+                  <div key={i} className={`stream-bubble ${isA ? 'stream-bubble-a' : 'stream-bubble-b'}`}
+                    style={{ animationDelay: `${i * 0.2}s` }}>
+                    <div className="stream-speaker" style={{ color: isA ? awayColor : homeColor }}>
+                      {turn.name}
+                    </div>
+                    <div className="stream-text">{turn.text}</div>
+                  </div>
+                );
+              })}
+            </div>
+            {(!commentary?.turns || commentary.turns.length === 0) && (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.2)', fontSize: '14px' }}>
+                Waiting for commentary...
+              </div>
+            )}
+            <div className="stream-powered">sushi × modal ai</div>
+          </div>
+        </div>
+      );
+    }
+
     // ─── COMMENTARY TAB ───
     function CommentaryTab({ game }) {
       const [commentary, setCommentary] = useState(null);
       const [history, setHistory] = useState([]);
       const [loading, setLoading] = useState(false);
       const [autoRefresh, setAutoRefresh] = useState(true);
+      const [streamMode, setStreamMode] = useState(false);
       const pollRef = useRef(null);
       const isLive = game?.status?.state === 'in';
 
@@ -871,8 +1050,21 @@
                 className="text-gray-600 hover:text-gray-400 transition-colors">
                 <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               </button>
+              <button onClick={() => setStreamMode(true)}
+                className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-bold">
+                <Maximize2 size={10} /> STREAM
+              </button>
             </div>
           </div>
+
+          {/* Stream Mode Overlay */}
+          {streamMode && (
+            <StreamOverlay
+              commentary={commentary}
+              game={game}
+              onClose={() => setStreamMode(false)}
+            />
+          )}
 
           {/* Play Context (live) */}
           {commentary?.play && (
