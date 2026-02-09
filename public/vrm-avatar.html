@@ -1,0 +1,665 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+    <title>Sushi - VRM Avatars</title>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <style>
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+            background: #0a0a0f;
+            color: #fff;
+            overflow: hidden;
+            height: 100vh;
+        }
+        
+        #root {
+            width: 100%;
+            height: 100%;
+        }
+        
+        .vrm-container {
+            width: 100%;
+            height: 100%;
+            display: flex;
+            flex-direction: column;
+        }
+        
+        .vrm-header {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            padding: 12px 20px;
+            background: rgba(20, 20, 30, 0.9);
+            border-bottom: 1px solid rgba(255, 255, 255, 0.1);
+            z-index: 10;
+        }
+        
+        .vrm-header h1 {
+            font-size: 20px;
+            font-weight: 600;
+            background: linear-gradient(90deg, #ff6b6b, #feca57);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+        
+        .vrm-header button {
+            padding: 8px 16px;
+            border: none;
+            border-radius: 8px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            transition: all 0.2s;
+        }
+        
+        .vrm-header button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .vrm-header button.active {
+            background: linear-gradient(135deg, #ff6b6b, #feca57);
+        }
+        
+        .vrm-stage {
+            flex: 1;
+            display: flex;
+            position: relative;
+        }
+        
+        .vrm-canvas-container {
+            flex: 1;
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .vrm-canvas-container.dual {
+            width: 50%;
+        }
+        
+        #vrm-canvas-left,
+        #vrm-canvas-right {
+            width: 100%;
+            height: 100%;
+            display: block;
+        }
+        
+        .avatar-info {
+            position: absolute;
+            bottom: 20px;
+            left: 20px;
+            background: rgba(0, 0, 0, 0.7);
+            padding: 12px 16px;
+            border-radius: 12px;
+            backdrop-filter: blur(10px);
+        }
+        
+        .avatar-info h3 {
+            font-size: 16px;
+            margin-bottom: 4px;
+            color: #feca57;
+        }
+        
+        .avatar-info p {
+            font-size: 12px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .vrm-controls {
+            position: absolute;
+            bottom: 20px;
+            right: 20px;
+            display: flex;
+            gap: 10px;
+            flex-direction: column;
+        }
+        
+        .vrm-controls button {
+            padding: 12px 20px;
+            border: none;
+            border-radius: 12px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            cursor: pointer;
+            font-size: 14px;
+            backdrop-filter: blur(10px);
+            transition: all 0.2s;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+        }
+        
+        .vrm-controls button:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: translateY(-2px);
+        }
+        
+        .vrm-controls button.speak {
+            background: linear-gradient(135deg, #ff6b6b, #feca57);
+        }
+        
+        .vrm-controls button.speak:hover {
+            box-shadow: 0 4px 20px rgba(255, 107, 107, 0.4);
+        }
+        
+        .loading-overlay {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: #0a0a0f;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 1000;
+        }
+        
+        .loading-spinner {
+            width: 60px;
+            height: 60px;
+            border: 4px solid rgba(255, 255, 255, 0.1);
+            border-top-color: #ff6b6b;
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        .loading-text {
+            margin-top: 20px;
+            font-size: 16px;
+            color: rgba(255, 255, 255, 0.6);
+        }
+        
+        .loading-progress {
+            margin-top: 10px;
+            font-size: 14px;
+            color: #feca57;
+        }
+        
+        .expression-buttons {
+            position: absolute;
+            top: 20px;
+            right: 20px;
+            display: flex;
+            gap: 8px;
+            flex-wrap: wrap;
+            max-width: 200px;
+            justify-content: flex-end;
+        }
+        
+        .expression-buttons button {
+            padding: 8px 14px;
+            border: none;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.1);
+            color: #fff;
+            cursor: pointer;
+            font-size: 12px;
+            backdrop-filter: blur(10px);
+            transition: all 0.2s;
+        }
+        
+        .expression-buttons button:hover {
+            background: rgba(255, 255, 255, 0.2);
+        }
+        
+        .expression-buttons button.active {
+            background: linear-gradient(135deg, #ff6b6b, #feca57);
+        }
+        
+        /* Mobile Portrait */
+        @media (max-aspect-ratio: 3/4) {
+            .vrm-stage.dual-mode {
+                flex-direction: column;
+            }
+            
+            .vrm-canvas-container.dual {
+                width: 100%;
+                height: 50%;
+            }
+            
+            .avatar-info {
+                bottom: 10px;
+                left: 10px;
+                padding: 8px 12px;
+            }
+            
+            .avatar-info h3 {
+                font-size: 14px;
+            }
+            
+            .vrm-controls {
+                bottom: 10px;
+                right: 10px;
+            }
+            
+            .vrm-controls button {
+                padding: 10px 16px;
+                font-size: 12px;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="root"></div>
+    
+    <!-- Three.js and VRM -->
+    <script type="importmap">
+    {
+        "imports": {
+            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+            "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js"
+        }
+    }
+    </script>
+    
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+        
+        // Piper TTS Service
+        class PiperTTS {
+            constructor() {
+                this.audioContext = null;
+                this.isSpeaking = false;
+                this.analyser = null;
+                this.onViseme = null;
+            }
+            
+            async initAudioContext() {
+                if (!this.audioContext) {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (this.audioContext.state === 'suspended') {
+                    await this.audioContext.resume();
+                }
+            }
+            
+            async speak(text, voiceId = 'en_US-amy-medium') {
+                await this.initAudioContext();
+                this.isSpeaking = true;
+                
+                try {
+                    // Use Web Speech API as fallback since Piper requires local server
+                    if ('speechSynthesis' in window) {
+                        return this.speakWithWebSpeech(text);
+                    }
+                } catch (e) {
+                    console.error('TTS error:', e);
+                }
+                
+                this.isSpeaking = false;
+            }
+            
+            speakWithWebSpeech(text) {
+                return new Promise((resolve) => {
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.rate = 1;
+                    utterance.pitch = 1;
+                    
+                    // Try to find a good voice
+                    const voices = speechSynthesis.getVoices();
+                    const preferredVoice = voices.find(v => 
+                        v.name.includes('Female') || 
+                        v.name.includes('Samantha') ||
+                        v.name.includes('Karen')
+                    ) || voices[0];
+                    if (preferredVoice) utterance.voice = preferredVoice;
+                    
+                    // Simulate viseme data for lip sync
+                    let wordIndex = 0;
+                    const words = text.split(/\s+/);
+                    
+                    utterance.onboundary = (e) => {
+                        if (e.name === 'word' && this.onViseme) {
+                            const word = words[wordIndex] || '';
+                            const viseme = this.textToViseme(word);
+                            this.onViseme(viseme, word.length * 0.15);
+                            wordIndex++;
+                        }
+                    };
+                    
+                    utterance.onend = () => {
+                        this.isSpeaking = false;
+                        if (this.onViseme) this.onViseme('sil', 0);
+                        resolve();
+                    };
+                    
+                    utterance.onerror = () => {
+                        this.isSpeaking = false;
+                        if (this.onViseme) this.onViseme('sil', 0);
+                        resolve();
+                    };
+                    
+                    speechSynthesis.speak(utterance);
+                });
+            }
+            
+            textToViseme(text) {
+                // Simple mapping from text to viseme
+                const char = text.charAt(0).toLowerCase();
+                const visemeMap = {
+                    'a': 'aa', 'e': 'E', 'i': 'ih', 'o': 'oh', 'u': 'ou',
+                    'b': 'PP', 'm': 'PP', 'p': 'PP',
+                    'f': 'FF', 'v': 'FF',
+                    't': 'TH', 'd': 'DD',
+                    'k': 'kk', 'g': 'kk',
+                    'ch': 'CH', 'j': 'CH', 'sh': 'SS', 'zh': 'SS',
+                    'n': 'nn', 'l': 'nn', 'r': 'RR',
+                    's': 'SS', 'z': 'SS',
+                    'w': 'ou', 'y': 'ih'
+                };
+                return visemeMap[char] || 'sil';
+            }
+            
+            stop() {
+                if ('speechSynthesis' in window) {
+                    speechSynthesis.cancel();
+                }
+                this.isSpeaking = false;
+            }
+        }
+        
+        // VRM Avatar Component
+        function VRMAvatar({ side, isDualMode, speakingText }) {
+            const canvasRef = useRef(null);
+            const sceneRef = useRef(null);
+            const vrmRef = useRef(null);
+            const mixerRef = useRef(null);
+            const clockRef = useRef(new THREE.Clock());
+            const ttsRef = useRef(new PiperTTS());
+            const [loading, setLoading] = useState(true);
+            const [currentExpression, setCurrentExpression] = useState('neutral');
+            
+            // VRM model URLs - using reliable CDN-hosted models
+            const modelUrl = side === 'left' 
+                ? 'https://cdn.jsdelivr.net/gh/vrm-c/UniVRM@master/Tests/Models/Alicia_vrm-0.51/AliciaSolid.vrm'
+                : 'https://cdn.jsdelivr.net/gh/pixiv/three-vrm@master/packages/three-vrm/examples/models/three-vrm-girl.vrm';
+            
+            useEffect(() => {
+                let isMounted = true;
+                
+                const initVRM = async () => {
+                    try {
+                        const { default: THREE } = await import('three');
+                        const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
+                        const { VRMLoaderPlugin, VRMUtils } = await import('@pixiv/three-vrm');
+                        
+                        if (!isMounted || !canvasRef.current) return;
+                        
+                        // Setup scene
+                        const scene = new THREE.Scene();
+                        sceneRef.current = scene;
+                        
+                        // Setup camera
+                        const camera = new THREE.PerspectiveCamera(
+                            30,
+                            canvasRef.current.clientWidth / canvasRef.current.clientHeight,
+                            0.1,
+                            1000
+                        );
+                        camera.position.set(0, 1.4, 3.5);
+                        camera.lookAt(0, 1.2, 0);
+                        
+                        // Setup renderer
+                        const renderer = new THREE.WebGLRenderer({
+                            canvas: canvasRef.current,
+                            alpha: true,
+                            antialias: true
+                        });
+                        renderer.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
+                        renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+                        renderer.shadowMap.enabled = true;
+                        
+                        // Add lights
+                        const ambientLight = new THREE.AmbientLight(0xffffff, 0.6);
+                        scene.add(ambientLight);
+                        
+                        const directionalLight = new THREE.DirectionalLight(0xffffff, 0.8);
+                        directionalLight.position.set(1, 2, 2);
+                        directionalLight.castShadow = true;
+                        scene.add(directionalLight);
+                        
+                        const rimLight = new THREE.DirectionalLight(0x4455ff, 0.4);
+                        rimLight.position.set(-1, 1, -2);
+                        scene.add(rimLight);
+                        
+                        // Load VRM model
+                        const loader = new GLTFLoader();
+                        loader.register((parser) => new VRMLoaderPlugin(parser));
+                        
+                        loader.load(
+                            modelUrl,
+                            (gltf) => {
+                                if (!isMounted) return;
+                                
+                                const vrm = gltf.userData.vrm;
+                                vrmRef.current = vrm;
+                                
+                                // Setup VRM
+                                VRMUtils.rotateVRM0(vrm);
+                                scene.add(vrm.scene);
+                                
+                                // Setup animation mixer
+                                const mixer = new THREE.AnimationMixer(vrm.scene);
+                                mixerRef.current = mixer;
+                                
+                                // Setup TTS callback for lip sync
+                                ttsRef.current.onViseme = (viseme, duration) => {
+                                    if (vrm.expressionManager) {
+                                        // Reset all visemes
+                                        const visemes = ['aa', 'ih', 'ou', 'E', 'oh', 'PP', 'FF', 'TH', 'DD', 'kk', 'CH', 'SS', 'nn', 'RR'];
+                                        visemes.forEach(v => {
+                                            vrm.expressionManager.setValue(v, 0);
+                                        });
+                                        
+                                        // Set current viseme
+                                        if (viseme !== 'sil') {
+                                            vrm.expressionManager.setValue(viseme, 0.8);
+                                        }
+                                        
+                                        vrm.expressionManager.update();
+                                    }
+                                };
+                                
+                                setLoading(false);
+                            },
+                            (progress) => {
+                                console.log(`Loading ${side} model:`, (progress.loaded / progress.total * 100).toFixed(0) + '%');
+                            },
+                            (error) => {
+                                console.error('Error loading VRM:', error);
+                                setLoading(false);
+                            }
+                        );
+                        
+                        // Animation loop
+                        const animate = () => {
+                            if (!isMounted) return;
+                            requestAnimationFrame(animate);
+                            
+                            const delta = clockRef.current.getDelta();
+                            
+                            if (mixerRef.current) {
+                                mixerRef.current.update(delta);
+                            }
+                            
+                            if (vrmRef.current) {
+                                vrmRef.current.update(delta);
+                            }
+                            
+                            renderer.render(scene, camera);
+                        };
+                        animate();
+                        
+                        // Handle resize
+                        const handleResize = () => {
+                            if (!canvasRef.current) return;
+                            const width = canvasRef.current.clientWidth;
+                            const height = canvasRef.current.clientHeight;
+                            camera.aspect = width / height;
+                            camera.updateProjectionMatrix();
+                            renderer.setSize(width, height);
+                        };
+                        window.addEventListener('resize', handleResize);
+                        
+                        return () => {
+                            window.removeEventListener('resize', handleResize);
+                            renderer.dispose();
+                        };
+                        
+                    } catch (error) {
+                        console.error('Error initializing VRM:', error);
+                        setLoading(false);
+                    }
+                };
+                
+                initVRM();
+                
+                return () => {
+                    isMounted = false;
+                };
+            }, []);
+            
+            // Handle speaking
+            useEffect(() => {
+                if (speakingText && ttsRef.current) {
+                    ttsRef.current.speak(speakingText);
+                }
+            }, [speakingText]);
+            
+            const setExpression = (expression) => {
+                if (!vrmRef.current || !vrmRef.current.expressionManager) return;
+                
+                // Reset all expressions
+                const expressions = ['happy', 'angry', 'sad', 'relaxed', 'neutral'];
+                expressions.forEach(exp => {
+                    vrmRef.current.expressionManager.setValue(exp, 0);
+                });
+                
+                // Set new expression
+                if (expression !== 'neutral') {
+                    vrmRef.current.expressionManager.setValue(expression, 1);
+                }
+                
+                vrmRef.current.expressionManager.update();
+                setCurrentExpression(expression);
+            };
+            
+            const speak = () => {
+                const texts = [
+                    "Welcome to Sushi Live Commentary!",
+                    "What an amazing play by the offense!",
+                    "The defense is really stepping up today.",
+                    "This game is absolutely thrilling!",
+                    "Can you believe that last move? Incredible!"
+                ];
+                const randomText = texts[Math.floor(Math.random() * texts.length)];
+                ttsRef.current.speak(randomText);
+            };
+            
+            return (
+                <div className={`vrm-canvas-container ${isDualMode ? 'dual' : ''}`}>
+                    <canvas 
+                        id={`vrm-canvas-${side}`} 
+                        ref={canvasRef}
+                    />
+                    
+                    {!loading && (
+                        <>
+                            <div className="avatar-info">
+                                <h3>{side === 'left' ? 'Sakura' : 'Yuki'}</h3>
+                                <p>AI Commentator</p>
+                            </div>
+                            
+                            <div className="expression-buttons">
+                                {['neutral', 'happy', 'sad', 'angry', 'relaxed'].map(exp => (
+                                    <button
+                                        key={exp}
+                                        className={currentExpression === exp ? 'active' : ''}
+                                        onClick={() => setExpression(exp)}
+                                    >
+                                        {exp}
+                                    </button>
+                                ))}
+                            </div>
+                            
+                            <div className="vrm-controls">
+                                <button className="speak" onClick={speak}>
+                                    🎙️ Speak
+                                </button>
+                            </div>
+                        </>
+                    )}
+                </div>
+            );
+        }
+        
+        // Main App
+        function App() {
+            const [isDualMode, setIsDualMode] = useState(true);
+            const [showLoading, setShowLoading] = useState(true);
+            
+            useEffect(() => {
+                // Hide loading after 3 seconds
+                const timer = setTimeout(() => {
+                    setShowLoading(false);
+                }, 3000);
+                return () => clearTimeout(timer);
+            }, []);
+            
+            return (
+                <div className="vrm-container">
+                    {showLoading && (
+                        <div className="loading-overlay">
+                            <div className="loading-spinner"></div>
+                            <div className="loading-text">Loading VRM Avatars...</div>
+                            <div className="loading-progress">Downloading 3D models</div>
+                        </div>
+                    )}
+                    
+                    <div className="vrm-header">
+                        <h1>🍣 Sushi VRM Avatars</h1>
+                        <div>
+                            <button 
+                                className={!isDualMode ? 'active' : ''}
+                                onClick={() => setIsDualMode(false)}
+                            >
+                                Single
+                            </button>
+                            <button 
+                                className={isDualMode ? 'active' : ''}
+                                onClick={() => setIsDualMode(true)}
+                                style={{ marginLeft: '8px' }}
+                            >
+                                Dual
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div className={`vrm-stage ${isDualMode ? 'dual-mode' : ''}`}>
+                        <VRMAvatar side="left" isDualMode={isDualMode} />
+                        {isDualMode && <VRMAvatar side="right" isDualMode={isDualMode} />}
+                    </div>
+                </div>
+            );
+        }
+        
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
