@@ -67,6 +67,12 @@ async function callModalLLM(url, body, timeoutMs = 300000) {
 
 app.use(cors());
 app.use(express.json());
+
+// Serve admin panel before static middleware so it doesn't get caught by index.html
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── ADMIN AUTH ───
@@ -147,11 +153,6 @@ app.post('/api/admin/change-password', requireAdmin, async (req, res) => {
 // Verify token
 app.get('/api/admin/verify', requireAdmin, (req, res) => {
   res.json({ ok: true });
-});
-
-// Serve admin panel
-app.get('/admin', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
 });
 
 // ─── SPORT CONFIG ───
