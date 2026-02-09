@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-  <title>Sushi - Super Bowl Live Tracker</title>
+  <title>Sushi - Live Sports Commentary</title>
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
@@ -61,7 +61,6 @@
     .mood-electric { animation: moodPulse 1.5s ease-in-out infinite; }
     .confidence-bar { transition: width 0.8s cubic-bezier(0.4, 0, 0.2, 1); }
 
-    /* ─── STREAM MODE ─── */
     .stream-overlay {
       position: fixed; inset: 0; z-index: 9999;
       background: #050508;
@@ -73,38 +72,21 @@
       position: absolute; inset: 0; pointer-events: none; z-index: 10;
       background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.006) 2px, rgba(255,255,255,0.006) 4px);
     }
-
-    /* ── HUD: score + play in one unit ── */
     .stream-hud {
       flex-shrink: 0; z-index: 5;
       background: linear-gradient(180deg, rgba(10,10,15,0.98) 0%, rgba(10,10,15,0.92) 100%);
       border-bottom: 1px solid rgba(255,255,255,0.06);
     }
-    .stream-hud-top {
-      display: flex; align-items: center; justify-content: space-between;
-      padding: 10px 16px;
-    }
-    .stream-hud-scores {
-      display: flex; align-items: center; gap: 0;
-    }
-    .stream-hud-team {
-      display: flex; align-items: center; gap: 8px;
-      padding: 4px 12px;
-    }
+    .stream-hud-top { display: flex; align-items: center; justify-content: space-between; padding: 10px 16px; }
+    .stream-hud-scores { display: flex; align-items: center; gap: 0; }
+    .stream-hud-team { display: flex; align-items: center; gap: 8px; padding: 4px 12px; }
     .stream-hud-team-away { border-radius: 8px 0 0 8px; background: rgba(255,255,255,0.04); }
     .stream-hud-team-home { border-radius: 0 8px 8px 0; background: rgba(255,255,255,0.04); }
     .stream-hud-abbr { font-size: 13px; font-weight: 800; letter-spacing: 1px; }
     .stream-hud-pts { font-size: 28px; font-weight: 900; line-height: 1; min-width: 28px; text-align: center; }
-    .stream-hud-sep {
-      font-size: 20px; color: rgba(255,255,255,0.12); padding: 0 6px; font-weight: 200;
-    }
-    .stream-hud-info {
-      display: flex; align-items: center; gap: 8px;
-    }
-    .stream-hud-clock {
-      font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.5);
-      font-variant-numeric: tabular-nums;
-    }
+    .stream-hud-sep { font-size: 20px; color: rgba(255,255,255,0.12); padding: 0 6px; font-weight: 200; }
+    .stream-hud-info { display: flex; align-items: center; gap: 8px; }
+    .stream-hud-clock { font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.5); font-variant-numeric: tabular-nums; }
     .stream-hud-live {
       display: flex; align-items: center; gap: 4px;
       background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3);
@@ -112,11 +94,7 @@
       font-size: 9px; font-weight: 800; color: #ef4444; letter-spacing: 1px;
     }
     .stream-hud-live-dot { width: 5px; height: 5px; border-radius: 50%; background: #ef4444; animation: livePulse 1.5s ease-in-out infinite; }
-    .stream-hud-hint {
-      font-size: 8px; color: rgba(255,255,255,0.12); letter-spacing: 1px; text-transform: uppercase;
-    }
-
-    /* ── Play ticker ── */
+    .stream-hud-hint { font-size: 8px; color: rgba(255,255,255,0.12); letter-spacing: 1px; text-transform: uppercase; }
     .stream-play-ticker {
       padding: 8px 16px 10px;
       border-top: 1px solid rgba(255,184,28,0.08);
@@ -127,9 +105,7 @@
       0% { background: linear-gradient(135deg, rgba(255,184,28,0.15), rgba(255,107,53,0.08)); }
       100% { background: linear-gradient(135deg, rgba(255,184,28,0.04), rgba(255,107,53,0.02)); }
     }
-    .stream-ticker-top {
-      display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
-    }
+    .stream-ticker-top { display: flex; align-items: center; gap: 6px; margin-bottom: 4px; }
     .stream-ticker-dot { width: 5px; height: 5px; border-radius: 50%; background: #FFB81C; animation: livePulse 1s ease-in-out infinite; }
     .stream-ticker-label { font-size: 8px; font-weight: 800; color: #FFB81C; letter-spacing: 1.5px; text-transform: uppercase; }
     .stream-ticker-type { font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.5px; }
@@ -137,12 +113,7 @@
       font-size: 8px; font-weight: 800; letter-spacing: 0.5px;
       padding: 1px 6px; border-radius: 4px; margin-left: auto;
     }
-    .stream-ticker-desc {
-      font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.75);
-      line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
-    }
-
-    /* ── Commentary area ── */
+    .stream-ticker-desc { font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.75); line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
     .stream-chat {
       flex: 1; overflow-y: auto; z-index: 2;
       padding: 16px 16px 20px;
@@ -151,27 +122,12 @@
       -ms-overflow-style: none; scrollbar-width: none;
     }
     .stream-chat::-webkit-scrollbar { display: none; }
-    .stream-bubble {
-      padding: 10px 14px; border-radius: 12px;
-      margin-bottom: 8px; max-width: 85%;
-      animation: bubbleIn 0.4s ease-out forwards;
-    }
-    .stream-bubble-a {
-      background: linear-gradient(135deg, rgba(255,107,53,0.1), rgba(255,107,53,0.03));
-      border-left: 3px solid var(--stream-color-a, #ff6b35);
-      align-self: flex-start;
-    }
-    .stream-bubble-b {
-      background: linear-gradient(135deg, rgba(74,144,217,0.1), rgba(74,144,217,0.03));
-      border-left: 3px solid var(--stream-color-b, #4a90d9);
-      align-self: flex-end;
-    }
+    .stream-bubble { padding: 10px 14px; border-radius: 12px; margin-bottom: 8px; max-width: 85%; animation: bubbleIn 0.4s ease-out forwards; }
+    .stream-bubble-a { background: linear-gradient(135deg, rgba(255,107,53,0.1), rgba(255,107,53,0.03)); border-left: 3px solid var(--stream-color-a, #ff6b35); align-self: flex-start; }
+    .stream-bubble-b { background: linear-gradient(135deg, rgba(74,144,217,0.1), rgba(74,144,217,0.03)); border-left: 3px solid var(--stream-color-b, #4a90d9); align-self: flex-end; }
     .stream-speaker { font-size: 10px; font-weight: 800; margin-bottom: 3px; letter-spacing: 0.5px; }
     .stream-text { font-size: 14px; line-height: 1.5; color: rgba(255,255,255,0.88); }
-    .stream-powered {
-      text-align: center; padding-top: 16px;
-      font-size: 8px; color: rgba(255,255,255,0.08); letter-spacing: 2px; text-transform: uppercase;
-    }
+    .stream-powered { text-align: center; padding-top: 16px; font-size: 8px; color: rgba(255,255,255,0.08); letter-spacing: 2px; text-transform: uppercase; }
     @media (orientation: landscape) {
       .stream-hud-top { padding: 8px 20px; }
       .stream-play-ticker { padding: 6px 20px 8px; }
@@ -189,6 +145,9 @@
       .stream-hud-pts { font-size: 36px; }
       .stream-ticker-desc { font-size: 14px; }
     }
+
+    /* Sport icons */
+    .sport-icon { font-size: 24px; }
   </style>
 </head>
 <body class="font-sans text-white min-h-screen">
@@ -196,7 +155,6 @@
   <script type="text/babel">
     const { useState, useEffect, useCallback, useRef } = React;
 
-    // ─── LUCIDE REACT ICONS (from window.LucideReact) ───
     const {
       Trophy, BarChart3, List, TrendingUp, Newspaper,
       Tv, MapPin, Scale, Target, Percent, Zap, Crown,
@@ -205,8 +163,33 @@
       ChevronDown, MoveRight, Play, AlertTriangle,
       CircleDot, Shield, CalendarOff, WifiOff, RefreshCw,
       Loader2, Clock, ExternalLink, Radio, Timer, Hourglass,
-      MessageSquare, Mic, Flame, Volume2, Gauge, Maximize2
+      MessageSquare, Mic, Flame, Volume2, Gauge, Maximize2,
+      ArrowLeft, Settings
     } = LucideReact;
+
+    // ─── SPORT ICONS ───
+    const SPORT_ICONS = {
+      football: '\uD83C\uDFC8',
+      basketball: '\uD83C\uDFC0',
+      baseball: '\u26BE',
+      hockey: '\uD83C\uDFD2',
+      soccer: '\u26BD',
+    };
+
+    // ─── HASH ROUTER ───
+    function useHashRoute() {
+      const [route, setRoute] = useState(window.location.hash || '#/');
+      useEffect(() => {
+        const handler = () => setRoute(window.location.hash || '#/');
+        window.addEventListener('hashchange', handler);
+        return () => window.removeEventListener('hashchange', handler);
+      }, []);
+      return route;
+    }
+
+    function navigate(hash) {
+      window.location.hash = hash;
+    }
 
     // ─── NAV TABS ───
     const tabDefs = [
@@ -217,6 +200,23 @@
       { id: 'odds', label: 'Odds', Icon: TrendingUp },
       { id: 'news', label: 'News', Icon: Newspaper },
     ];
+
+    function getVisibleTabs(sport) {
+      if (sport && sport !== 'football') {
+        return tabDefs.filter(t => t.id !== 'plays');
+      }
+      return tabDefs;
+    }
+
+    function getPeriodLabel(sport, period) {
+      switch (sport) {
+        case 'basketball': return `Q${period}`;
+        case 'baseball': return period <= 9 ? `${period}${['st','nd','rd'][period-1] || 'th'}` : `${period}th`;
+        case 'hockey': return `P${period}`;
+        case 'soccer': return period === 1 ? '1H' : '2H';
+        default: return `Q${period}`;
+      }
+    }
 
     // ─── TEAM LOGO ───
     function TeamLogo({ src, alt, size = 'w-10 h-10' }) {
@@ -230,13 +230,13 @@
     }
 
     // ─── SCOREBOARD ───
-    function Scoreboard({ game }) {
+    function Scoreboard({ game, sport }) {
       if (!game || game.error) {
         return (
           <div className="scoreboard-glow glass rounded-2xl p-6 text-center animate-fade-in">
             <div className="flex justify-center mb-3"><CalendarOff size={32} color="#555" /></div>
-            <div className="text-sm text-gray-400">No Super Bowl game found in current schedule</div>
-            <div className="text-xs text-gray-600 mt-1">Check back closer to game day</div>
+            <div className="text-sm text-gray-400">No game data found</div>
+            <div className="text-xs text-gray-600 mt-1">Check back closer to game time</div>
           </div>
         );
       }
@@ -251,7 +251,6 @@
 
       return (
         <div className="scoreboard-glow rounded-2xl overflow-hidden animate-fade-in">
-          {/* Status Bar */}
           <div className="flex items-center justify-between px-4 py-2 bg-dark-700/80">
             <div className="flex items-center gap-2">
               {isLive && <span className="live-dot w-2 h-2 rounded-full bg-red-500 inline-block"></span>}
@@ -262,22 +261,17 @@
             <span className="text-xs text-gray-500">{game.note || ''}</span>
           </div>
 
-          {/* Score Area */}
           <div className="relative p-5 sm:p-6">
             <div className="relative flex items-center justify-between gap-2">
-              {/* Away Team */}
               <div className="flex-1 text-center">
                 <TeamLogo src={game.away.logo} alt={game.away.abbreviation} size="w-12 h-12 sm:w-14 sm:h-14 mx-auto" />
                 <div className="text-xs sm:text-sm font-bold mt-1.5 uppercase tracking-wider" style={{color: awayColor}}>{game.away.abbreviation}</div>
                 <div className="text-[10px] text-gray-500">{game.away.record}</div>
                 {isLive && game.situation?.possessionText?.toLowerCase().includes(game.away.shortName?.toLowerCase()) && (
-                  <div className="possession-arrow flex justify-center mt-1">
-                    <CircleDot size={12} color={awayColor} />
-                  </div>
+                  <div className="possession-arrow flex justify-center mt-1"><CircleDot size={12} color={awayColor} /></div>
                 )}
               </div>
 
-              {/* Scores */}
               <div className="flex items-center gap-3 sm:gap-6">
                 <div className={`text-5xl sm:text-7xl font-black tabular-nums ${!isPre && awayWinning ? 'text-white' : !isPre ? 'text-gray-500' : 'text-gray-600'}`}>
                   {isPre ? '-' : game.away.score}
@@ -288,20 +282,16 @@
                 </div>
               </div>
 
-              {/* Home Team */}
               <div className="flex-1 text-center">
                 <TeamLogo src={game.home.logo} alt={game.home.abbreviation} size="w-12 h-12 sm:w-14 sm:h-14 mx-auto" />
                 <div className="text-xs sm:text-sm font-bold mt-1.5 uppercase tracking-wider" style={{color: homeColor}}>{game.home.abbreviation}</div>
                 <div className="text-[10px] text-gray-500">{game.home.record}</div>
                 {isLive && game.situation?.possessionText?.toLowerCase().includes(game.home.shortName?.toLowerCase()) && (
-                  <div className="possession-arrow flex justify-center mt-1">
-                    <CircleDot size={12} color={homeColor} />
-                  </div>
+                  <div className="possession-arrow flex justify-center mt-1"><CircleDot size={12} color={homeColor} /></div>
                 )}
               </div>
             </div>
 
-            {/* Quarter Scores */}
             {(isLive || isFinal) && (game.away.linescores?.length > 0 || game.home.linescores?.length > 0) && (
               <div className="mt-4 flex justify-center">
                 <table className="text-[10px] text-gray-500">
@@ -309,7 +299,7 @@
                     <tr>
                       <th className="px-2 py-0.5 text-left"></th>
                       {(game.away.linescores || game.home.linescores || []).map((_, i) => (
-                        <th key={i} className="px-2 py-0.5 font-medium">{i < 4 ? `Q${i+1}` : `OT${i-3}`}</th>
+                        <th key={i} className="px-2 py-0.5 font-medium">{getPeriodLabel(sport, i + 1)}</th>
                       ))}
                       <th className="px-2 py-0.5 font-bold text-white">T</th>
                     </tr>
@@ -331,7 +321,6 @@
             )}
           </div>
 
-          {/* Situation / Last Play */}
           {isLive && game.situation?.downDistanceText && (
             <div className="px-4 py-2 bg-dark-700/50 border-t border-white/5">
               <div className="flex items-center gap-2">
@@ -353,7 +342,6 @@
             </div>
           )}
 
-          {/* Team Name Bar */}
           <div className="flex border-t border-white/5">
             <div className="flex-1 py-2 text-center" style={{background: `linear-gradient(135deg, ${awayColor}cc, ${awayColor}88)`}}>
               <span className="text-xs sm:text-sm font-bold text-white/90">{game.away.name}</span>
@@ -402,42 +390,31 @@
     // ─── COUNTDOWN TIMER ───
     function Countdown({ gameDate }) {
       const [timeLeft, setTimeLeft] = useState(null);
-
       useEffect(() => {
         if (!gameDate) return;
         const target = new Date(gameDate).getTime();
-
         function update() {
-          const now = Date.now();
-          const diff = target - now;
-          if (diff <= 0) {
-            setTimeLeft(null);
-            return;
-          }
-          const days = Math.floor(diff / (1000 * 60 * 60 * 24));
-          const hours = Math.floor((diff % (1000 * 60 * 60 * 24)) / (1000 * 60 * 60));
-          const minutes = Math.floor((diff % (1000 * 60 * 60)) / (1000 * 60));
-          const seconds = Math.floor((diff % (1000 * 60)) / 1000);
-          setTimeLeft({ days, hours, minutes, seconds });
+          const diff = target - Date.now();
+          if (diff <= 0) { setTimeLeft(null); return; }
+          setTimeLeft({
+            days: Math.floor(diff / 86400000),
+            hours: Math.floor((diff % 86400000) / 3600000),
+            minutes: Math.floor((diff % 3600000) / 60000),
+            seconds: Math.floor((diff % 60000) / 1000),
+          });
         }
-
         update();
         const interval = setInterval(update, 1000);
         return () => clearInterval(interval);
       }, [gameDate]);
-
       if (!timeLeft) return null;
-
       const units = [
         { value: timeLeft.days, label: 'Days' },
         { value: timeLeft.hours, label: 'Hours' },
         { value: timeLeft.minutes, label: 'Mins' },
         { value: timeLeft.seconds, label: 'Secs' },
       ];
-
-      // Hide "Days" block if 0 days remaining
       const visibleUnits = timeLeft.days > 0 ? units : units.slice(1);
-
       return (
         <div className="countdown-glow glass rounded-2xl p-5 text-center animate-fade-in">
           <div className="flex items-center justify-center gap-2 mb-4">
@@ -450,9 +427,7 @@
                 {i > 0 && <span className="text-xl font-light text-gray-600 -mt-4">:</span>}
                 <div className="flex flex-col items-center">
                   <div className="glass-bright rounded-xl w-16 h-16 sm:w-20 sm:h-20 flex items-center justify-center">
-                    <span className="countdown-digit text-2xl sm:text-3xl font-black text-white">
-                      {String(unit.value).padStart(2, '0')}
-                    </span>
+                    <span className="countdown-digit text-2xl sm:text-3xl font-black text-white">{String(unit.value).padStart(2, '0')}</span>
                   </div>
                   <span className="text-[10px] text-gray-500 mt-1.5 font-medium uppercase tracking-wider">{unit.label}</span>
                 </div>
@@ -464,14 +439,12 @@
     }
 
     // ─── SCORES TAB ───
-    function ScoresTab({ game, summary }) {
+    function ScoresTab({ game, summary, sport }) {
       return (
         <div className="space-y-4 animate-slide-up">
-          <Scoreboard game={game} />
+          <Scoreboard game={game} sport={sport} />
           {game?.status?.state === 'pre' && game?.date && <Countdown gameDate={game.date} />}
           <GameInfo game={game} />
-
-          {/* Prediction */}
           {summary?.prediction?.home?.winPct && (
             <div className="glass rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3 text-gray-500">
@@ -485,8 +458,7 @@
                 </div>
                 <div className="flex-1 h-2 rounded-full bg-white/5 overflow-hidden">
                   <div className="h-full rounded-full transition-all duration-500" style={{
-                    width: `${summary.prediction.away.winPct}%`,
-                    background: game?.away?.color || '#666'
+                    width: `${summary.prediction.away.winPct}%`, background: game?.away?.color || '#666'
                   }}></div>
                 </div>
                 <div className="text-center flex-1">
@@ -496,8 +468,6 @@
               </div>
             </div>
           )}
-
-          {/* Scoring Plays */}
           {summary?.scoring?.length > 0 && (
             <div className="glass rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3 text-gray-500">
@@ -508,7 +478,7 @@
                 {summary.scoring.map((sp, i) => (
                   <div key={i} className="p-3 rounded-lg bg-white/[0.02]">
                     <div className="flex items-center justify-between mb-1">
-                      <span className="text-xs font-bold text-yellow-400">Q{sp.period} {sp.clock}</span>
+                      <span className="text-xs font-bold text-yellow-400">{getPeriodLabel(sport, sp.period)} {sp.clock}</span>
                       <span className="text-xs text-gray-500">{sp.awayScore} - {sp.homeScore}</span>
                     </div>
                     <div className="text-xs text-gray-300">{sp.text}</div>
@@ -517,8 +487,6 @@
               </div>
             </div>
           )}
-
-          {/* Team Leaders */}
           {summary?.leaders?.length > 0 && (
             <div className="glass rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3 text-gray-500">
@@ -565,11 +533,9 @@
           <div className="glass rounded-xl p-8 text-center animate-slide-up">
             <div className="flex justify-center mb-3 text-gray-600"><BarChart3 size={32} /></div>
             <div className="text-sm text-gray-400">Stats will appear once the game begins</div>
-            <div className="text-xs text-gray-600 mt-1">Box scores, player stats, and team comparisons</div>
           </div>
         );
       }
-
       return (
         <div className="space-y-4 animate-slide-up">
           {summary.teamStats.length === 2 && (
@@ -580,19 +546,18 @@
               </div>
               <div className="space-y-3">
                 {summary.teamStats[0].stats.map((stat, i) => {
-                  const awayStat = stat;
                   const homeStat = summary.teamStats[1].stats[i];
                   if (!homeStat) return null;
                   return (
                     <div key={i} className="text-center">
                       <div className="flex items-center justify-between mb-1">
-                        <span className="text-sm font-bold text-white w-16 text-left">{awayStat.displayValue}</span>
-                        <span className="text-[10px] text-gray-500 uppercase flex-1 text-center">{awayStat.label || awayStat.name}</span>
+                        <span className="text-sm font-bold text-white w-16 text-left">{stat.displayValue}</span>
+                        <span className="text-[10px] text-gray-500 uppercase flex-1 text-center">{stat.label || stat.name}</span>
                         <span className="text-sm font-bold text-white w-16 text-right">{homeStat.displayValue}</span>
                       </div>
                       <div className="h-1 rounded-full bg-white/5 overflow-hidden flex">
-                        <div className="h-full rounded-l-full" style={{width: '50%', background: game?.away?.color || '#666', opacity: parseFloat(awayStat.displayValue) >= parseFloat(homeStat.displayValue) ? 1 : 0.4}}></div>
-                        <div className="h-full rounded-r-full" style={{width: '50%', background: game?.home?.color || '#666', opacity: parseFloat(homeStat.displayValue) >= parseFloat(awayStat.displayValue) ? 1 : 0.4}}></div>
+                        <div className="h-full rounded-l-full" style={{width: '50%', background: game?.away?.color || '#666', opacity: parseFloat(stat.displayValue) >= parseFloat(homeStat.displayValue) ? 1 : 0.4}}></div>
+                        <div className="h-full rounded-r-full" style={{width: '50%', background: game?.home?.color || '#666', opacity: parseFloat(homeStat.displayValue) >= parseFloat(stat.displayValue) ? 1 : 0.4}}></div>
                       </div>
                     </div>
                   );
@@ -600,7 +565,6 @@
               </div>
             </div>
           )}
-
           {summary.playerStats.map((teamPlayers, ti) => (
             <div key={ti} className="glass rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3 text-gray-500">
@@ -643,14 +607,11 @@
           <div className="glass rounded-xl p-8 text-center animate-slide-up">
             <div className="flex justify-center mb-3 text-gray-600"><List size={32} /></div>
             <div className="text-sm text-gray-400">Play-by-play will appear once the game begins</div>
-            <div className="text-xs text-gray-600 mt-1">Full drive summaries and individual plays</div>
           </div>
         );
       }
-
       const [expandedDrive, setExpandedDrive] = useState(null);
       const drives = [...summary.drives].reverse();
-
       return (
         <div className="space-y-2 animate-slide-up">
           <div className="flex items-center justify-between px-1 mb-2">
@@ -667,10 +628,7 @@
               <div key={i} className={`glass rounded-xl overflow-hidden card-hover ${isScoringDrive ? 'border-yellow-400/20' : ''}`}>
                 <button onClick={() => setExpandedDrive(isExpanded ? null : i)} className="w-full p-3 text-left flex items-center gap-3">
                   <div className="flex-shrink-0">
-                    {isScoringDrive
-                      ? <Zap size={18} className="text-yellow-400" />
-                      : <MoveRight size={18} className="text-gray-600" />
-                    }
+                    {isScoringDrive ? <Zap size={18} className="text-yellow-400" /> : <MoveRight size={18} className="text-gray-600" />}
                   </div>
                   <div className="flex-1 min-w-0">
                     <div className="flex items-center gap-2">
@@ -712,9 +670,7 @@
           </div>
         );
       }
-
       const primaryOdds = odds[0] || {};
-
       return (
         <div className="space-y-4 animate-slide-up">
           <div className="glass rounded-xl p-4">
@@ -725,77 +681,39 @@
                 <span className="text-[9px] bg-white/5 text-gray-500 px-1.5 py-0.5 rounded-full">via {primaryOdds.provider || game.odds.provider}</span>
               )}
             </div>
-
             <div className="space-y-4">
-              {/* Spread */}
               <div className="flex items-center justify-between p-3 rounded-lg bg-white/[0.02]">
-                <div className="flex items-center gap-2 text-gray-400">
-                  <Scale size={14} />
-                  <span className="text-sm">Spread</span>
-                </div>
+                <div className="flex items-center gap-2 text-gray-400"><Scale size={14} /><span className="text-sm">Spread</span></div>
                 <span className="text-sm font-bold text-yellow-400">{primaryOdds.spread || game?.odds?.spread || '\u2014'}</span>
               </div>
-
-              {/* Moneyline */}
               {(primaryOdds.awayMoneyline || primaryOdds.homeMoneyline) && (
                 <div className="p-3 rounded-lg bg-white/[0.02]">
-                  <div className="flex items-center gap-2 mb-2 text-gray-400">
-                    <DollarSign size={14} />
-                    <span className="text-sm">Moneyline</span>
-                  </div>
+                  <div className="flex items-center gap-2 mb-2 text-gray-400"><DollarSign size={14} /><span className="text-sm">Moneyline</span></div>
                   <div className="flex gap-2">
                     <div className="flex-1 text-center p-2 rounded-lg" style={{background: `${game?.away?.color || '#333'}33`}}>
                       <div className="text-[10px] text-white/70">{game?.away?.abbreviation}</div>
                       <div className="text-lg font-bold">{primaryOdds.awayMoneyline > 0 ? '+' : ''}{primaryOdds.awayMoneyline}</div>
-                      {primaryOdds.awayFavorite && (
-                        <div className="text-[8px] text-yellow-400 mt-0.5 flex items-center justify-center gap-0.5">
-                          <Star size={8} /> FAV
-                        </div>
-                      )}
+                      {primaryOdds.awayFavorite && <div className="text-[8px] text-yellow-400 mt-0.5 flex items-center justify-center gap-0.5"><Star size={8} /> FAV</div>}
                     </div>
                     <div className="flex-1 text-center p-2 rounded-lg" style={{background: `${game?.home?.color || '#333'}33`}}>
                       <div className="text-[10px] text-white/70">{game?.home?.abbreviation}</div>
                       <div className="text-lg font-bold">{primaryOdds.homeMoneyline > 0 ? '+' : ''}{primaryOdds.homeMoneyline}</div>
-                      {primaryOdds.homeFavorite && (
-                        <div className="text-[8px] text-yellow-400 mt-0.5 flex items-center justify-center gap-0.5">
-                          <Star size={8} /> FAV
-                        </div>
-                      )}
+                      {primaryOdds.homeFavorite && <div className="text-[8px] text-yellow-400 mt-0.5 flex items-center justify-center gap-0.5"><Star size={8} /> FAV</div>}
                     </div>
                   </div>
                 </div>
               )}
-
-              {/* Over/Under */}
               <div className="p-3 rounded-lg bg-white/[0.02]">
-                <div className="flex items-center gap-2 mb-2 text-gray-400">
-                  <ArrowUpDown size={14} />
-                  <span className="text-sm">Over/Under</span>
-                </div>
+                <div className="flex items-center gap-2 mb-2 text-gray-400"><ArrowUpDown size={14} /><span className="text-sm">Over/Under</span></div>
                 <div className="flex items-center justify-center gap-4">
-                  {primaryOdds.overOdds && (
-                    <div className="text-center">
-                      <div className="text-xs text-gray-500">Over</div>
-                      <div className="text-sm font-bold text-green-400">{primaryOdds.overOdds}</div>
-                    </div>
-                  )}
+                  {primaryOdds.overOdds && <div className="text-center"><div className="text-xs text-gray-500">Over</div><div className="text-sm font-bold text-green-400">{primaryOdds.overOdds}</div></div>}
                   <div className="text-3xl font-black text-gradient">{primaryOdds.overUnder || game?.odds?.overUnder || '\u2014'}</div>
-                  {primaryOdds.underOdds && (
-                    <div className="text-center">
-                      <div className="text-xs text-gray-500">Under</div>
-                      <div className="text-sm font-bold text-red-400">{primaryOdds.underOdds}</div>
-                    </div>
-                  )}
+                  {primaryOdds.underOdds && <div className="text-center"><div className="text-xs text-gray-500">Under</div><div className="text-sm font-bold text-red-400">{primaryOdds.underOdds}</div></div>}
                 </div>
               </div>
-
-              {/* Line Movement */}
               {(primaryOdds.awayOpenSpread || primaryOdds.awayOpenML) && (
                 <div className="p-3 rounded-lg bg-white/[0.02]">
-                  <div className="flex items-center gap-2 mb-2 text-gray-400">
-                    <GitBranch size={14} />
-                    <span className="text-sm">Line Movement</span>
-                  </div>
+                  <div className="flex items-center gap-2 mb-2 text-gray-400"><GitBranch size={14} /><span className="text-sm">Line Movement</span></div>
                   <div className="grid grid-cols-2 gap-2 text-xs">
                     <div className="text-center">
                       <div className="text-gray-600 mb-1">Opening</div>
@@ -812,21 +730,14 @@
               )}
             </div>
           </div>
-
-          {/* Injuries */}
           {summary?.injuries?.length > 0 && (
             <div className="glass rounded-xl p-4">
-              <div className="flex items-center gap-2 mb-3 text-gray-500">
-                <HeartPulse size={14} />
-                <h3 className="text-xs font-bold uppercase tracking-wider">Injury Report</h3>
-              </div>
+              <div className="flex items-center gap-2 mb-3 text-gray-500"><HeartPulse size={14} /><h3 className="text-xs font-bold uppercase tracking-wider">Injury Report</h3></div>
               {summary.injuries.map((team, ti) => (
                 <div key={ti} className="mb-3 last:mb-0">
                   <div className="text-xs font-bold text-gray-400 mb-1.5">{team.team}</div>
                   {team.injuries.length === 0 ? (
-                    <div className="text-[10px] text-gray-600 flex items-center gap-1">
-                      <CheckCircle size={10} className="text-green-400" /> No injuries reported
-                    </div>
+                    <div className="text-[10px] text-gray-600 flex items-center gap-1"><CheckCircle size={10} className="text-green-400" /> No injuries reported</div>
                   ) : (
                     <div className="space-y-1">
                       {team.injuries.map((inj, ii) => (
@@ -846,7 +757,7 @@
     }
 
     // ─── STREAM OVERLAY ───
-    function StreamOverlay({ commentary: initialCommentary, game, onClose }) {
+    function StreamOverlay({ commentary: initialCommentary, game, onClose, sessionId, commentators }) {
       const awayColor = game?.away?.color || '#ff6b35';
       const homeColor = game?.home?.color || '#4a90d9';
       const awayAbbr = game?.away?.abbreviation || 'AWY';
@@ -870,13 +781,13 @@
         routine: { bg: 'rgba(107,114,128,0.2)', color: '#6b7280', label: 'ROUTINE' },
       };
 
-      // Own polling loop
+      const apiBase = sessionId ? `/api/sessions/${sessionId}` : '/api';
+
       useEffect(() => {
         document.body.style.overflow = 'hidden';
-
         const fetchStream = async () => {
           try {
-            const res = await fetch('/api/commentary/latest');
+            const res = await fetch(`${apiBase}/commentary/latest`);
             const data = await res.json();
             if (data.turns?.length > 0) {
               const newDesc = data.play?.description || '';
@@ -888,20 +799,12 @@
             }
           } catch (err) {}
         };
-
         fetchStream();
         pollRef.current = setInterval(fetchStream, isLive ? 10000 : 30000);
+        return () => { document.body.style.overflow = ''; clearInterval(pollRef.current); };
+      }, [isLive, apiBase]);
 
-        return () => {
-          document.body.style.overflow = '';
-          clearInterval(pollRef.current);
-        };
-      }, [isLive]);
-
-      // Auto-scroll chat to bottom
-      useEffect(() => {
-        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, [liveCommentary]);
+      useEffect(() => { chatEndRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [liveCommentary]);
 
       const commentary = liveCommentary;
       const awayScore = commentary?.score ? Object.values(commentary.score)[0] : game?.away?.score || 0;
@@ -912,10 +815,7 @@
       return (
         <div className="stream-overlay" onClick={onClose}>
           <div className="stream-scanline" />
-
-          {/* ── HUD: score bar + play ticker as one fixed unit ── */}
           <div className="stream-hud">
-            {/* Score bar */}
             <div className="stream-hud-top">
               <div className="stream-hud-scores">
                 <div className="stream-hud-team stream-hud-team-away">
@@ -929,58 +829,34 @@
                 </div>
               </div>
               <div className="stream-hud-info">
-                {commentary?.play && (
-                  <span className="stream-hud-clock">Q{commentary.play.quarter} {commentary.play.clock}</span>
-                )}
-                {isLive && (
-                  <div className="stream-hud-live">
-                    <div className="stream-hud-live-dot" />
-                    LIVE
-                  </div>
-                )}
+                {commentary?.play && <span className="stream-hud-clock">Q{commentary.play.quarter} {commentary.play.clock}</span>}
+                {isLive && <div className="stream-hud-live"><div className="stream-hud-live-dot" />LIVE</div>}
                 <span className="stream-hud-hint">tap to exit</span>
               </div>
             </div>
-
-            {/* Play ticker */}
             {commentary?.play && (
               <div key={playKey} className={`stream-play-ticker ${playKey > 0 ? 'fresh' : ''}`} onClick={(e) => e.stopPropagation()}>
                 <div className="stream-ticker-top">
                   <div className="stream-ticker-dot" />
                   <span className="stream-ticker-label">Latest Play</span>
                   <span className="stream-ticker-type">{commentary.play.playType} / {commentary.play.result}</span>
-                  {moodInfo && (
-                    <span className="stream-ticker-mood" style={{ background: moodInfo.bg, color: moodInfo.color }}>
-                      {moodInfo.label}
-                    </span>
-                  )}
+                  {moodInfo && <span className="stream-ticker-mood" style={{ background: moodInfo.bg, color: moodInfo.color }}>{moodInfo.label}</span>}
                 </div>
                 <div className="stream-ticker-desc">{commentary.play.description}</div>
               </div>
             )}
           </div>
-
-          {/* ── Chat: scrollable commentary ── */}
           <div className="stream-chat" style={{ '--stream-color-a': awayColor, '--stream-color-b': homeColor }}>
-            {commentary?.turns?.map((turn, i) => {
-              const isA = turn.speaker === 'A';
-              return (
-                <div key={`${commentary.timestamp}-${i}`}
-                  className={`stream-bubble ${isA ? 'stream-bubble-a' : 'stream-bubble-b'}`}
-                  style={{ animationDelay: `${i * 0.2}s` }}>
-                  <div className="stream-speaker" style={{ color: isA ? awayColor : homeColor }}>
-                    {turn.name}
-                  </div>
-                  <div className="stream-text">{turn.text}</div>
-                </div>
-              );
-            })}
-            {(!commentary?.turns || commentary.turns.length === 0) && (
-              <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.2)', fontSize: '14px' }}>
-                Waiting for commentary...
+            {commentary?.turns?.map((turn, i) => (
+              <div key={`${commentary.timestamp}-${i}`} className={`stream-bubble ${turn.speaker === 'A' ? 'stream-bubble-a' : 'stream-bubble-b'}`} style={{ animationDelay: `${i * 0.2}s` }}>
+                <div className="stream-speaker" style={{ color: turn.speaker === 'A' ? awayColor : homeColor }}>{turn.name}</div>
+                <div className="stream-text">{turn.text}</div>
               </div>
+            ))}
+            {(!commentary?.turns || commentary.turns.length === 0) && (
+              <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.2)', fontSize: '14px' }}>Waiting for commentary...</div>
             )}
-            <div className="stream-powered">sushi × modal ai</div>
+            <div className="stream-powered">sushi x modal ai</div>
             <div ref={chatEndRef} />
           </div>
         </div>
@@ -988,7 +864,7 @@
     }
 
     // ─── COMMENTARY TAB ───
-    function CommentaryTab({ game }) {
+    function CommentaryTab({ game, sessionId, commentators: sessionCommentators }) {
       const [commentary, setCommentary] = useState(null);
       const [history, setHistory] = useState([]);
       const [loading, setLoading] = useState(false);
@@ -1002,46 +878,31 @@
       const awayAbbr = game?.away?.abbreviation || 'AWY';
       const homeAbbr = game?.home?.abbreviation || 'HME';
 
+      const apiBase = sessionId ? `/api/sessions/${sessionId}` : '/api';
+
       const fetchCommentary = useCallback(async () => {
         try {
           setLoading(true);
-          const res = await fetch('/api/commentary/latest');
+          const res = await fetch(`${apiBase}/commentary/latest`);
           const data = await res.json();
-          if (data.turns?.length > 0) {
-            setCommentary(data);
-          }
-        } catch (err) {
-          console.error('Commentary fetch error:', err);
-        } finally {
-          setLoading(false);
-        }
-      }, []);
+          if (data.turns?.length > 0) setCommentary(data);
+        } catch (err) {} finally { setLoading(false); }
+      }, [apiBase]);
 
       const fetchHistory = useCallback(async () => {
         try {
-          const res = await fetch('/api/commentary/history');
+          const res = await fetch(`${apiBase}/commentary/history`);
           const data = await res.json();
           if (Array.isArray(data)) setHistory(data);
         } catch (err) {}
-      }, []);
+      }, [apiBase]);
 
-      // Initial fetch
-      useEffect(() => {
-        fetchCommentary();
-        fetchHistory();
-      }, []);
+      useEffect(() => { fetchCommentary(); fetchHistory(); }, []);
 
-      // Auto-poll
       useEffect(() => {
-        if (!autoRefresh) {
-          clearInterval(pollRef.current);
-          return;
-        }
+        if (!autoRefresh) { clearInterval(pollRef.current); return; }
         const interval = isLive ? 12000 : 45000;
-        pollRef.current = setInterval(() => {
-          fetchCommentary();
-          fetchHistory();
-        }, interval);
+        pollRef.current = setInterval(() => { fetchCommentary(); fetchHistory(); }, interval);
         return () => clearInterval(pollRef.current);
       }, [autoRefresh, isLive, fetchCommentary, fetchHistory]);
 
@@ -1056,19 +917,20 @@
         routine: { label: 'ROUTINE', color: 'text-gray-500', bg: 'bg-gray-500/20' },
       };
 
+      // Use dynamic commentator names from session or commentary response
+      const commentatorA = commentary?.commentators?.a || sessionCommentators?.find(c => c.id === 'A') || { name: 'Commentator A' };
+      const commentatorB = commentary?.commentators?.b || sessionCommentators?.find(c => c.id === 'B') || { name: 'Commentator B' };
+
       function renderTurn(turn, i, mood) {
         const isA = turn.speaker === 'A';
         const color = isA ? awayColor : homeColor;
         const isElectric = mood === 'electric';
-
         return (
-          <div key={i}
-            className={`bubble-in ${isElectric && i === 0 ? 'mood-electric' : ''} rounded-xl p-3.5 bg-white/[0.03] ${isA ? 'bubble-a' : 'bubble-b'}`}
+          <div key={i} className={`bubble-in ${isElectric && i === 0 ? 'mood-electric' : ''} rounded-xl p-3.5 bg-white/[0.03] ${isA ? 'bubble-a' : 'bubble-b'}`}
             style={{ '--color-a': awayColor, '--color-b': homeColor, animationDelay: `${i * 0.15}s` }}>
             <div className="flex items-center gap-2 mb-1.5">
-              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black"
-                style={{ background: `${color}33`, color }}>
-                {isA ? 'M' : 'S'}
+              <div className="w-6 h-6 rounded-full flex items-center justify-center text-[10px] font-black" style={{ background: `${color}33`, color }}>
+                {(turn.name || '')[0] || (isA ? 'A' : 'B')}
               </div>
               <div>
                 <span className="text-xs font-bold" style={{ color }}>{turn.name}</span>
@@ -1084,13 +946,10 @@
                   <span className="text-[10px] font-bold text-yellow-400 ml-auto">{(turn.confidence * 100).toFixed(0)}%</span>
                 </div>
                 <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
-                  <div className="confidence-bar h-full rounded-full bg-gradient-to-r from-yellow-400 to-orange-500"
-                    style={{ width: `${turn.confidence * 100}%` }}></div>
+                  <div className="confidence-bar h-full rounded-full bg-gradient-to-r from-yellow-400 to-orange-500" style={{ width: `${turn.confidence * 100}%` }}></div>
                 </div>
                 {turn.prediction && (
-                  <div className="text-[10px] text-gray-500 mt-1">
-                    Next play call: <span className="text-white font-medium uppercase">{turn.prediction}</span>
-                  </div>
+                  <div className="text-[10px] text-gray-500 mt-1">Next play call: <span className="text-white font-medium uppercase">{turn.prediction}</span></div>
                 )}
               </div>
             )}
@@ -1098,14 +957,13 @@
         );
       }
 
-      // No commentary yet state
       if (!commentary && !loading) {
         return (
           <div className="space-y-4 animate-slide-up">
             <div className="glass rounded-xl p-8 text-center">
               <div className="flex justify-center mb-3 text-gray-600"><Mic size={32} /></div>
               <div className="text-sm text-gray-400">AI Commentary Engine</div>
-              <div className="text-xs text-gray-600 mt-1">Two unhinged commentators will argue about every play</div>
+              <div className="text-xs text-gray-600 mt-1">Unhinged commentators will argue about every play</div>
               <button onClick={fetchCommentary} className="mt-4 px-4 py-2 rounded-lg bg-yellow-400/20 text-yellow-400 text-xs font-bold hover:bg-yellow-400/30 transition-colors">
                 Generate Commentary
               </button>
@@ -1116,7 +974,6 @@
 
       return (
         <div className="space-y-4 animate-slide-up">
-          {/* Header */}
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2">
               <Mic size={14} className="text-yellow-400" />
@@ -1125,61 +982,36 @@
             <div className="flex items-center gap-2">
               {commentary?.status === 'live' && (
                 <span className="flex items-center gap-1 text-[9px] bg-red-500/20 text-red-400 px-2 py-0.5 rounded-full">
-                  <span className="live-dot w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>
-                  LIVE
+                  <span className="live-dot w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>LIVE
                 </span>
               )}
-              {commentary?.status === 'pre' && (
-                <span className="text-[9px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">PRE-GAME</span>
-              )}
-              {commentary?.status === 'stale' && (
-                <span className="text-[9px] bg-gray-500/20 text-gray-400 px-2 py-0.5 rounded-full">WAITING</span>
-              )}
-              <button onClick={() => setAutoRefresh(!autoRefresh)}
-                className={`text-[9px] px-2 py-0.5 rounded-full transition-colors ${autoRefresh ? 'bg-green-500/20 text-green-400' : 'bg-white/5 text-gray-600'}`}>
+              {commentary?.status === 'pre' && <span className="text-[9px] bg-blue-500/20 text-blue-400 px-2 py-0.5 rounded-full">PRE-GAME</span>}
+              <button onClick={() => setAutoRefresh(!autoRefresh)} className={`text-[9px] px-2 py-0.5 rounded-full transition-colors ${autoRefresh ? 'bg-green-500/20 text-green-400' : 'bg-white/5 text-gray-600'}`}>
                 {autoRefresh ? 'AUTO' : 'PAUSED'}
               </button>
-              <button onClick={fetchCommentary}
-                className="text-gray-600 hover:text-gray-400 transition-colors">
+              <button onClick={fetchCommentary} className="text-gray-600 hover:text-gray-400 transition-colors">
                 <RefreshCw size={13} className={loading ? 'animate-spin' : ''} />
               </button>
-              <button onClick={() => setStreamMode(true)}
-                className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-bold">
+              <button onClick={() => setStreamMode(true)} className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-bold">
                 <Maximize2 size={10} /> STREAM
               </button>
             </div>
           </div>
-
-          {/* Stream Mode Overlay */}
-          {streamMode && (
-            <StreamOverlay
-              commentary={commentary}
-              game={game}
-              onClose={() => setStreamMode(false)}
-            />
-          )}
-
-          {/* Play Context (live) */}
+          {streamMode && <StreamOverlay commentary={commentary} game={game} onClose={() => setStreamMode(false)} sessionId={sessionId} commentators={sessionCommentators} />}
           {commentary?.play && (
             <div className="glass rounded-xl p-3">
               <div className="flex items-center gap-2 flex-wrap">
-                <span className="text-[10px] font-bold text-yellow-400">
-                  Q{commentary.play.quarter} {commentary.play.clock}
-                </span>
+                <span className="text-[10px] font-bold text-yellow-400">Q{commentary.play.quarter} {commentary.play.clock}</span>
                 {commentary.play.mood && moodLabels[commentary.play.mood] && (
                   <span className={`text-[9px] px-1.5 py-0.5 rounded-full font-bold ${moodLabels[commentary.play.mood].bg} ${moodLabels[commentary.play.mood].color}`}>
                     {moodLabels[commentary.play.mood].label}
                   </span>
                 )}
-                <span className="text-[9px] bg-white/5 text-gray-500 px-1.5 py-0.5 rounded-full">
-                  {commentary.play.playType} / {commentary.play.result}
-                </span>
+                <span className="text-[9px] bg-white/5 text-gray-500 px-1.5 py-0.5 rounded-full">{commentary.play.playType} / {commentary.play.result}</span>
               </div>
               <p className="text-xs text-gray-400 mt-1.5 leading-relaxed">{commentary.play.description}</p>
             </div>
           )}
-
-          {/* Score Context */}
           {commentary?.score && (
             <div className="flex items-center justify-center gap-4 py-1">
               <div className="flex items-center gap-1.5">
@@ -1193,29 +1025,15 @@
               </div>
             </div>
           )}
-
-          {/* Current Commentary Bubbles */}
           {loading && !commentary && (
             <div className="glass rounded-xl p-6 text-center">
               <Loader2 size={24} className="animate-spin text-yellow-400 mx-auto mb-2" />
-              <div className="text-xs text-gray-500">Big Mike and Salty Steve are warming up...</div>
+              <div className="text-xs text-gray-500">{commentatorA.name} and {commentatorB.name} are warming up...</div>
             </div>
           )}
-
           {commentary?.turns?.length > 0 && (
-            <div className="space-y-2.5">
-              {commentary.turns.map((turn, i) => renderTurn(turn, i, commentary?.play?.mood))}
-            </div>
+            <div className="space-y-2.5">{commentary.turns.map((turn, i) => renderTurn(turn, i, commentary?.play?.mood))}</div>
           )}
-
-          {commentary?.status === 'no_llm' && (
-            <div className="glass rounded-xl p-4 text-center">
-              <div className="text-sm text-yellow-400 font-bold mb-1">No AI Model Connected</div>
-              <div className="text-xs text-gray-500">Set MODAL_LLAMA_URL or MODAL_MISTRAL_URL environment variable to enable AI commentary.</div>
-            </div>
-          )}
-
-          {/* Commentary History */}
           {history.length > 1 && (
             <div className="pt-2">
               <div className="flex items-center gap-2 mb-3">
@@ -1244,11 +1062,8 @@
               </div>
             </div>
           )}
-
-          {/* Footer */}
           <div className="text-center py-2 flex items-center justify-center gap-1 text-gray-700">
-            <Flame size={10} />
-            <span className="text-[9px]">Powered by Modal AI</span>
+            <Flame size={10} /><span className="text-[9px]">Powered by Modal AI</span>
           </div>
         </div>
       );
@@ -1260,20 +1075,16 @@
         return (
           <div className="glass rounded-xl p-8 text-center animate-slide-up">
             <div className="flex justify-center mb-3 text-gray-600"><Newspaper size={32} /></div>
-            <div className="text-sm text-gray-400">Loading latest NFL news...</div>
+            <div className="text-sm text-gray-400">Loading latest news...</div>
           </div>
         );
       }
-
       return (
         <div className="space-y-3 animate-slide-up">
           {news.map((article, i) => (
-            <a key={i} href={article.link} target="_blank" rel="noopener noreferrer"
-              className="glass-bright rounded-xl p-4 block card-hover">
+            <a key={i} href={article.link} target="_blank" rel="noopener noreferrer" className="glass-bright rounded-xl p-4 block card-hover">
               <div className="flex gap-3">
-                {article.image && (
-                  <img src={article.image} className="w-20 h-14 rounded-lg object-cover flex-shrink-0 bg-white/5" onError={(e) => e.target.style.display='none'} />
-                )}
+                {article.image && <img src={article.image} className="w-20 h-14 rounded-lg object-cover flex-shrink-0 bg-white/5" onError={(e) => e.target.style.display='none'} />}
                 <div className="flex-1 min-w-0">
                   <h3 className="text-sm font-bold text-white leading-snug mb-1 line-clamp-2">{article.headline}</h3>
                   <p className="text-[10px] text-gray-500 line-clamp-2">{article.description}</p>
@@ -1289,30 +1100,36 @@
             </a>
           ))}
           <div className="text-center py-2 flex items-center justify-center gap-1 text-gray-600">
-            <Radio size={10} />
-            <span className="text-[9px]">Powered by ESPN</span>
+            <Radio size={10} /><span className="text-[9px]">Powered by ESPN</span>
           </div>
         </div>
       );
     }
 
-    // ─── MAIN APP ───
-    function App() {
+    // ─── SESSION VIEW (full tracker for one session) ───
+    function SessionView({ sessionId }) {
       const [activeTab, setActiveTab] = useState('scores');
       const [game, setGame] = useState(null);
       const [summary, setSummary] = useState(null);
       const [news, setNews] = useState(null);
+      const [sessionMeta, setSessionMeta] = useState(null);
       const [loading, setLoading] = useState(true);
       const [error, setError] = useState(null);
       const [lastUpdate, setLastUpdate] = useState(null);
       const pollRef = useRef(null);
 
+      const apiBase = sessionId ? `/api/sessions/${sessionId}` : '/api';
+
       const fetchAll = useCallback(async () => {
         try {
+          const urls = sessionId
+            ? [`${apiBase}/game`, `${apiBase}/summary`, `${apiBase}/news`]
+            : ['/api/game', '/api/summary', '/api/news'];
+
           const [gameRes, summaryRes, newsRes] = await Promise.all([
-            fetch('/api/game').then(r => r.json()),
-            fetch('/api/summary').then(r => r.json()).catch(() => null),
-            fetch('/api/news').then(r => r.json()).catch(() => []),
+            fetch(urls[0]).then(r => r.json()),
+            fetch(urls[1]).then(r => r.json()).catch(() => null),
+            fetch(urls[2]).then(r => r.json()).catch(() => []),
           ]);
           setGame(gameRes);
           if (summaryRes) setSummary(summaryRes);
@@ -1321,11 +1138,20 @@
           setLoading(false);
           setError(null);
         } catch (err) {
-          console.error('Fetch error:', err);
           setError(err.message);
           setLoading(false);
         }
-      }, []);
+      }, [sessionId, apiBase]);
+
+      // Fetch session metadata
+      useEffect(() => {
+        if (sessionId) {
+          fetch('/api/sessions').then(r => r.json()).then(sessions => {
+            const s = sessions.find(s => s.id === sessionId);
+            if (s) setSessionMeta(s);
+          }).catch(() => {});
+        }
+      }, [sessionId]);
 
       useEffect(() => {
         fetchAll();
@@ -1334,13 +1160,14 @@
         return () => clearInterval(pollRef.current);
       }, [fetchAll, game?.status?.state]);
 
+      const sport = sessionMeta?.sport || 'football';
+      const visibleTabs = getVisibleTabs(sport);
+
       if (loading) {
         return (
           <div className="min-h-screen flex items-center justify-center">
             <div className="text-center">
-              <div className="flex justify-center mb-4 animate-bounce-subtle text-yellow-400">
-                <Loader2 size={40} className="animate-spin" />
-              </div>
+              <Loader2 size={40} className="animate-spin text-yellow-400 mx-auto mb-4" />
               <div className="text-lg font-bold text-gradient mb-2">SUSHI</div>
               <div className="text-sm text-gray-500">Connecting to ESPN...</div>
             </div>
@@ -1352,52 +1179,47 @@
 
       return (
         <div className="min-h-screen pb-20">
-          {/* Header */}
           <header className="sticky top-0 z-50 bg-dark-900/80 backdrop-blur-xl border-b border-white/5">
             <div className="max-w-lg mx-auto px-4 py-3 flex items-center justify-between">
               <div className="flex items-center gap-2.5">
-                <Trophy size={20} className="text-yellow-400" />
+                <button onClick={() => navigate('#/')} className="text-gray-400 hover:text-white transition-colors mr-1">
+                  <ArrowLeft size={18} />
+                </button>
+                <div className="text-xl">{SPORT_ICONS[sport] || '\uD83C\uDFC6'}</div>
                 <div>
                   <h1 className="text-sm font-black tracking-tight text-gradient">SUSHI</h1>
-                  <p className="text-[10px] text-gray-500 -mt-0.5">Super Bowl Live Tracker</p>
+                  <p className="text-[10px] text-gray-500 -mt-0.5">
+                    {sessionMeta?.gameName || game?.name || 'Live Sports'}
+                  </p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
                 {isLive && (
                   <span className="flex items-center gap-1.5 text-xs bg-red-500/20 text-red-400 px-2.5 py-1 rounded-full">
-                    <span className="live-dot w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>
-                    LIVE
-                  </span>
-                )}
-                {error && (
-                  <span className="flex items-center gap-1 text-[9px] text-red-400">
-                    <WifiOff size={10} /> offline
+                    <span className="live-dot w-1.5 h-1.5 rounded-full bg-red-500 inline-block"></span>LIVE
                   </span>
                 )}
                 {lastUpdate && !error && (
                   <span className="text-[9px] text-gray-600 flex items-center gap-1">
-                    <RefreshCw size={9} />
-                    {lastUpdate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    <RefreshCw size={9} />{lastUpdate.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
                   </span>
                 )}
               </div>
             </div>
           </header>
 
-          {/* Content */}
           <main className="max-w-lg mx-auto px-4 py-4">
-            {activeTab === 'scores' && <ScoresTab game={game} summary={summary} />}
-            {activeTab === 'commentary' && <CommentaryTab game={game} />}
+            {activeTab === 'scores' && <ScoresTab game={game} summary={summary} sport={sport} />}
+            {activeTab === 'commentary' && <CommentaryTab game={game} sessionId={sessionId} commentators={sessionMeta?.commentators} />}
             {activeTab === 'stats' && <StatsTab summary={summary} game={game} />}
             {activeTab === 'plays' && <PlaysTab summary={summary} game={game} />}
             {activeTab === 'odds' && <OddsTab summary={summary} game={game} />}
             {activeTab === 'news' && <NewsTab news={news} />}
           </main>
 
-          {/* Bottom Navigation */}
           <nav className="fixed bottom-0 left-0 right-0 z-50 bg-dark-900/90 backdrop-blur-xl border-t border-white/5">
             <div className="max-w-lg mx-auto flex">
-              {tabDefs.map(tab => {
+              {visibleTabs.map(tab => {
                 const TabIcon = tab.Icon;
                 const active = activeTab === tab.id;
                 return (
@@ -1413,6 +1235,150 @@
           </nav>
         </div>
       );
+    }
+
+    // ─── LANDING PAGE ───
+    function LandingPage() {
+      const [sessions, setSessions] = useState([]);
+      const [loading, setLoading] = useState(true);
+
+      useEffect(() => {
+        fetch('/api/sessions')
+          .then(r => r.json())
+          .then(data => { setSessions(Array.isArray(data) ? data : []); setLoading(false); })
+          .catch(() => setLoading(false));
+
+        const interval = setInterval(() => {
+          fetch('/api/sessions').then(r => r.json()).then(data => {
+            if (Array.isArray(data)) setSessions(data);
+          }).catch(() => {});
+        }, 30000);
+        return () => clearInterval(interval);
+      }, []);
+
+      if (loading) {
+        return (
+          <div className="min-h-screen flex items-center justify-center">
+            <div className="text-center">
+              <Loader2 size={40} className="animate-spin text-yellow-400 mx-auto mb-4" />
+              <div className="text-lg font-bold text-gradient mb-2">SUSHI</div>
+              <div className="text-sm text-gray-500">Loading sessions...</div>
+            </div>
+          </div>
+        );
+      }
+
+      return (
+        <div className="min-h-screen">
+          <header className="sticky top-0 z-50 bg-dark-900/80 backdrop-blur-xl border-b border-white/5">
+            <div className="max-w-2xl mx-auto px-4 py-4 flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <Trophy size={24} className="text-yellow-400" />
+                <div>
+                  <h1 className="text-lg font-black tracking-tight text-gradient">SUSHI</h1>
+                  <p className="text-[10px] text-gray-500 -mt-0.5">Live Sports Commentary</p>
+                </div>
+              </div>
+              <a href="/admin" className="flex items-center gap-1 text-[10px] text-gray-600 hover:text-gray-400 transition-colors">
+                <Settings size={12} /> Admin
+              </a>
+            </div>
+          </header>
+
+          <main className="max-w-2xl mx-auto px-4 py-6">
+            {sessions.length === 0 ? (
+              <div className="glass rounded-2xl p-12 text-center animate-fade-in">
+                <div className="text-4xl mb-4">{'\uD83C\uDFC6'}</div>
+                <div className="text-lg font-bold text-white mb-2">No Active Sessions</div>
+                <div className="text-sm text-gray-500 mb-6">Create a session from the admin panel to get started</div>
+                <a href="/admin" className="inline-block px-6 py-2.5 rounded-xl bg-yellow-400/20 text-yellow-400 text-sm font-bold hover:bg-yellow-400/30 transition-colors">
+                  Open Admin Panel
+                </a>
+              </div>
+            ) : (
+              <div className="grid gap-4 sm:grid-cols-2">
+                {sessions.map(session => {
+                  const sportIcon = SPORT_ICONS[session.sport] || '\uD83C\uDFC6';
+                  const homeColor = session.homeTeam?.color || '#333';
+                  const awayColor = session.awayTeam?.color || '#333';
+                  const isActive = session.status === 'active';
+
+                  return (
+                    <button key={session.id} onClick={() => navigate(`#/session/${session.id}`)}
+                      className="glass-bright rounded-2xl overflow-hidden text-left card-hover animate-fade-in w-full">
+                      <div className="p-4">
+                        <div className="flex items-center justify-between mb-3">
+                          <div className="flex items-center gap-2">
+                            <span className="text-xl">{sportIcon}</span>
+                            <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">{session.league?.toUpperCase()}</span>
+                          </div>
+                          <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${isActive ? 'bg-green-500/20 text-green-400' : 'bg-yellow-500/20 text-yellow-400'}`}>
+                            {session.status?.toUpperCase()}
+                          </span>
+                        </div>
+
+                        <div className="flex items-center justify-between gap-3">
+                          <div className="flex items-center gap-2 flex-1 min-w-0">
+                            {session.awayTeam?.logo && <img src={session.awayTeam.logo} className="w-8 h-8 object-contain" onError={e => e.target.style.display='none'} />}
+                            <span className="text-sm font-bold truncate" style={{color: awayColor}}>{session.awayTeam?.abbreviation || 'AWY'}</span>
+                          </div>
+                          <span className="text-xs text-gray-600 font-medium">vs</span>
+                          <div className="flex items-center gap-2 flex-1 min-w-0 justify-end">
+                            <span className="text-sm font-bold truncate" style={{color: homeColor}}>{session.homeTeam?.abbreviation || 'HME'}</span>
+                            {session.homeTeam?.logo && <img src={session.homeTeam.logo} className="w-8 h-8 object-contain" onError={e => e.target.style.display='none'} />}
+                          </div>
+                        </div>
+
+                        {session.gameName && (
+                          <div className="text-[10px] text-gray-500 mt-2 text-center truncate">{session.gameName}</div>
+                        )}
+
+                        {session.commentators?.length > 0 && (
+                          <div className="flex items-center justify-center gap-2 mt-2">
+                            {session.commentators.map(c => (
+                              <span key={c.id} className="text-[9px] bg-white/5 text-gray-500 px-1.5 py-0.5 rounded-full">{c.name}</span>
+                            ))}
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="flex border-t border-white/5">
+                        <div className="flex-1 py-1.5 text-center" style={{background: `${awayColor}44`}}>
+                          <span className="text-[10px] font-bold text-white/80">{session.awayTeam?.name || 'Away'}</span>
+                        </div>
+                        <div className="flex-1 py-1.5 text-center" style={{background: `${homeColor}44`}}>
+                          <span className="text-[10px] font-bold text-white/80">{session.homeTeam?.name || 'Home'}</span>
+                        </div>
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </main>
+        </div>
+      );
+    }
+
+    // ─── MAIN APP WITH HASH ROUTING ───
+    function App() {
+      const route = useHashRoute();
+
+      // Parse route
+      const sessionMatch = route.match(/^#\/session\/(.+)$/);
+
+      if (sessionMatch) {
+        return <SessionView sessionId={sessionMatch[1]} />;
+      }
+
+      // Default / no sessions: if hash is empty or #/, check for sessions
+      // If no sessions exist and no hash routing, fall back to legacy single-game view
+      if (route === '#/' || route === '' || route === '#') {
+        return <LandingPage />;
+      }
+
+      // Fallback
+      return <LandingPage />;
     }
 
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);

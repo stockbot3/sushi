@@ -1,20 +1,35 @@
 const express = require('express');
 const cors = require('cors');
 const path = require('path');
+const crypto = require('crypto');
+const bcrypt = require('bcryptjs');
+const admin = require('firebase-admin');
 
 const app = express();
 const PORT = process.env.PORT || 3007;
 
+// ─── FIREBASE INIT ───
+let firebaseConfig = { projectId: 'akan-2ed41' };
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+  try {
+    const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    admin.initializeApp({ credential: admin.credential.cert(sa), projectId: 'akan-2ed41' });
+  } catch (e) {
+    console.error('Failed to parse FIREBASE_SERVICE_ACCOUNT, using default:', e.message);
+    admin.initializeApp(firebaseConfig);
+  }
+} else {
+  admin.initializeApp(firebaseConfig);
+}
+const db = admin.firestore();
+
 // ─── MODAL LLM ENDPOINT ───
 const MODAL_MISTRAL_URL = process.env.MODAL_MISTRAL_URL || 'https://mousears1090--claudeapps-mistral-mistralmodel-chat.modal.run';
 
-// Call Modal LLM endpoint — handles 303 redirect pattern
 async function callModalLLM(url, body, timeoutMs = 300000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeoutMs);
-
   try {
-    // POST with redirect: manual to catch 303
     const res = await fetch(url, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -22,37 +37,18 @@ async function callModalLLM(url, body, timeoutMs = 300000) {
       redirect: 'manual',
       signal: controller.signal,
     });
-
-    // Direct response — return it
-    if (res.ok) {
-      clearTimeout(timer);
-      return await res.json();
-    }
-
-    // 303 redirect — poll the result URL
+    if (res.ok) { clearTimeout(timer); return await res.json(); }
     if (res.status === 303) {
       const location = res.headers.get('location');
       if (!location) throw new Error('Modal 303 without Location header');
       console.log('[Modal] Got 303, polling result URL...');
-
-      // Poll — Modal returns 303 while still processing, 200 when done
       let pollUrl = location;
       for (let i = 0; i < 90; i++) {
         await new Promise(r => setTimeout(r, 2000));
         try {
           const poll = await fetch(pollUrl, { redirect: 'manual', signal: controller.signal });
-          // 303 = still processing, update pollUrl in case it changes
-          if (poll.status === 303) {
-            const newLoc = poll.headers.get('location');
-            if (newLoc) pollUrl = newLoc;
-            console.log(`[Modal] Still processing (attempt ${i+1})...`);
-            continue;
-          }
-          // 202 = still processing (alternative pattern)
-          if (poll.status === 202) {
-            console.log(`[Modal] 202 processing (attempt ${i+1})...`);
-            continue;
-          }
+          if (poll.status === 303) { const nl = poll.headers.get('location'); if (nl) pollUrl = nl; continue; }
+          if (poll.status === 202) continue;
           if (poll.ok) {
             clearTimeout(timer);
             const ct = poll.headers.get('content-type') || '';
@@ -60,50 +56,170 @@ async function callModalLLM(url, body, timeoutMs = 300000) {
             const txt = await poll.text();
             try { return JSON.parse(txt); } catch { return { choices: [{ message: { role: 'assistant', content: txt } }] }; }
           }
-          console.log(`[Modal] Poll status ${poll.status}, retrying...`);
-        } catch (pollErr) {
-          if (pollErr.name === 'AbortError') throw pollErr;
-          console.log(`[Modal] Poll error: ${pollErr.message}, retrying...`);
-        }
+        } catch (pollErr) { if (pollErr.name === 'AbortError') throw pollErr; }
       }
       throw new Error('Modal LLM timed out after polling');
     }
-
     const errBody = await res.text();
     throw new Error(`Modal returned ${res.status}: ${errBody.slice(0, 300)}`);
-
-  } finally {
-    clearTimeout(timer);
-  }
+  } finally { clearTimeout(timer); }
 }
 
 app.use(cors());
 app.use(express.json());
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── ESPN API CONFIG ───
-// Super Bowl LX: Seahawks vs Patriots — Event ID 401772988
-const ESPN_SCOREBOARD = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=3';
-const ESPN_SUMMARY = (id) => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${id}`;
-const ESPN_ROSTER = (teamId) => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/${teamId}/roster`;
-const ESPN_TEAM = (teamId) => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/${teamId}`;
-const ESPN_NEWS = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=15';
+// ─── ADMIN AUTH ───
+const adminTokens = new Set();
+
+async function getAdminDoc() {
+  const doc = await db.collection('config').doc('admin').get();
+  return doc.exists ? doc.data() : null;
+}
+
+async function setAdminPassword(password) {
+  const hash = await bcrypt.hash(password, 10);
+  await db.collection('config').doc('admin').set({ passwordHash: hash, updatedAt: new Date().toISOString() });
+  return hash;
+}
+
+function requireAdmin(req, res, next) {
+  const auth = req.headers.authorization || '';
+  const token = auth.replace(/^Bearer\s+/i, '');
+  if (!token || !adminTokens.has(token)) {
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
+  next();
+}
+
+// Admin login
+app.post('/api/admin/login', async (req, res) => {
+  try {
+    const { password } = req.body;
+    if (!password) return res.status(400).json({ error: 'Password required' });
+
+    let adminData = await getAdminDoc();
+
+    // Bootstrap: if no admin doc, first login sets the password
+    if (!adminData) {
+      const envPw = process.env.ADMIN_PASSWORD;
+      if (envPw) {
+        await setAdminPassword(envPw);
+        adminData = await getAdminDoc();
+      } else {
+        // First login sets the password
+        await setAdminPassword(password);
+        adminData = await getAdminDoc();
+      }
+    }
+
+    const valid = await bcrypt.compare(password, adminData.passwordHash);
+    if (!valid) return res.status(401).json({ error: 'Invalid password' });
+
+    const token = crypto.randomBytes(32).toString('hex');
+    adminTokens.add(token);
+    res.json({ token });
+  } catch (err) {
+    console.error('Admin login error:', err.message);
+    res.status(500).json({ error: 'Login failed' });
+  }
+});
+
+// Change password
+app.post('/api/admin/change-password', requireAdmin, async (req, res) => {
+  try {
+    const { current, newPassword } = req.body;
+    if (!current || !newPassword) return res.status(400).json({ error: 'Both current and newPassword required' });
+
+    const adminData = await getAdminDoc();
+    if (!adminData) return res.status(500).json({ error: 'No admin configured' });
+
+    const valid = await bcrypt.compare(current, adminData.passwordHash);
+    if (!valid) return res.status(401).json({ error: 'Current password incorrect' });
+
+    await setAdminPassword(newPassword);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to change password' });
+  }
+});
+
+// Verify token
+app.get('/api/admin/verify', requireAdmin, (req, res) => {
+  res.json({ ok: true });
+});
+
+// Serve admin panel
+app.get('/admin', (req, res) => {
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+// ─── SPORT CONFIG ───
+const SPORTS_CONFIG = {
+  football: {
+    name: 'Football',
+    leagues: {
+      nfl: { name: 'NFL', espnSlug: 'football/nfl' },
+      'college-football': { name: 'College Football', espnSlug: 'football/college-football' },
+    }
+  },
+  basketball: {
+    name: 'Basketball',
+    leagues: {
+      nba: { name: 'NBA', espnSlug: 'basketball/nba' },
+      ncaam: { name: 'NCAAM', espnSlug: 'basketball/mens-college-basketball' },
+    }
+  },
+  baseball: {
+    name: 'Baseball',
+    leagues: {
+      mlb: { name: 'MLB', espnSlug: 'baseball/mlb' },
+    }
+  },
+  hockey: {
+    name: 'Hockey',
+    leagues: {
+      nhl: { name: 'NHL', espnSlug: 'hockey/nhl' },
+    }
+  },
+  soccer: {
+    name: 'Soccer',
+    leagues: {
+      epl: { name: 'Premier League', espnSlug: 'soccer/eng.1' },
+      mls: { name: 'MLS', espnSlug: 'soccer/usa.1' },
+    }
+  },
+};
+
+// ─── PARAMETERIZED ESPN URLS ───
+function espnScoreboard(espnSlug, date) {
+  let url = `https://site.api.espn.com/apis/site/v2/sports/${espnSlug}/scoreboard`;
+  if (date) url += `?dates=${date}`;
+  return url;
+}
+function espnSummary(espnSlug, eventId) {
+  return `https://site.api.espn.com/apis/site/v2/sports/${espnSlug}/summary?event=${eventId}`;
+}
+function espnRoster(espnSlug, teamId) {
+  return `https://site.api.espn.com/apis/site/v2/sports/${espnSlug}/teams/${teamId}/roster`;
+}
+function espnNews(espnSlug) {
+  return `https://site.api.espn.com/apis/site/v2/sports/${espnSlug}/news?limit=15`;
+}
 
 // ─── CACHE ───
 const cache = {};
 const CACHE_TTL = {
-  scoreboard: 8 * 1000,    // 8s during live game
-  summary: 8 * 1000,       // 8s — need fresh play data
-  roster: 5 * 60 * 1000,   // 5 min (rarely changes)
-  team: 10 * 60 * 1000,    // 10 min
-  news: 2 * 60 * 1000,     // 2 min
+  scoreboard: 8 * 1000,
+  summary: 8 * 1000,
+  roster: 5 * 60 * 1000,
+  team: 10 * 60 * 1000,
+  news: 2 * 60 * 1000,
 };
 
 async function fetchCached(key, url, ttl) {
   const now = Date.now();
-  if (cache[key] && (now - cache[key].ts) < ttl) {
-    return cache[key].data;
-  }
+  if (cache[key] && (now - cache[key].ts) < ttl) return cache[key].data;
   try {
     const res = await fetch(url);
     if (!res.ok) throw new Error(`ESPN API returned ${res.status}`);
@@ -112,50 +228,84 @@ async function fetchCached(key, url, ttl) {
     return data;
   } catch (err) {
     console.error(`Fetch error for ${key}:`, err.message);
-    if (cache[key]) return cache[key].data; // serve stale on error
+    if (cache[key]) return cache[key].data;
     throw err;
   }
 }
 
-// ─── FIND SUPER BOWL EVENT ───
-let superBowlEventId = null;
-let superBowlTeams = null; // { home: { id, abbr, ... }, away: { ... } }
+// ─── PERSONALITY PRESETS ───
+const PERSONALITY_PRESETS = {
+  barkley: {
+    name: 'Sir Charles',
+    prompt: `Loud, bold, wrong but confident. Uses "TURRIBLE" frequently. Makes absurd analogies comparing plays to eating churros or playing golf. Declares games over in the 2nd quarter. Claims he always knew what would happen. Uses "Let me tell you something" as a catchphrase.`
+  },
+  skip: {
+    name: 'Hot Take Skip',
+    prompt: `Ultimate contrarian. Dismissive of obvious greatness. Believes in conspiracy theories about refs. Says "I've said this for YEARS" about things he never said. Compares every QB to his favorites. Uses "UNDISPUTED" and "my dear friend" frequently.`
+  },
+  snoop: {
+    name: 'Uncle Snoop',
+    prompt: `Laid-back, uses slang and music/food metaphors. Says "fo shizzle", "izzle" variations, and "cuz". Compares plays to cooking or rap battles. Surprisingly drops deep wisdom between jokes. Calls players "nephew" and "young blood". References the West Coast.`
+  },
+  romo: {
+    name: 'Stats Guru Tony',
+    prompt: `Analytical and excitable. Predicts plays before they happen with "HERE IT COMES!". Obsessed with formations, pre-snap reads, and coverage schemes. Gets genuinely giddy about good play design. Uses "Oh man!" and "You see that?!" frequently. Speaks fast when excited.`
+  },
+};
 
-async function findSuperBowl() {
-  const data = await fetchCached('scoreboard', ESPN_SCOREBOARD, CACHE_TTL.scoreboard);
-  // Look through postseason events for the Super Bowl
-  const events = data.events || [];
-  // The Super Bowl is typically the last game of the postseason, or we look for "Super Bowl" in the name
-  let sbEvent = events.find(e =>
-    (e.name || '').toLowerCase().includes('super bowl') ||
-    (e.shortName || '').toLowerCase().includes('super bowl') ||
-    (e.competitions?.[0]?.notes?.[0]?.headline || '').toLowerCase().includes('super bowl')
-  );
-  // If not found by name, check all events and pick the championship (week 5 of postseason)
-  if (!sbEvent && events.length > 0) {
-    // Fallback: just return the latest/most important postseason game
-    sbEvent = events[events.length - 1];
-  }
-  if (sbEvent) {
-    superBowlEventId = sbEvent.id;
-    const comp = sbEvent.competitions?.[0];
-    if (comp) {
-      const homeTeam = comp.competitors?.find(c => c.homeAway === 'home');
-      const awayTeam = comp.competitors?.find(c => c.homeAway === 'away');
-      superBowlTeams = {
-        home: { id: homeTeam?.team?.id, abbr: homeTeam?.team?.abbreviation },
-        away: { id: awayTeam?.team?.id, abbr: awayTeam?.team?.abbreviation }
+// ─── SPORT-SPECIFIC PROMPT CONTEXT ───
+function getSportContext(sport) {
+  switch (sport) {
+    case 'football':
+      return {
+        periodName: 'Quarter',
+        possessionTerm: 'has the ball',
+        scoringTerms: 'touchdown, field goal, safety, two-point conversion',
+        playTerms: 'downs, yards, passing, rushing, sacks, turnovers',
+        promptFrame: `This is a football game with downs and yards. Yards gained = GOOD for offense, BAD for defense. Turnovers (interception/fumble) = BAD for offense. Touchdowns = 6pts + extra point, Field Goals = 3pts.`,
       };
-    }
+    case 'basketball':
+      return {
+        periodName: 'Quarter',
+        possessionTerm: 'has possession',
+        scoringTerms: 'three-pointer, dunk, layup, free throw',
+        playTerms: 'shooting, rebounds, assists, steals, blocks, turnovers',
+        promptFrame: `This is a basketball game. Points come from 2-point shots, 3-pointers, and free throws. Momentum swings are crucial. Runs (scoring streaks) shift games.`,
+      };
+    case 'baseball':
+      return {
+        periodName: 'Inning',
+        possessionTerm: 'is at bat',
+        scoringTerms: 'home run, RBI, run scored',
+        playTerms: 'at-bats, hits, strikeouts, walks, errors, pitching',
+        promptFrame: `This is a baseball game. Runs score when batters reach home. Outs accumulate to 3 per half-inning. Hits, walks, and errors put runners on base.`,
+      };
+    case 'hockey':
+      return {
+        periodName: 'Period',
+        possessionTerm: 'has the puck',
+        scoringTerms: 'goal, power play goal, shorthanded goal',
+        playTerms: 'shots on goal, saves, power plays, penalties, faceoffs',
+        promptFrame: `This is a hockey game. Goals are rare and exciting. Power plays (opponent penalized) create scoring opportunities. Saves by goalies are crucial.`,
+      };
+    case 'soccer':
+      return {
+        periodName: 'Half',
+        possessionTerm: 'has possession',
+        scoringTerms: 'goal, penalty kick, free kick goal',
+        playTerms: 'possession, shots, shots on target, corners, fouls, cards',
+        promptFrame: `This is a soccer/football match. Goals are precious and rare. Possession percentage indicates control. Yellow/red cards affect team strength.`,
+      };
+    default:
+      return {
+        periodName: 'Period',
+        possessionTerm: 'has the ball',
+        scoringTerms: 'score',
+        playTerms: 'plays',
+        promptFrame: 'This is a live sporting event.',
+      };
   }
-  return sbEvent;
 }
-
-// Initialize on startup
-findSuperBowl().then(sb => {
-  if (sb) console.log(`Found Super Bowl: ${sb.name} (Event ID: ${sb.id})`);
-  else console.log('No Super Bowl event found in current postseason scoreboard');
-}).catch(err => console.error('Init error:', err.message));
 
 // ─── PARSE HELPERS ───
 
@@ -167,7 +317,6 @@ function parseScoreboard(data) {
     const situation = comp.situation || {};
     const odds = comp.odds?.[0] || {};
     const broadcast = comp.broadcasts?.[0]?.names?.[0] || '';
-
     return {
       id: event.id,
       name: event.name,
@@ -175,58 +324,38 @@ function parseScoreboard(data) {
       date: event.date,
       note: comp.notes?.[0]?.headline || '',
       status: {
-        state: comp.status?.type?.state,         // pre, in, post
-        detail: comp.status?.type?.detail,        // "2/9 - 6:30 PM ET" or "Final" or "Q2 5:30"
+        state: comp.status?.type?.state,
+        detail: comp.status?.type?.detail,
         shortDetail: comp.status?.type?.shortDetail,
         clock: comp.status?.displayClock,
         period: comp.status?.period,
         completed: comp.status?.type?.completed,
       },
-      venue: {
-        name: comp.venue?.fullName,
-        city: comp.venue?.address?.city,
-        state: comp.venue?.address?.state,
-      },
+      venue: { name: comp.venue?.fullName, city: comp.venue?.address?.city, state: comp.venue?.address?.state },
       broadcast,
       home: {
-        id: homeComp.team?.id,
-        name: homeComp.team?.displayName,
-        abbreviation: homeComp.team?.abbreviation,
-        shortName: homeComp.team?.shortDisplayName,
-        logo: homeComp.team?.logo,
+        id: homeComp.team?.id, name: homeComp.team?.displayName, abbreviation: homeComp.team?.abbreviation,
+        shortName: homeComp.team?.shortDisplayName, logo: homeComp.team?.logo,
         color: homeComp.team?.color ? `#${homeComp.team.color}` : null,
         altColor: homeComp.team?.alternateColor ? `#${homeComp.team.alternateColor}` : null,
-        score: parseInt(homeComp.score) || 0,
-        record: homeComp.records?.[0]?.summary || '',
+        score: parseInt(homeComp.score) || 0, record: homeComp.records?.[0]?.summary || '',
         linescores: (homeComp.linescores || []).map(l => l.value),
       },
       away: {
-        id: awayComp.team?.id,
-        name: awayComp.team?.displayName,
-        abbreviation: awayComp.team?.abbreviation,
-        shortName: awayComp.team?.shortDisplayName,
-        logo: awayComp.team?.logo,
+        id: awayComp.team?.id, name: awayComp.team?.displayName, abbreviation: awayComp.team?.abbreviation,
+        shortName: awayComp.team?.shortDisplayName, logo: awayComp.team?.logo,
         color: awayComp.team?.color ? `#${awayComp.team.color}` : null,
         altColor: awayComp.team?.alternateColor ? `#${awayComp.team.alternateColor}` : null,
-        score: parseInt(awayComp.score) || 0,
-        record: awayComp.records?.[0]?.summary || '',
+        score: parseInt(awayComp.score) || 0, record: awayComp.records?.[0]?.summary || '',
         linescores: (awayComp.linescores || []).map(l => l.value),
       },
       situation: {
-        possession: situation.possession,
-        down: situation.down,
-        distance: situation.distance,
-        yardLine: situation.yardLine,
-        downDistanceText: situation.downDistanceText || '',
-        possessionText: situation.possessionText || '',
-        isRedZone: situation.isRedZone || false,
+        possession: situation.possession, down: situation.down, distance: situation.distance,
+        yardLine: situation.yardLine, downDistanceText: situation.downDistanceText || '',
+        possessionText: situation.possessionText || '', isRedZone: situation.isRedZone || false,
         lastPlay: situation.lastPlay?.text || '',
       },
-      odds: {
-        spread: odds.details || '',
-        overUnder: odds.overUnder || null,
-        provider: odds.provider?.name || '',
-      },
+      odds: { spread: odds.details || '', overUnder: odds.overUnder || null, provider: odds.provider?.name || '' },
     };
   });
   return events;
@@ -234,7 +363,6 @@ function parseScoreboard(data) {
 
 function parseSummary(data) {
   const header = data.header || {};
-  const comp = header.competitions?.[0] || {};
   const boxscore = data.boxscore || {};
   const drives = data.drives || {};
   const scoringPlays = data.scoringPlays || [];
@@ -246,159 +374,93 @@ function parseSummary(data) {
   const gameInfo = data.gameInfo || {};
   const news = data.news?.articles || [];
 
-  // Parse box score team stats
   const teamStats = (boxscore.teams || []).map(t => ({
-    team: t.team?.displayName,
-    abbreviation: t.team?.abbreviation,
-    logo: t.team?.logo,
-    stats: (t.statistics || []).map(s => ({
-      name: s.name,
-      displayValue: s.displayValue,
-      label: s.label,
-    })),
+    team: t.team?.displayName, abbreviation: t.team?.abbreviation, logo: t.team?.logo,
+    stats: (t.statistics || []).map(s => ({ name: s.name, displayValue: s.displayValue, label: s.label })),
   }));
 
-  // Parse player stats from box score
   const playerStats = (boxscore.players || []).map(teamPlayers => ({
-    team: teamPlayers.team?.displayName,
-    abbreviation: teamPlayers.team?.abbreviation,
+    team: teamPlayers.team?.displayName, abbreviation: teamPlayers.team?.abbreviation,
     categories: (teamPlayers.statistics || []).map(cat => ({
-      name: cat.name,
-      labels: cat.labels || [],
+      name: cat.name, labels: cat.labels || [],
       athletes: (cat.athletes || []).map(a => ({
-        name: a.athlete?.displayName,
-        jersey: a.athlete?.jersey,
-        position: a.athlete?.position?.abbreviation,
-        headshot: a.athlete?.headshot?.href,
-        stats: a.stats || [],
+        name: a.athlete?.displayName, jersey: a.athlete?.jersey,
+        position: a.athlete?.position?.abbreviation, headshot: a.athlete?.headshot?.href, stats: a.stats || [],
       })),
     })),
   }));
 
-  // Parse scoring plays
   const scoring = scoringPlays.map(sp => ({
-    text: sp.text,
-    period: sp.period?.number,
-    clock: sp.clock?.displayValue,
-    team: sp.team?.displayName,
-    abbreviation: sp.team?.abbreviation,
-    homeScore: sp.homeScore,
-    awayScore: sp.awayScore,
-    type: sp.type?.text,
+    text: sp.text, period: sp.period?.number, clock: sp.clock?.displayValue,
+    team: sp.team?.displayName, abbreviation: sp.team?.abbreviation,
+    homeScore: sp.homeScore, awayScore: sp.awayScore, type: sp.type?.text,
   }));
 
-  // Parse drives/play-by-play
   const allDrives = (drives.previous || []).map(d => ({
-    description: d.description,
-    result: d.displayResult,
-    team: d.team?.displayName,
-    abbreviation: d.team?.abbreviation,
-    yards: d.yards,
-    plays: d.offensivePlays,
+    description: d.description, result: d.displayResult,
+    team: d.team?.displayName, abbreviation: d.team?.abbreviation,
+    yards: d.yards, plays: d.offensivePlays,
     timeOfPossession: d.timeOfPossession?.displayValue,
     start: { quarter: d.start?.period?.number, clock: d.start?.clock?.displayValue, yardLine: d.start?.yardLine },
     end: { quarter: d.end?.period?.number, clock: d.end?.clock?.displayValue },
     playList: (d.plays || []).map(p => ({
-      text: p.text,
-      type: p.type?.text,
-      clock: p.clock?.displayValue,
-      period: p.period?.number,
-      down: p.start?.down,
-      distance: p.start?.distance,
-      yardLine: p.start?.yardLine,
-      yardsGained: p.statYardage,
-      scoringPlay: p.scoringPlay || false,
+      text: p.text, type: p.type?.text, clock: p.clock?.displayValue, period: p.period?.number,
+      down: p.start?.down, distance: p.start?.distance, yardLine: p.start?.yardLine,
+      yardsGained: p.statYardage, scoringPlay: p.scoringPlay || false,
     })),
   }));
 
-  // Parse odds/pickcenter
   const odds = pickcenter.map(p => ({
-    provider: p.provider?.name,
-    spread: p.details,
-    overUnder: p.overUnder,
-    homeMoneyline: p.homeTeamOdds?.moneyLine,
-    awayMoneyline: p.awayTeamOdds?.moneyLine,
-    homeSpreadOdds: p.homeTeamOdds?.spreadOdds,
-    awaySpreadOdds: p.awayTeamOdds?.spreadOdds,
-    overOdds: p.overOdds,
-    underOdds: p.underOdds,
-    homeFavorite: p.homeTeamOdds?.favorite || false,
-    awayFavorite: p.awayTeamOdds?.favorite || false,
-    // Opening vs current lines
-    homeOpenSpread: p.homeTeamOdds?.open?.pointSpread?.american,
-    awayOpenSpread: p.awayTeamOdds?.open?.pointSpread?.american,
-    homeOpenML: p.homeTeamOdds?.open?.moneyLine?.american,
-    awayOpenML: p.awayTeamOdds?.open?.moneyLine?.american,
+    provider: p.provider?.name, spread: p.details, overUnder: p.overUnder,
+    homeMoneyline: p.homeTeamOdds?.moneyLine, awayMoneyline: p.awayTeamOdds?.moneyLine,
+    homeSpreadOdds: p.homeTeamOdds?.spreadOdds, awaySpreadOdds: p.awayTeamOdds?.spreadOdds,
+    overOdds: p.overOdds, underOdds: p.underOdds,
+    homeFavorite: p.homeTeamOdds?.favorite || false, awayFavorite: p.awayTeamOdds?.favorite || false,
+    homeOpenSpread: p.homeTeamOdds?.open?.pointSpread?.american, awayOpenSpread: p.awayTeamOdds?.open?.pointSpread?.american,
+    homeOpenML: p.homeTeamOdds?.open?.moneyLine?.american, awayOpenML: p.awayTeamOdds?.open?.moneyLine?.american,
   }));
 
-  // Parse leaders
   const teamLeaders = leaders.map(tl => ({
-    team: tl.team?.displayName,
-    abbreviation: tl.team?.abbreviation,
+    team: tl.team?.displayName, abbreviation: tl.team?.abbreviation,
     leaders: (tl.leaders || []).map(l => ({
-      category: l.name,
-      displayName: l.displayName,
+      category: l.name, displayName: l.displayName,
       athletes: (l.leaders || []).map(a => ({
-        name: a.athlete?.displayName,
-        headshot: a.athlete?.headshot?.href,
-        jersey: a.athlete?.jersey,
-        position: a.athlete?.position?.abbreviation,
-        stat: a.displayValue,
+        name: a.athlete?.displayName, headshot: a.athlete?.headshot?.href,
+        jersey: a.athlete?.jersey, position: a.athlete?.position?.abbreviation, stat: a.displayValue,
       })),
     })),
   }));
 
-  // Parse injuries
   const injuryReport = injuries.map(ti => ({
-    team: ti.team?.displayName,
-    abbreviation: ti.team?.abbreviation,
+    team: ti.team?.displayName, abbreviation: ti.team?.abbreviation,
     injuries: (ti.injuries || []).map(inj => ({
-      name: inj.athlete?.displayName,
-      position: inj.athlete?.position?.abbreviation,
-      status: inj.status,
-      type: inj.type,
+      name: inj.athlete?.displayName, position: inj.athlete?.position?.abbreviation,
+      status: inj.status, type: inj.type,
     })),
   }));
 
-  // Parse win probability
   const winProbability = winprob.map(wp => ({
-    playId: wp.playId,
-    homeWinPct: wp.homeWinPercentage,
-    secondsLeft: wp.secondsLeft,
-    tiePercentage: wp.tiePercentage,
+    playId: wp.playId, homeWinPct: wp.homeWinPercentage,
+    secondsLeft: wp.secondsLeft, tiePercentage: wp.tiePercentage,
   }));
 
-  // ESPN predictor
   const prediction = {
     home: { name: predictor.homeTeam?.team?.displayName, winPct: predictor.homeTeam?.gameProjection },
     away: { name: predictor.awayTeam?.team?.displayName, winPct: predictor.awayTeam?.gameProjection },
   };
 
   return {
-    teamStats,
-    playerStats,
-    scoring,
-    drives: allDrives,
-    odds,
-    leaders: teamLeaders,
-    injuries: injuryReport,
-    winProbability,
-    prediction,
+    teamStats, playerStats, scoring, drives: allDrives, odds, leaders: teamLeaders,
+    injuries: injuryReport, winProbability, prediction,
     news: news.slice(0, 10).map(n => ({
-      headline: n.headline,
-      description: n.description,
-      published: n.published,
-      image: n.images?.[0]?.url,
-      link: n.links?.web?.href,
+      headline: n.headline, description: n.description, published: n.published,
+      image: n.images?.[0]?.url, link: n.links?.web?.href,
     })),
     gameInfo: {
-      venue: gameInfo.venue?.fullName,
-      city: gameInfo.venue?.address?.city,
-      state: gameInfo.venue?.address?.state,
-      attendance: gameInfo.attendance,
+      venue: gameInfo.venue?.fullName, city: gameInfo.venue?.address?.city,
+      state: gameInfo.venue?.address?.state, attendance: gameInfo.attendance,
       weather: gameInfo.weather ? {
-        temperature: gameInfo.weather.temperature,
-        condition: gameInfo.weather.displayValue,
+        temperature: gameInfo.weather.temperature, condition: gameInfo.weather.displayValue,
         wind: gameInfo.weather.wind?.displayValue,
       } : null,
     },
@@ -406,70 +468,264 @@ function parseSummary(data) {
 }
 
 function parseRoster(data) {
-  const groups = ['offense', 'defense', 'specialTeam'];
   const roster = [];
-  for (const group of groups) {
-    const items = data.athletes?.filter(a =>
-      groups.indexOf(a.position) !== -1 || true // get all
-    ) || [];
-  }
-  // ESPN returns athletes grouped in position arrays
   const athletes = data.athletes || [];
   athletes.forEach(group => {
     const posGroup = group.position || 'other';
     (group.items || []).forEach(p => {
       roster.push({
-        name: p.displayName,
-        jersey: p.jersey,
-        position: p.position?.abbreviation || posGroup,
-        positionGroup: posGroup,
-        age: p.age,
-        height: p.displayHeight,
-        weight: p.displayWeight,
-        headshot: p.headshot?.href,
-        experience: p.experience?.years,
-        college: p.college?.name,
+        name: p.displayName, jersey: p.jersey,
+        position: p.position?.abbreviation || posGroup, positionGroup: posGroup,
+        age: p.age, height: p.displayHeight, weight: p.displayWeight,
+        headshot: p.headshot?.href, experience: p.experience?.years, college: p.college?.name,
       });
     });
   });
   return { coach: data.coach?.[0]?.firstName + ' ' + data.coach?.[0]?.lastName, roster };
 }
 
-// ─── API ROUTES ───
+// Extract key players per position for prompt injection
+function extractKeyPlayers(rosterData, sport) {
+  const { coach, roster } = rosterData;
+  const keyPositions = {
+    football: ['QB', 'RB', 'WR', 'TE', 'K'],
+    basketball: ['PG', 'SG', 'SF', 'PF', 'C'],
+    baseball: ['SP', 'RP', 'C', 'SS', 'CF'],
+    hockey: ['C', 'LW', 'RW', 'D', 'G'],
+    soccer: ['GK', 'CB', 'CM', 'ST', 'LW'],
+  };
 
-// Get scoreboard (all postseason games, find SB)
-app.get('/api/scoreboard', async (req, res) => {
+  const positions = keyPositions[sport] || keyPositions.football;
+  const byPosition = {};
+
+  for (const p of roster) {
+    const pos = p.position || 'Unknown';
+    if (!byPosition[pos]) byPosition[pos] = [];
+    byPosition[pos].push(p);
+  }
+
+  const lines = [];
+  for (const pos of positions) {
+    const players = byPosition[pos] || [];
+    const top3 = players.slice(0, 3);
+    if (top3.length > 0) {
+      lines.push(`  ${pos}: ${top3.map(p => `#${p.jersey} ${p.name}`).join(', ')}`);
+    }
+  }
+
+  return { coach, lines };
+}
+
+// ─── SESSION RUNTIME ───
+const sessionRuntimes = new Map();
+
+function getRuntime(sessionId) {
+  if (!sessionRuntimes.has(sessionId)) {
+    sessionRuntimes.set(sessionId, {
+      lastCommentarySeq: -1,
+      commentaryCache: { data: null, ts: 0 },
+      commentaryHistory: [],
+      rosterCache: { home: null, away: null, fetchedAt: 0 },
+    });
+  }
+  return sessionRuntimes.get(sessionId);
+}
+
+// ─── ADMIN ROUTES: SPORTS BROWSING ───
+app.get('/api/admin/sports', requireAdmin, (req, res) => {
+  const result = {};
+  for (const [sportKey, sportVal] of Object.entries(SPORTS_CONFIG)) {
+    result[sportKey] = {
+      name: sportVal.name,
+      leagues: Object.entries(sportVal.leagues).map(([lKey, lVal]) => ({
+        id: lKey,
+        name: lVal.name,
+      })),
+    };
+  }
+  res.json(result);
+});
+
+app.get('/api/admin/browse/:sport/:league', requireAdmin, async (req, res) => {
   try {
-    const data = await fetchCached('scoreboard', ESPN_SCOREBOARD, CACHE_TTL.scoreboard);
+    const { sport, league } = req.params;
+    const date = req.query.date; // YYYYMMDD
+    const sportConfig = SPORTS_CONFIG[sport];
+    if (!sportConfig) return res.status(400).json({ error: `Unknown sport: ${sport}` });
+    const leagueConfig = sportConfig.leagues[league];
+    if (!leagueConfig) return res.status(400).json({ error: `Unknown league: ${league}` });
+
+    const url = espnScoreboard(leagueConfig.espnSlug, date);
+    const data = await fetchCached(`browse_${sport}_${league}_${date || 'today'}`, url, 30000);
     const events = parseScoreboard(data);
-    res.json({ events, superBowlEventId });
+    res.json({ sport, league, events });
   } catch (err) {
     res.status(502).json({ error: 'Failed to fetch scoreboard', message: err.message });
   }
 });
 
-// Get the Super Bowl game specifically
-app.get('/api/game', async (req, res) => {
+// ─── ADMIN ROUTES: SESSION CRUD ───
+
+// Create session
+app.post('/api/admin/sessions', requireAdmin, async (req, res) => {
   try {
-    // Refresh SB info
-    await findSuperBowl();
-    const data = await fetchCached('scoreboard', ESPN_SCOREBOARD, CACHE_TTL.scoreboard);
+    const { sport, league, espnEventId, gameName, gameDate, homeTeam, awayTeam, commentators } = req.body;
+    if (!sport || !league || !espnEventId) {
+      return res.status(400).json({ error: 'sport, league, and espnEventId are required' });
+    }
+
+    const sportConfig = SPORTS_CONFIG[sport];
+    if (!sportConfig) return res.status(400).json({ error: `Unknown sport: ${sport}` });
+    const leagueConfig = sportConfig.leagues[league];
+    if (!leagueConfig) return res.status(400).json({ error: `Unknown league: ${league}` });
+
+    const id = crypto.randomBytes(8).toString('hex');
+    const session = {
+      id, sport, league, espnSlug: leagueConfig.espnSlug,
+      espnEventId, gameName: gameName || '', gameDate: gameDate || new Date().toISOString(),
+      status: 'active',
+      homeTeam: homeTeam || {},
+      awayTeam: awayTeam || {},
+      commentators: commentators || [
+        { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', customPrompt: null },
+        { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', customPrompt: null },
+      ],
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    };
+
+    // Fetch rosters for both teams
+    const runtime = getRuntime(id);
+    if (homeTeam?.id) {
+      try {
+        const homeRosterData = await fetchCached(`roster_${homeTeam.id}`, espnRoster(leagueConfig.espnSlug, homeTeam.id), CACHE_TTL.roster);
+        runtime.rosterCache.home = parseRoster(homeRosterData);
+      } catch (e) { console.error('Failed to fetch home roster:', e.message); }
+    }
+    if (awayTeam?.id) {
+      try {
+        const awayRosterData = await fetchCached(`roster_${awayTeam.id}`, espnRoster(leagueConfig.espnSlug, awayTeam.id), CACHE_TTL.roster);
+        runtime.rosterCache.away = parseRoster(awayRosterData);
+      } catch (e) { console.error('Failed to fetch away roster:', e.message); }
+    }
+    runtime.rosterCache.fetchedAt = Date.now();
+
+    await db.collection('sessions').doc(id).set(session);
+    res.json(session);
+  } catch (err) {
+    console.error('Create session error:', err.message);
+    res.status(500).json({ error: 'Failed to create session' });
+  }
+});
+
+// List sessions
+app.get('/api/admin/sessions', requireAdmin, async (req, res) => {
+  try {
+    const snap = await db.collection('sessions').orderBy('createdAt', 'desc').get();
+    const sessions = snap.docs.map(d => d.data());
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list sessions' });
+  }
+});
+
+// Update session
+app.patch('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    const updates = { ...req.body, updatedAt: new Date().toISOString() };
+    delete updates.id;
+    delete updates.createdAt;
+    await db.collection('sessions').doc(id).update(updates);
+    const doc = await db.collection('sessions').doc(id).get();
+    res.json(doc.data());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to update session' });
+  }
+});
+
+// Delete session
+app.delete('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.collection('sessions').doc(id).delete();
+    sessionRuntimes.delete(id);
+    res.json({ ok: true });
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to delete session' });
+  }
+});
+
+// Start session
+app.post('/api/admin/sessions/:id/start', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.collection('sessions').doc(id).update({ status: 'active', updatedAt: new Date().toISOString() });
+    getRuntime(id); // ensure runtime exists
+    const doc = await db.collection('sessions').doc(id).get();
+    res.json(doc.data());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to start session' });
+  }
+});
+
+// Stop session
+app.post('/api/admin/sessions/:id/stop', requireAdmin, async (req, res) => {
+  try {
+    const { id } = req.params;
+    await db.collection('sessions').doc(id).update({ status: 'paused', updatedAt: new Date().toISOString() });
+    const doc = await db.collection('sessions').doc(id).get();
+    res.json(doc.data());
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to stop session' });
+  }
+});
+
+// ─── PUBLIC SESSION ROUTES ───
+
+// List active sessions (public)
+app.get('/api/sessions', async (req, res) => {
+  try {
+    const snap = await db.collection('sessions').where('status', 'in', ['active', 'paused']).get();
+    const sessions = snap.docs.map(d => {
+      const s = d.data();
+      return {
+        id: s.id, sport: s.sport, league: s.league, gameName: s.gameName, gameDate: s.gameDate,
+        status: s.status, homeTeam: s.homeTeam, awayTeam: s.awayTeam,
+        commentators: (s.commentators || []).map(c => ({ id: c.id, name: c.name, team: c.team })),
+      };
+    });
+    res.json(sessions);
+  } catch (err) {
+    res.status(500).json({ error: 'Failed to list sessions' });
+  }
+});
+
+// Session game data
+app.get('/api/sessions/:id/game', async (req, res) => {
+  try {
+    const doc = await db.collection('sessions').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Session not found' });
+    const session = doc.data();
+    const url = espnScoreboard(session.espnSlug);
+    const data = await fetchCached(`scoreboard_${session.espnSlug}`, url, CACHE_TTL.scoreboard);
     const events = parseScoreboard(data);
-    const sb = events.find(e => e.id === superBowlEventId) || events[events.length - 1];
-    if (!sb) return res.json({ error: 'No Super Bowl event found', events: [] });
-    res.json(sb);
+    const game = events.find(e => e.id === session.espnEventId) || null;
+    if (!game) return res.json({ error: 'Game not found in current scoreboard', session: { id: session.id, gameName: session.gameName } });
+    res.json(game);
   } catch (err) {
     res.status(502).json({ error: 'Failed to fetch game', message: err.message });
   }
 });
 
-// Get full game summary (box score, play-by-play, odds, leaders, etc.)
-app.get('/api/summary', async (req, res) => {
+// Session summary
+app.get('/api/sessions/:id/summary', async (req, res) => {
   try {
-    if (!superBowlEventId) await findSuperBowl();
-    const eventId = req.query.event || superBowlEventId;
-    if (!eventId) return res.status(404).json({ error: 'No event ID available' });
-    const data = await fetchCached(`summary_${eventId}`, ESPN_SUMMARY(eventId), CACHE_TTL.summary);
+    const doc = await db.collection('sessions').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Session not found' });
+    const session = doc.data();
+    const url = espnSummary(session.espnSlug, session.espnEventId);
+    const data = await fetchCached(`summary_${session.espnEventId}`, url, CACHE_TTL.summary);
     const summary = parseSummary(data);
     res.json(summary);
   } catch (err) {
@@ -477,52 +733,17 @@ app.get('/api/summary', async (req, res) => {
   }
 });
 
-// Get team roster
-app.get('/api/roster/:teamId', async (req, res) => {
+// Session news
+app.get('/api/sessions/:id/news', async (req, res) => {
   try {
-    const teamId = req.params.teamId;
-    const data = await fetchCached(`roster_${teamId}`, ESPN_ROSTER(teamId), CACHE_TTL.roster);
-    const roster = parseRoster(data);
-    res.json(roster);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch roster', message: err.message });
-  }
-});
-
-// Get team info
-app.get('/api/team/:teamId', async (req, res) => {
-  try {
-    const teamId = req.params.teamId;
-    const data = await fetchCached(`team_${teamId}`, ESPN_TEAM(teamId), CACHE_TTL.team);
-    const team = data.team || {};
-    res.json({
-      id: team.id,
-      name: team.displayName,
-      abbreviation: team.abbreviation,
-      shortName: team.shortDisplayName,
-      color: team.color ? `#${team.color}` : null,
-      altColor: team.alternateColor ? `#${team.alternateColor}` : null,
-      logo: team.logos?.[0]?.href,
-      record: team.record?.items?.[0]?.summary,
-      standingSummary: team.standingSummary,
-      location: team.location,
-      nickname: team.name,
-    });
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch team', message: err.message });
-  }
-});
-
-// Get NFL news
-app.get('/api/news', async (req, res) => {
-  try {
-    const data = await fetchCached('news', ESPN_NEWS, CACHE_TTL.news);
+    const doc = await db.collection('sessions').doc(req.params.id).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Session not found' });
+    const session = doc.data();
+    const url = espnNews(session.espnSlug);
+    const data = await fetchCached(`news_${session.espnSlug}`, url, CACHE_TTL.news);
     const articles = (data.articles || []).slice(0, 15).map(a => ({
-      headline: a.headline,
-      description: a.description,
-      published: a.published,
-      image: a.images?.[0]?.url,
-      link: a.links?.web?.href,
+      headline: a.headline, description: a.description, published: a.published,
+      image: a.images?.[0]?.url, link: a.links?.web?.href,
     }));
     res.json(articles);
   } catch (err) {
@@ -530,44 +751,19 @@ app.get('/api/news', async (req, res) => {
   }
 });
 
-// ─── AI COMMENTARY ENGINE ───
-// Tracks the last play sequence we generated commentary for
-let lastCommentarySeq = -1;
-let commentaryCache = { data: null, ts: 0 };
-const COMMENTARY_COOLDOWN = 5000; // minimum ms between LLM calls
-const STALE_COMMENTARY_MAX = 45000; // force new commentary after 45s even if same play
+// ─── AI COMMENTARY ENGINE (session-scoped) ───
 
-// Determine if a play is "interesting" enough for commentary
-function isInterestingPlay(play) {
-  if (!play) return false;
-  const desc = (play.text || play.description || '').toLowerCase();
-  const yards = Math.abs(play.yardsGained || play.statYardage || 0);
-  // Always interesting
-  if (play.scoringPlay) return true;
-  if (desc.includes('touchdown')) return true;
-  if (desc.includes('interception') || desc.includes('intercepted')) return true;
-  if (desc.includes('fumble')) return true;
-  if (desc.includes('sack')) return true;
-  if (desc.includes('penalty')) return true;
-  if (yards >= 15) return true;
-  if (desc.includes('field goal')) return true;
-  if (desc.includes('safety')) return true;
-  if (desc.includes('two-point') || desc.includes('2-point')) return true;
-  if (desc.includes('challenge') || desc.includes('review')) return true;
-  // Moderately interesting — first downs with decent gains
-  if (yards >= 8) return true;
-  return false;
-}
+const COMMENTARY_COOLDOWN = 5000;
+const STALE_COMMENTARY_MAX = 45000;
+const MAX_HISTORY = 20;
 
-// Build the prompt payload from ESPN data
-function buildCommentaryPayload(game, summary) {
+function buildCommentaryPayload(game, summary, session) {
   if (!game || !summary) return null;
 
   const drives = summary.drives || [];
   const latestDrive = drives[drives.length - 1];
   const latestPlays = latestDrive?.playList || [];
   const latestPlay = latestPlays[latestPlays.length - 1];
-
   if (!latestPlay) return null;
 
   const awayName = game.away?.name || game.away?.abbreviation || 'Away';
@@ -575,14 +771,10 @@ function buildCommentaryPayload(game, summary) {
   const awayAbbr = game.away?.abbreviation || 'AWY';
   const homeAbbr = game.home?.abbreviation || 'HME';
 
-  // Determine offense from drive
   const offenseTeam = latestDrive.abbreviation || awayAbbr;
   const isAwayOffense = offenseTeam === awayAbbr;
 
-  // Build last3Plays
   const last3 = latestPlays.slice(-4, -1).map(p => p.text || '').filter(Boolean);
-
-  // Build rolling summary
   const playTypes = latestPlays.slice(-6).map(p => p.type || '');
   const passCount = playTypes.filter(t => t.toLowerCase().includes('pass')).length;
   const runCount = playTypes.filter(t => t.toLowerCase().includes('rush') || t.toLowerCase().includes('run')).length;
@@ -590,7 +782,6 @@ function buildCommentaryPayload(game, summary) {
 
   const rollingSummary = `${isAwayOffense ? awayName : homeName} has been ${tendency} on this drive${latestDrive.yards ? ` and has gained ${latestDrive.yards} yards` : ''}.`;
 
-  // Determine play type
   const playTypeStr = (latestPlay.type || '').toLowerCase();
   let playType = 'Unknown';
   if (playTypeStr.includes('pass')) playType = 'Pass';
@@ -601,7 +792,6 @@ function buildCommentaryPayload(game, summary) {
   else if (playTypeStr.includes('sack')) playType = 'Sack';
   else if (playTypeStr.includes('penalty')) playType = 'Penalty';
 
-  // Determine result
   let result = 'Play';
   const yards = latestPlay.yardsGained || latestPlay.statYardage || 0;
   if (latestPlay.scoringPlay) result = 'Scoring Play';
@@ -611,7 +801,6 @@ function buildCommentaryPayload(game, summary) {
   else if (latestPlay.text?.toLowerCase().includes('fumble')) result = 'Turnover - Fumble';
   else result = `Gain of ${yards}`;
 
-  // Mood hint for the LLM
   let mood = 'routine';
   if (latestPlay.scoringPlay) mood = 'electric';
   else if (latestPlay.text?.toLowerCase().includes('interception') || latestPlay.text?.toLowerCase().includes('fumble')) mood = 'disaster';
@@ -622,9 +811,11 @@ function buildCommentaryPayload(game, summary) {
   else if (yards <= 0) mood = 'stuffed';
 
   return {
-    gameId: `sb-${new Date().getFullYear()}`,
+    gameId: session ? session.id : `game-${new Date().getFullYear()}`,
     awayTeam: { name: awayName, abbreviation: awayAbbr },
     homeTeam: { name: homeName, abbreviation: homeAbbr },
+    offenseTeam: isAwayOffense ? awayAbbr : homeAbbr,
+    defenseTeam: isAwayOffense ? homeAbbr : awayAbbr,
     event: {
       seq: latestPlays.length + (drives.length * 100),
       quarter: latestPlay.period || game.status?.period || 1,
@@ -634,17 +825,10 @@ function buildCommentaryPayload(game, summary) {
       yardLine: latestPlay.yardLine ? `${offenseTeam} ${latestPlay.yardLine}` : '',
       offense: isAwayOffense ? awayAbbr : homeAbbr,
       defense: isAwayOffense ? homeAbbr : awayAbbr,
-      playType,
-      description: latestPlay.text || '',
-      yardsGained: yards,
-      result,
-      mood,
+      playType, description: latestPlay.text || '', yardsGained: yards, result, mood,
     },
     state: {
-      score: {
-        [awayAbbr]: game.away?.score || 0,
-        [homeAbbr]: game.home?.score || 0,
-      },
+      score: { [awayAbbr]: game.away?.score || 0, [homeAbbr]: game.home?.score || 0 },
       possession: offenseTeam,
       last3Plays: last3.length > 0 ? last3 : ['Drive just started'],
       rollingSummaryShort: rollingSummary,
@@ -652,26 +836,79 @@ function buildCommentaryPayload(game, summary) {
   };
 }
 
-// Build the full system prompt for the LLM
-function buildCommentaryPrompt(payload) {
+function buildCommentaryPrompt(payload, session, runtime) {
   const awayName = payload.awayTeam.name;
   const homeName = payload.homeTeam.name;
   const awayAbbr = payload.awayTeam.abbreviation;
   const homeAbbr = payload.homeTeam.abbreviation;
 
-  return `You are an AI commentary engine for a live Super Bowl broadcast.
+  const sport = session?.sport || 'football';
+  const sportCtx = getSportContext(sport);
+
+  // Build commentator descriptions from session config
+  const commentators = session?.commentators || [
+    { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', customPrompt: null },
+    { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', customPrompt: null },
+  ];
+
+  const commentatorA = commentators.find(c => c.id === 'A') || commentators[0];
+  const commentatorB = commentators.find(c => c.id === 'B') || commentators[1];
+
+  const teamA = commentatorA.team === 'home' ? homeName : awayName;
+  const teamAbbrA = commentatorA.team === 'home' ? homeAbbr : awayAbbr;
+  const teamB = commentatorB.team === 'home' ? homeName : awayName;
+  const teamAbbrB = commentatorB.team === 'home' ? homeAbbr : awayAbbr;
+
+  const personalityA = commentatorA.customPrompt || PERSONALITY_PRESETS[commentatorA.personality]?.prompt || 'Loud, dramatic, biased';
+  const personalityB = commentatorB.customPrompt || PERSONALITY_PRESETS[commentatorB.personality]?.prompt || 'Sarcastic, mocking, dismissive';
+
+  // Possession context
+  const offenseTeamName = payload.offenseTeam === awayAbbr ? awayName : homeName;
+  const defenseTeamName = payload.offenseTeam === awayAbbr ? homeName : awayName;
+
+  let possessionBlock = '';
+  if (sport === 'football') {
+    possessionBlock = `
+CURRENT POSSESSION: ${offenseTeamName} (${payload.offenseTeam}) has the ball.
+This is an OFFENSIVE play by ${offenseTeamName} against ${defenseTeamName}.
+Yards gained = GOOD for ${offenseTeamName}, BAD for ${defenseTeamName}.
+Turnovers = BAD for ${offenseTeamName}, GOOD for ${defenseTeamName}.`;
+  }
+
+  // Roster block
+  let rosterBlock = '';
+  if (runtime?.rosterCache) {
+    const rc = runtime.rosterCache;
+    if (rc.home) {
+      const hp = extractKeyPlayers(rc.home, sport);
+      rosterBlock += `\nKEY PLAYERS FOR ${homeName} (Coach: ${hp.coach}):\n${hp.lines.join('\n')}`;
+    }
+    if (rc.away) {
+      const ap = extractKeyPlayers(rc.away, sport);
+      rosterBlock += `\nKEY PLAYERS FOR ${awayName} (Coach: ${ap.coach}):\n${ap.lines.join('\n')}`;
+    }
+    if (rosterBlock) {
+      rosterBlock += `\nIMPORTANT: Only reference players on these rosters. Do NOT mention retired or traded players.`;
+    }
+  }
+
+  return `You are an AI commentary engine for a live ${sportCtx.periodName ? sport : ''} broadcast.
+
+${sportCtx.promptFrame}
 
 You produce short, entertaining, argumentative commentary between two unhinged commentators.
 
-COMMENTATOR A — "Big Mike"
-- Unhinged, emotional, biased HARD toward the ${awayName} (${awayAbbr})
-- Loud, dramatic, overconfident
-- Treats every positive ${awayAbbr} play as genius, every negative play as a conspiracy
+COMMENTATOR A — "${commentatorA.name}"
+- Rooting for: ${teamA} (${teamAbbrA})
+- Personality: ${personalityA}
+- Treats every positive ${teamAbbrA} play as genius, every negative play as a conspiracy
 
-COMMENTATOR B — "Salty Steve"
-- Equally unhinged, biased HARD toward the ${homeName} (${homeAbbr})
-- Sarcastic, mocking, dismissive
-- Downplays ${awayAbbr} success, hypes ${homeAbbr}
+COMMENTATOR B — "${commentatorB.name}"
+- Rooting for: ${teamB} (${teamAbbrB})
+- Personality: ${personalityB}
+- Downplays ${teamAbbrA} success, hypes ${teamAbbrB}
+${possessionBlock}
+${rosterBlock}
 
 Rules:
 - Both speak like they are watching live
@@ -682,9 +919,9 @@ Rules:
 
 OUTPUT FORMAT — Produce EXACTLY 3 turns:
 
-[A] Big Mike reacts to the play. 1-2 sentences. Maximum hype. Reference a real field.
-[B] Salty Steve argues back. 2-3 sentences. Downplay or blame. Reference a different field.
-[A] Big Mike fires back. 1-2 sentences. Predict next play type (run/pass/special). Include confidence: X.X
+[A] ${commentatorA.name} reacts to the play. 1-2 sentences. Maximum hype. Reference a real field.
+[B] ${commentatorB.name} argues back. 2-3 sentences. Downplay or blame. Reference a different field.
+[A] ${commentatorA.name} fires back. 1-2 sentences. Predict next play type (run/pass/special). Include confidence: X.X
 
 Here is the play data:
 ${JSON.stringify(payload, null, 2)}
@@ -692,8 +929,12 @@ ${JSON.stringify(payload, null, 2)}
 Respond with ONLY the 3 turns. No preamble, no explanation.`;
 }
 
-// Parse the [A] / [B] output from the LLM
-function parseCommentary(raw, awayName, homeName) {
+function parseCommentary(raw, commentatorA, commentatorB) {
+  const nameA = commentatorA?.name || 'Big Mike';
+  const nameB = commentatorB?.name || 'Salty Steve';
+  const teamA = commentatorA?.team || 'away';
+  const teamB = commentatorB?.team || 'home';
+
   const lines = raw.trim().split('\n').filter(l => l.trim());
   const turns = [];
   let current = null;
@@ -702,135 +943,163 @@ function parseCommentary(raw, awayName, homeName) {
     const trimmed = line.trim();
     if (trimmed.startsWith('[A]')) {
       if (current) turns.push(current);
-      current = { speaker: 'A', name: 'Big Mike', team: awayName, text: trimmed.replace(/^\[A\]\s*/, '').trim() };
+      current = { speaker: 'A', name: nameA, team: teamA, text: trimmed.replace(/^\[A\]\s*/, '').trim() };
     } else if (trimmed.startsWith('[B]')) {
       if (current) turns.push(current);
-      current = { speaker: 'B', name: 'Salty Steve', team: homeName, text: trimmed.replace(/^\[B\]\s*/, '').trim() };
+      current = { speaker: 'B', name: nameB, team: teamB, text: trimmed.replace(/^\[B\]\s*/, '').trim() };
     } else if (current) {
       current.text += ' ' + trimmed;
     }
   }
   if (current) turns.push(current);
 
-  // Extract confidence from the last A turn
   const lastA = [...turns].reverse().find(t => t.speaker === 'A');
   if (lastA) {
     const confMatch = lastA.text.match(/confidence[:\s]*([01]\.\d+)/i) || lastA.text.match(/(\d\.\d+)\s*confidence/i) || lastA.text.match(/([01]\.\d+)/);
-    if (confMatch) {
-      lastA.confidence = parseFloat(confMatch[1]);
-    }
-    // Extract prediction
+    if (confMatch) lastA.confidence = parseFloat(confMatch[1]);
     const predMatch = lastA.text.match(/next play[^.]*?(run|pass|special|kick|punt|field goal)/i);
-    if (predMatch) {
-      lastA.prediction = predMatch[1].toLowerCase();
-    }
+    if (predMatch) lastA.prediction = predMatch[1].toLowerCase();
   }
 
   return turns;
 }
 
-// Commentary endpoint
-app.get('/api/commentary', async (req, res) => {
+// Session commentary endpoint
+app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
   try {
-    const now = Date.now();
+    const sessionId = req.params.id;
+    const doc = await db.collection('sessions').doc(sessionId).get();
+    if (!doc.exists) return res.status(404).json({ error: 'Session not found' });
+    const session = doc.data();
 
-    // Return cached commentary if fresh enough
-    if (commentaryCache.data && (now - commentaryCache.ts) < COMMENTARY_COOLDOWN) {
-      return res.json(commentaryCache.data);
+    if (session.status === 'paused') {
+      return res.json({ turns: [], status: 'paused', message: 'Session is paused' });
     }
 
-    // Get current game + summary
-    if (!superBowlEventId) await findSuperBowl();
-    const scoreData = await fetchCached('scoreboard', ESPN_SCOREBOARD, CACHE_TTL.scoreboard);
+    const runtime = getRuntime(sessionId);
+    const now = Date.now();
+
+    if (runtime.commentaryCache.data && (now - runtime.commentaryCache.ts) < COMMENTARY_COOLDOWN) {
+      return res.json(runtime.commentaryCache.data);
+    }
+
+    // Get game data
+    const scoreUrl = espnScoreboard(session.espnSlug);
+    const scoreData = await fetchCached(`scoreboard_${session.espnSlug}`, scoreUrl, CACHE_TTL.scoreboard);
     const events = parseScoreboard(scoreData);
-    const game = events.find(e => e.id === superBowlEventId) || events[events.length - 1];
+    const game = events.find(e => e.id === session.espnEventId);
 
     if (!game || game.status?.state !== 'in') {
-      // Pre-game or post-game — generate hype/recap commentary
-      const prePayload = buildPreGamePayload(game);
+      const prePayload = buildPreGamePayload(game, session);
       if (!prePayload) {
         return res.json({ turns: [], status: 'waiting', message: 'Waiting for game to start' });
       }
-      // Use pre-game prompt
-      const prompt = buildPreGamePrompt(prePayload, game);
+      const prompt = buildPreGamePrompt(prePayload, game, session);
       const llmData = await callModalLLM(MODAL_MISTRAL_URL, {
         messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300,
-        temperature: 0.9,
+        max_tokens: 300, temperature: 0.9,
       });
       const rawText = llmData.choices?.[0]?.message?.content || '';
-      const awayName = game?.away?.name || 'Away';
-      const homeName = game?.home?.name || 'Home';
-      const turns = parseCommentary(rawText, awayName, homeName);
+      const commentators = session.commentators || [];
+      const commentatorA = commentators.find(c => c.id === 'A') || commentators[0];
+      const commentatorB = commentators.find(c => c.id === 'B') || commentators[1];
+      const turns = parseCommentary(rawText, commentatorA, commentatorB);
 
-      const result = { turns, status: game?.status?.state === 'post' ? 'post' : 'pre', raw: rawText, timestamp: now };
-      commentaryCache = { data: result, ts: now };
+      const result = {
+        turns, status: game?.status?.state === 'post' ? 'post' : 'pre',
+        raw: rawText, timestamp: now,
+        commentators: { a: commentatorA, b: commentatorB },
+      };
+      runtime.commentaryCache = { data: result, ts: now };
       return res.json(result);
     }
 
-    // Live game — get summary for play data
-    const summaryData = await fetchCached(`summary_${superBowlEventId}`, ESPN_SUMMARY(superBowlEventId), CACHE_TTL.summary);
+    // Live game — get summary
+    const summaryUrl = espnSummary(session.espnSlug, session.espnEventId);
+    const summaryData = await fetchCached(`summary_${session.espnEventId}`, summaryUrl, CACHE_TTL.summary);
     const summary = parseSummary(summaryData);
 
-    const payload = buildCommentaryPayload(game, summary);
+    const payload = buildCommentaryPayload(game, summary, session);
     if (!payload) {
       return res.json({ turns: [], status: 'no_plays', message: 'No plays available yet' });
     }
 
-    // Check if this is a new play
     const currentSeq = payload.event.seq;
-    const isNewPlay = currentSeq !== lastCommentarySeq;
-    const commentaryAge = now - commentaryCache.ts;
+    const isNewPlay = currentSeq !== runtime.lastCommentarySeq;
+    const commentaryAge = now - runtime.commentaryCache.ts;
     const isStale = commentaryAge > STALE_COMMENTARY_MAX;
 
-    // If same play and we have fresh cached commentary, return it
-    // But if commentary is older than STALE_COMMENTARY_MAX, generate new anyway
-    if (!isNewPlay && !isStale && commentaryCache.data?.turns?.length > 0) {
-      return res.json(commentaryCache.data);
+    if (!isNewPlay && !isStale && runtime.commentaryCache.data?.turns?.length > 0) {
+      return res.json(runtime.commentaryCache.data);
     }
 
-    // Call Modal LLM
-    const prompt = buildCommentaryPrompt(payload);
+    // Refresh roster cache if needed (every 5 minutes)
+    if (now - runtime.rosterCache.fetchedAt > CACHE_TTL.roster) {
+      if (session.homeTeam?.id) {
+        try {
+          const hrd = await fetchCached(`roster_${session.homeTeam.id}`, espnRoster(session.espnSlug, session.homeTeam.id), CACHE_TTL.roster);
+          runtime.rosterCache.home = parseRoster(hrd);
+        } catch (e) {}
+      }
+      if (session.awayTeam?.id) {
+        try {
+          const ard = await fetchCached(`roster_${session.awayTeam.id}`, espnRoster(session.espnSlug, session.awayTeam.id), CACHE_TTL.roster);
+          runtime.rosterCache.away = parseRoster(ard);
+        } catch (e) {}
+      }
+      runtime.rosterCache.fetchedAt = now;
+    }
+
+    const prompt = buildCommentaryPrompt(payload, session, runtime);
+    const commentators = session.commentators || [];
+    const commentatorA = commentators.find(c => c.id === 'A') || commentators[0];
+    const commentatorB = commentators.find(c => c.id === 'B') || commentators[1];
+
     const llmData = await callModalLLM(MODAL_MISTRAL_URL, {
       messages: [{ role: 'user', content: prompt }],
-      max_tokens: 250,
-      temperature: 0.9,
+      max_tokens: 250, temperature: 0.9,
     });
     const rawText = llmData.choices?.[0]?.message?.content || '';
-    const turns = parseCommentary(rawText, game.away?.name || 'Away', game.home?.name || 'Home');
+    const turns = parseCommentary(rawText, commentatorA, commentatorB);
 
-    lastCommentarySeq = currentSeq;
+    runtime.lastCommentarySeq = currentSeq;
     const result = {
-      turns,
-      status: 'live',
+      turns, status: 'live',
       play: {
-        description: payload.event.description,
-        quarter: payload.event.quarter,
-        clock: payload.event.clock,
-        yardsGained: payload.event.yardsGained,
-        playType: payload.event.playType,
-        result: payload.event.result,
-        mood: payload.event.mood,
+        description: payload.event.description, quarter: payload.event.quarter,
+        clock: payload.event.clock, yardsGained: payload.event.yardsGained,
+        playType: payload.event.playType, result: payload.event.result, mood: payload.event.mood,
       },
       score: payload.state.score,
       timestamp: now,
+      commentators: { a: commentatorA, b: commentatorB },
     };
 
-    commentaryCache = { data: result, ts: now };
-    res.json(result);
+    runtime.commentaryCache = { data: result, ts: now };
 
+    // Store in history
+    runtime.commentaryHistory.unshift(result);
+    if (runtime.commentaryHistory.length > MAX_HISTORY) runtime.commentaryHistory.pop();
+
+    res.json(result);
   } catch (err) {
-    console.error('Commentary error:', err.message);
-    // Return cached on error
-    if (commentaryCache.data) {
-      return res.json({ ...commentaryCache.data, status: 'error_cached', error: err.message });
+    console.error('Session commentary error:', err.message);
+    const runtime = sessionRuntimes.get(req.params.id);
+    if (runtime?.commentaryCache?.data) {
+      return res.json({ ...runtime.commentaryCache.data, status: 'error_cached', error: err.message });
     }
     res.status(500).json({ turns: [], status: 'error', message: err.message });
   }
 });
 
+// Session commentary history
+app.get('/api/sessions/:id/commentary/history', (req, res) => {
+  const runtime = sessionRuntimes.get(req.params.id);
+  res.json(runtime?.commentaryHistory || []);
+});
+
 // Pre-game payload builder
-function buildPreGamePayload(game) {
+function buildPreGamePayload(game, session) {
   if (!game) return null;
   return {
     awayTeam: { name: game.away?.name || 'Away', abbreviation: game.away?.abbreviation || 'AWY' },
@@ -841,24 +1110,44 @@ function buildPreGamePayload(game) {
   };
 }
 
-function buildPreGamePrompt(payload, game) {
+function buildPreGamePrompt(payload, game, session) {
   const awayName = payload.awayTeam.name;
   const homeName = payload.homeTeam.name;
   const isPre = game?.status?.state === 'pre';
 
-  const scenario = isPre
-    ? `The Super Bowl is about to start! ${awayName} (${payload.records.away}) vs ${homeName} (${payload.records.home}). Spread: ${payload.odds?.spread || 'unknown'}. Over/Under: ${payload.odds?.overUnder || 'unknown'}.`
-    : `The Super Bowl is OVER! Final: ${awayName} ${payload.score.away} - ${homeName} ${payload.score.home}.`;
+  const commentators = session?.commentators || [
+    { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', customPrompt: null },
+    { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', customPrompt: null },
+  ];
+  const commentatorA = commentators.find(c => c.id === 'A') || commentators[0];
+  const commentatorB = commentators.find(c => c.id === 'B') || commentators[1];
+  const teamA = commentatorA.team === 'home' ? homeName : awayName;
+  const teamB = commentatorB.team === 'home' ? homeName : awayName;
 
-  return `You are an AI commentary engine for a Super Bowl broadcast.
+  const personalityA = commentatorA.customPrompt || PERSONALITY_PRESETS[commentatorA.personality]?.prompt || 'Loud, dramatic, biased';
+  const personalityB = commentatorB.customPrompt || PERSONALITY_PRESETS[commentatorB.personality]?.prompt || 'Sarcastic, mocking, dismissive';
+
+  const sport = session?.sport || 'football';
+  const sportCtx = getSportContext(sport);
+  const gameName = session?.gameName || `${awayName} vs ${homeName}`;
+
+  const scenario = isPre
+    ? `${gameName} is about to start! ${awayName} (${payload.records.away}) vs ${homeName} (${payload.records.home}). Spread: ${payload.odds?.spread || 'unknown'}. Over/Under: ${payload.odds?.overUnder || 'unknown'}.`
+    : `${gameName} is OVER! Final: ${awayName} ${payload.score.away} - ${homeName} ${payload.score.home}.`;
+
+  return `You are an AI commentary engine for a live ${sport} broadcast.
+
+${sportCtx.promptFrame}
 
 You produce short, entertaining, argumentative commentary between two unhinged commentators.
 
-COMMENTATOR A — "Big Mike"
-- Biased HARD toward ${awayName}. Loud, dramatic, overconfident.
+COMMENTATOR A — "${commentatorA.name}"
+- Rooting for: ${teamA}
+- Personality: ${personalityA}
 
-COMMENTATOR B — "Salty Steve"
-- Biased HARD toward ${homeName}. Sarcastic, mocking, dismissive.
+COMMENTATOR B — "${commentatorB.name}"
+- Rooting for: ${teamB}
+- Personality: ${personalityB}
 
 They argue DIRECTLY. Never agree. Keep it punchy and short.
 
@@ -867,39 +1156,184 @@ Scenario: ${scenario}
 ${isPre ? 'Generate pre-game hype trash talk. Each commentator should make a bold prediction.' : 'Generate post-game reaction. Winner\'s commentator gloats, loser\'s makes excuses.'}
 
 OUTPUT FORMAT — Produce EXACTLY 3 turns:
-[A] Big Mike. 1-2 sentences.
-[B] Salty Steve. 2-3 sentences.
-[A] Big Mike fires back. 1-2 sentences.${isPre ? ' Include a score prediction.' : ''}
+[A] ${commentatorA.name}. 1-2 sentences.
+[B] ${commentatorB.name}. 2-3 sentences.
+[A] ${commentatorA.name} fires back. 1-2 sentences.${isPre ? ' Include a score prediction.' : ''}
 
 Respond with ONLY the 3 turns. No preamble.`;
 }
 
-// Commentary history — store the last 20 commentaries for scrollback
-const commentaryHistory = [];
-const MAX_HISTORY = 20;
+// ─── BACKWARD COMPATIBLE OLD ROUTES ───
+// These proxy to the first active session
 
-app.get('/api/commentary/history', (req, res) => {
-  res.json(commentaryHistory);
+async function getFirstActiveSession() {
+  const snap = await db.collection('sessions').where('status', '==', 'active').limit(1).get();
+  if (snap.empty) return null;
+  return snap.docs[0].data();
+}
+
+// Old scoreboard route (still works directly with NFL)
+const ESPN_SCOREBOARD_NFL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=3';
+const ESPN_SUMMARY_NFL = (id) => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${id}`;
+const ESPN_ROSTER_NFL = (teamId) => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/${teamId}/roster`;
+const ESPN_NEWS_NFL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=15';
+
+let superBowlEventId = null;
+let superBowlTeams = null;
+
+async function findSuperBowl() {
+  const data = await fetchCached('scoreboard', ESPN_SCOREBOARD_NFL, CACHE_TTL.scoreboard);
+  const events = data.events || [];
+  let sbEvent = events.find(e =>
+    (e.name || '').toLowerCase().includes('super bowl') ||
+    (e.shortName || '').toLowerCase().includes('super bowl') ||
+    (e.competitions?.[0]?.notes?.[0]?.headline || '').toLowerCase().includes('super bowl')
+  );
+  if (!sbEvent && events.length > 0) sbEvent = events[events.length - 1];
+  if (sbEvent) {
+    superBowlEventId = sbEvent.id;
+    const comp = sbEvent.competitions?.[0];
+    if (comp) {
+      const homeTeam = comp.competitors?.find(c => c.homeAway === 'home');
+      const awayTeam = comp.competitors?.find(c => c.homeAway === 'away');
+      superBowlTeams = {
+        home: { id: homeTeam?.team?.id, abbr: homeTeam?.team?.abbreviation },
+        away: { id: awayTeam?.team?.id, abbr: awayTeam?.team?.abbreviation },
+      };
+    }
+  }
+  return sbEvent;
+}
+
+findSuperBowl().then(sb => {
+  if (sb) console.log(`Found Super Bowl: ${sb.name} (Event ID: ${sb.id})`);
+  else console.log('No Super Bowl event found in current postseason scoreboard');
+}).catch(err => console.error('Init error:', err.message));
+
+app.get('/api/scoreboard', async (req, res) => {
+  try {
+    const data = await fetchCached('scoreboard', ESPN_SCOREBOARD_NFL, CACHE_TTL.scoreboard);
+    const events = parseScoreboard(data);
+    res.json({ events, superBowlEventId });
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to fetch scoreboard', message: err.message });
+  }
 });
 
-// Wrap the commentary endpoint to also store history
-const origCommentaryCache = { lastStored: 0 };
+app.get('/api/game', async (req, res) => {
+  try {
+    // Try session-based first
+    const session = await getFirstActiveSession();
+    if (session) {
+      const url = espnScoreboard(session.espnSlug);
+      const data = await fetchCached(`scoreboard_${session.espnSlug}`, url, CACHE_TTL.scoreboard);
+      const events = parseScoreboard(data);
+      const game = events.find(e => e.id === session.espnEventId);
+      if (game) return res.json(game);
+    }
+    // Fallback to old Super Bowl logic
+    await findSuperBowl();
+    const data = await fetchCached('scoreboard', ESPN_SCOREBOARD_NFL, CACHE_TTL.scoreboard);
+    const events = parseScoreboard(data);
+    const sb = events.find(e => e.id === superBowlEventId) || events[events.length - 1];
+    if (!sb) return res.json({ error: 'No game found', events: [] });
+    res.json(sb);
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to fetch game', message: err.message });
+  }
+});
+
+app.get('/api/summary', async (req, res) => {
+  try {
+    const session = await getFirstActiveSession();
+    if (session) {
+      const url = espnSummary(session.espnSlug, session.espnEventId);
+      const data = await fetchCached(`summary_${session.espnEventId}`, url, CACHE_TTL.summary);
+      return res.json(parseSummary(data));
+    }
+    if (!superBowlEventId) await findSuperBowl();
+    const eventId = req.query.event || superBowlEventId;
+    if (!eventId) return res.status(404).json({ error: 'No event ID available' });
+    const data = await fetchCached(`summary_${eventId}`, ESPN_SUMMARY_NFL(eventId), CACHE_TTL.summary);
+    res.json(parseSummary(data));
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to fetch summary', message: err.message });
+  }
+});
+
+app.get('/api/roster/:teamId', async (req, res) => {
+  try {
+    const teamId = req.params.teamId;
+    const data = await fetchCached(`roster_${teamId}`, ESPN_ROSTER_NFL(teamId), CACHE_TTL.roster);
+    res.json(parseRoster(data));
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to fetch roster', message: err.message });
+  }
+});
+
+app.get('/api/news', async (req, res) => {
+  try {
+    const session = await getFirstActiveSession();
+    if (session) {
+      const url = espnNews(session.espnSlug);
+      const data = await fetchCached(`news_${session.espnSlug}`, url, CACHE_TTL.news);
+      const articles = (data.articles || []).slice(0, 15).map(a => ({
+        headline: a.headline, description: a.description, published: a.published,
+        image: a.images?.[0]?.url, link: a.links?.web?.href,
+      }));
+      return res.json(articles);
+    }
+    const data = await fetchCached('news', ESPN_NEWS_NFL, CACHE_TTL.news);
+    const articles = (data.articles || []).slice(0, 15).map(a => ({
+      headline: a.headline, description: a.description, published: a.published,
+      image: a.images?.[0]?.url, link: a.links?.web?.href,
+    }));
+    res.json(articles);
+  } catch (err) {
+    res.status(502).json({ error: 'Failed to fetch news', message: err.message });
+  }
+});
+
+// Old commentary routes — proxy to first active session
+app.get('/api/commentary', async (req, res) => {
+  try {
+    const session = await getFirstActiveSession();
+    if (session) {
+      // Redirect internally to session commentary
+      const response = await fetch(`http://127.0.0.1:${PORT}/api/sessions/${session.id}/commentary/latest`);
+      const data = await response.json();
+      return res.json(data);
+    }
+    res.json({ turns: [], status: 'no_session', message: 'No active session' });
+  } catch (err) {
+    res.status(500).json({ turns: [], status: 'error', message: err.message });
+  }
+});
+
 app.get('/api/commentary/latest', async (req, res) => {
   try {
-    // Proxy to /api/commentary and store in history
-    const response = await fetch(`http://127.0.0.1:${PORT}/api/commentary`);
-    const data = await response.json();
-
-    // Store in history if it's new
-    if (data.turns?.length > 0 && data.timestamp !== origCommentaryCache.lastStored) {
-      commentaryHistory.unshift(data);
-      if (commentaryHistory.length > MAX_HISTORY) commentaryHistory.pop();
-      origCommentaryCache.lastStored = data.timestamp;
+    const session = await getFirstActiveSession();
+    if (session) {
+      const response = await fetch(`http://127.0.0.1:${PORT}/api/sessions/${session.id}/commentary/latest`);
+      const data = await response.json();
+      return res.json(data);
     }
-
-    res.json(data);
+    res.json({ turns: [], status: 'no_session', message: 'No active session' });
   } catch (err) {
-    res.status(500).json({ turns: [], error: err.message });
+    res.status(500).json({ turns: [], status: 'error', message: err.message });
+  }
+});
+
+app.get('/api/commentary/history', async (req, res) => {
+  try {
+    const session = await getFirstActiveSession();
+    if (session) {
+      const runtime = sessionRuntimes.get(session.id);
+      return res.json(runtime?.commentaryHistory || []);
+    }
+    res.json([]);
+  } catch (err) {
+    res.json([]);
   }
 });
 
@@ -909,17 +1343,19 @@ app.get('/api/status', (req, res) => {
     status: 'ok',
     superBowlEventId,
     superBowlTeams,
+    activeSessions: sessionRuntimes.size,
     cacheKeys: Object.keys(cache),
     uptime: process.uptime(),
   });
 });
 
-// Serve the SPA
+// Serve the SPA (must be last)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
 app.listen(PORT, '0.0.0.0', () => {
-  console.log(`🏈 Sushi Super Bowl Tracker running on http://localhost:${PORT}`);
+  console.log(`Sushi Live Sports Commentary running on http://localhost:${PORT}`);
+  console.log(`Admin panel: http://localhost:${PORT}/admin`);
   console.log(`Fetching live data from ESPN API...`);
 });
