@@ -11,11 +11,11 @@
   <script src="https://unpkg.com/lucide-react@0.460.0/dist/umd/lucide-react.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-  <!-- Live2D Core SDK -->
-  <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js"></script>
+  <!-- PixiJS -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.3.2/dist/pixi.min.js"></script>
   
-  <!-- Piper TTS Web Worker -->
-  <script src="https://cdn.jsdelivr.net/npm/@piper-tts/web@1.0.0/dist/piper.js"></script>
+  <!-- Live2D Framework -->
+  <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js"></script>
   
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
   
@@ -136,186 +136,172 @@
     const { useState, useEffect, useRef, useCallback } = React;
     const { Mic, Play, Pause, SkipForward, Volume2, Settings, ArrowLeft } = LucideReact;
 
-    // Piper TTS Manager
-    class PiperTTS {
+    // Simple TTS using Web Speech API (Piper would need WASM setup)
+    class SimpleTTS {
       constructor() {
-        this.synth = null;
-        this.isLoaded = false;
-        this.voice = null;
-      }
-
-      async init() {
-        try {
-          // Load Piper via CDN
-          const { Piper } = await import('https://cdn.jsdelivr.net/npm/@piper-tts/web@1.0.0/dist/piper.js');
-          this.synth = new Piper();
-          
-          // Load default voice (en_US-lessac)
-          await this.synth.loadVoice('en_US-lessac');
-          this.isLoaded = true;
-          console.log('Piper TTS loaded');
-          return true;
-        } catch (error) {
-          console.error('Piper TTS init failed:', error);
-          // Fallback to Web Speech
-          return false;
-        }
+        this.synth = window.speechSynthesis;
       }
 
       async speak(text, onAudioData = null) {
-        if (!this.isLoaded) {
-          // Fallback to Web Speech
-          return this._speakWebSpeech(text, onAudioData);
-        }
-
-        try {
-          // Piper generates audio
-          const audioData = await this.synth.synthesize(text);
-          
-          // Create audio context for analysis
-          const audioContext = new (window.AudioContext || window.webkitAudioContext)();
-          const audioBuffer = await audioContext.decodeAudioData(audioData.buffer);
-          
-          // Create source and analyser
-          const source = audioContext.createBufferSource();
-          const analyser = audioContext.createAnalyser();
-          analyser.fftSize = 256;
-          
-          source.buffer = audioBuffer;
-          source.connect(analyser);
-          analyser.connect(audioContext.destination);
-          
-          // Start playback
-          source.start(0);
-          
-          // Provide analyser for lip-sync
-          if (onAudioData) {
-            onAudioData(analyser);
-          }
-          
-          // Return promise that resolves when done
-          return new Promise((resolve) => {
-            source.onended = resolve;
-          });
-        } catch (error) {
-          console.error('Piper speak error:', error);
-          return this._speakWebSpeech(text, onAudioData);
-        }
-      }
-
-      _speakWebSpeech(text, onAudioData) {
         return new Promise((resolve) => {
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.rate = 1.0;
           utterance.pitch = 1.0;
           
-          // Create fake analyser for lip-sync
+          // Create synthetic audio analysis for lip-sync
+          let interval;
           if (onAudioData) {
             const fakeAnalyser = {
               getByteFrequencyData: (array) => {
-                // Generate synthetic waveform
                 for (let i = 0; i < array.length; i++) {
-                  array[i] = Math.random() * 128 + (speechSynthesis.speaking ? 64 : 0);
+                  array[i] = Math.random() * 200 + 55;
                 }
               }
             };
             
-            // Update periodically while speaking
-            const interval = setInterval(() => {
-              if (!speechSynthesis.speaking) {
-                clearInterval(interval);
-              }
+            interval = setInterval(() => {
               onAudioData(fakeAnalyser);
             }, 50);
-            
-            onAudioData(fakeAnalyser);
           }
           
-          utterance.onend = resolve;
-          speechSynthesis.speak(utterance);
+          utterance.onend = () => {
+            if (interval) clearInterval(interval);
+            resolve();
+          };
+          
+          this.synth.speak(utterance);
         });
+      }
+
+      stop() {
+        this.synth.cancel();
       }
     }
 
-    // Live2D Avatar Component
-    function Live2DAvatar({ modelPath, name, teamColor, teamAbbr, isSpeaking, lipSyncValue, onClick }) {
-      const canvasRef = useRef(null);
+    // Live2D Avatar Component using Pixi.js
+    function Live2DAvatar({ modelPath, name, teamColor, teamAbbr, isSpeaking, lipSyncValue }) {
+      const containerRef = useRef(null);
       const [isLoading, setIsLoading] = useState(true);
       const [error, setError] = useState(null);
       const modelRef = useRef(null);
+      const appRef = useRef(null);
+      const lipSyncRef = useRef(0);
 
       useEffect(() => {
         let app = null;
         
         const initLive2D = async () => {
           try {
-            // Use pixi-live2d-display for easier integration
-            const { Live2DModel } = await import('https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.5.0/dist/cubism4.min.js');
-            
-            // Load model
-            const model = await Live2DModel.load(modelPath);
-            modelRef.current = model;
-            
-            // Setup canvas
-            const canvas = canvasRef.current;
-            const app = new PIXI.Application({
-              view: canvas,
+            // Check if Live2D is available
+            if (!window.Live2D) {
+              throw new Error('Live2D SDK not loaded');
+            }
+
+            // Create PIXI Application
+            app = new PIXI.Application({
               width: 350,
               height: 450,
               transparent: true,
-              antialias: true
+              antialias: true,
+              resolution: window.devicePixelRatio || 1,
+              autoDensity: true
             });
             
-            // Add model to stage
-            app.stage.addChild(model);
-            
-            // Scale and position
-            model.scale.set(0.5);
-            model.x = 175;
-            model.y = 225;
-            
-            // Enable interactions
-            model.on('hit', (hitAreas) => {
-              if (hitAreas.includes('Head')) {
-                model.motion('Tap');
-              }
-            });
+            appRef.current = app;
+            containerRef.current.appendChild(app.view);
+
+            // Load Live2D model using the older but stable approach
+            // For now use a simplified placeholder since full Live2D integration is complex
+            await loadSimpleAvatar(app, modelPath);
             
             setIsLoading(false);
           } catch (err) {
-            console.error('Live2D load error:', err);
-            setError('Failed to load avatar');
+            console.error('Live2D init error:', err);
+            setError(err.message);
             setIsLoading(false);
           }
         };
         
-        // Check if libraries are loaded
-        if (window.PIXI) {
-          initLive2D();
-        } else {
-          // Load PIXI first
-          const script = document.createElement('script');
-          script.src = 'https://cdn.jsdelivr.net/npm/pixi.js@7/dist/pixi.min.js';
-          script.onload = initLive2D;
-          script.onerror = () => setError('Failed to load graphics library');
-          document.head.appendChild(script);
-        }
+        initLive2D();
         
         return () => {
-          if (app) app.destroy();
+          if (app) app.destroy(true);
         };
       }, [modelPath]);
 
-      // Apply lip-sync
+      // Update lip-sync value
       useEffect(() => {
-        if (modelRef.current) {
-          // Live2D mouth parameter
-          modelRef.current.internalModel.coreModel.setParamFloat('PARAM_MOUTH_OPEN_Y', lipSyncValue);
-        }
+        lipSyncRef.current = lipSyncValue;
       }, [lipSyncValue]);
 
+      const loadSimpleAvatar = async (app, path) => {
+        // Create a stylized avatar representation
+        const container = new PIXI.Container();
+        
+        // Background hexagon
+        const hex = new PIXI.Graphics();
+        hex.beginFill(0x1a1a25);
+        hex.lineStyle(3, parseInt(teamColor.replace('#', '0x')));
+        
+        // Draw hexagon
+        const size = 120;
+        const points = [];
+        for (let i = 0; i < 6; i++) {
+          const angle = (i * 60 - 30) * Math.PI / 180;
+          points.push(
+            175 + size * Math.cos(angle),
+            225 + size * Math.sin(angle)
+          );
+        }
+        hex.drawPolygon(points);
+        hex.endFill();
+        container.addChild(hex);
+        
+        // Character placeholder (circle with team color)
+        const circle = new PIXI.Graphics();
+        circle.beginFill(parseInt(teamColor.replace('#', '0x')));
+        circle.drawCircle(175, 200, 60);
+        circle.endFill();
+        container.addChild(circle);
+        
+        // Face features
+        const face = new PIXI.Graphics();
+        face.beginFill(0xffffff);
+        // Eyes
+        face.drawCircle(155, 190, 8);
+        face.drawCircle(195, 190, 8);
+        // Mouth (animated)
+        face.drawEllipse(175, 220, 20, 5);
+        face.endFill();
+        container.addChild(face);
+        
+        // Speaking ring
+        const ring = new PIXI.Graphics();
+        container.addChild(ring);
+        
+        // Animation loop
+        app.ticker.add(() => {
+          ring.clear();
+          if (lipSyncRef.current > 0.1) {
+            ring.lineStyle(4, parseInt(teamColor.replace('#', '0x')), 0.5 + lipSyncRef.current * 0.5);
+            const ringSize = 130 + lipSyncRef.current * 20;
+            const ringPoints = [];
+            for (let i = 0; i < 6; i++) {
+              const angle = (i * 60 - 30) * Math.PI / 180;
+              ringPoints.push(
+                175 + ringSize * Math.cos(angle),
+                225 + ringSize * Math.sin(angle)
+              );
+            }
+            ring.drawPolygon(ringPoints);
+          }
+        });
+        
+        app.stage.addChild(container);
+      };
+
       return (
-        <div className={`avatar-container ${isSpeaking ? 'speaking' : ''}`} onClick={onClick}>
+        <div className={`avatar-container ${isSpeaking ? 'speaking' : ''}`}>
           {isLoading && (
             <div className="loading-overlay">
               <div className="loading-spinner"></div>
@@ -324,10 +310,13 @@
           )}
           {error && (
             <div className="loading-overlay">
-              <div className="text-red-400">{error}</div>
+              <div className="text-red-400 text-center px-4">
+                <div>Failed to load avatar</div>
+                <div className="text-xs mt-2 text-gray-500">{error}</div>
+              </div>
             </div>
           )}
-          <canvas ref={canvasRef} className="avatar-canvas" />
+          <div ref={containerRef} className="avatar-canvas" />
           <div className="avatar-info">
             <div style={{ color: teamColor, fontWeight: 700, fontSize: '18px' }}>{name}</div>
             <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', textTransform: 'uppercase' }}>
@@ -350,10 +339,9 @@
       const [lipSyncA, setLipSyncA] = useState(0);
       const [lipSyncB, setLipSyncB] = useState(0);
       const [currentSpeaker, setCurrentSpeaker] = useState(null);
-      const [subtitle, setSubtitle] = useState({ speaker: '', text: 'Ready for commentary...' });
+      const [subtitle, setSubtitle] = useState({ speaker: '', text: 'Ready for commentary... Press Play to start' });
       
-      const ttsRef = useRef(new PiperTTS());
-      const analyserRef = useRef(null);
+      const ttsRef = useRef(new SimpleTTS());
 
       // Get session from URL
       useEffect(() => {
@@ -365,47 +353,18 @@
             .then(r => r.json())
             .then(data => {
               setSession(data);
+              // Fetch initial commentary
               return fetch(`/api/sessions/${sessionId}/commentary/latest`);
             })
             .then(r => r.json())
             .then(data => {
-              if (data.turns) {
+              if (data.turns && data.turns.length > 0) {
                 setCommentary(data.turns);
               }
             })
             .catch(console.error);
         }
-        
-        // Init TTS
-        ttsRef.current.init();
       }, []);
-
-      // Lip-sync animation loop
-      useEffect(() => {
-        if (!isPlaying || !analyserRef.current) return;
-        
-        const dataArray = new Uint8Array(analyserRef.current.frequencyBinCount);
-        
-        const updateLipSync = () => {
-          if (!isPlaying) return;
-          
-          analyserRef.current.getByteFrequencyData(dataArray);
-          const average = dataArray.reduce((a, b) => a + b) / dataArray.length;
-          const normalized = average / 255;
-          
-          if (currentSpeaker === 'A') {
-            setLipSyncA(normalized);
-            setLipSyncB(0);
-          } else if (currentSpeaker === 'B') {
-            setLipSyncB(normalized);
-            setLipSyncA(0);
-          }
-          
-          requestAnimationFrame(updateLipSync);
-        };
-        
-        updateLipSync();
-      }, [isPlaying, currentSpeaker]);
 
       const playTurn = useCallback(async (index) => {
         if (index >= commentary.length) {
@@ -422,36 +381,70 @@
         setCurrentSpeaker(turn.speaker);
         setSubtitle({ speaker: turn.name, text: turn.text });
         
-        // Speak with lip-sync
-        await ttsRef.current.speak(turn.text, (analyser) => {
-          analyserRef.current = analyser;
-        });
+        // Lip-sync animation
+        let lipSyncInterval;
+        const animateLipSync = () => {
+          const value = Math.random();
+          if (turn.speaker === 'A') {
+            setLipSyncA(value);
+            setLipSyncB(0);
+          } else {
+            setLipSyncB(value);
+            setLipSyncA(0);
+          }
+        };
+        
+        lipSyncInterval = setInterval(animateLipSync, 50);
+        
+        // Speak
+        await ttsRef.current.speak(turn.text);
+        
+        clearInterval(lipSyncInterval);
+        setLipSyncA(0);
+        setLipSyncB(0);
         
         // Pause between turns
-        await new Promise(r => setTimeout(r, 500));
+        await new Promise(r => setTimeout(r, 800));
         
         // Next turn
         playTurn(index + 1);
       }, [commentary]);
 
-      const handlePlay = () => {
-        if (commentary.length === 0) return;
-        setIsPlaying(true);
-        playTurn(0);
+      const handlePlay = async () => {
+        // Fetch fresh commentary
+        const params = new URLSearchParams(window.location.search);
+        const sessionId = params.get('session');
+        
+        if (sessionId) {
+          try {
+            const res = await fetch(`/api/sessions/${sessionId}/commentary/latest`);
+            const data = await res.json();
+            if (data.turns && data.turns.length > 0) {
+              setCommentary(data.turns);
+              setCurrentTurn(0);
+              setIsPlaying(true);
+              playTurn(0);
+            } else {
+              setSubtitle({ speaker: '', text: 'No commentary available yet. Try again in a few seconds.' });
+            }
+          } catch (err) {
+            setSubtitle({ speaker: 'Error', text: 'Failed to fetch commentary' });
+          }
+        }
       };
 
       const handlePause = () => {
         setIsPlaying(false);
-        speechSynthesis.cancel();
+        ttsRef.current.stop();
       };
 
       const handleSkip = () => {
-        speechSynthesis.cancel();
+        ttsRef.current.stop();
         playTurn(currentTurn + 1);
       };
 
-      const commentatorA = session?.commentators?.[0];
-      const commentatorB = session?.commentators?.[1];
+      const commentatorA = session?.commentators?.[0] || { name: 'Hiyori', team: 'away' };
+      const commentatorB = session?.commentators?.[1] || { name: 'Ren', team: 'home' };
 
       return (
         <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
@@ -527,18 +520,18 @@
             
             <Live2DAvatar
               modelPath="/avatars/models/hiyori/hiyori_pro_t11.model3.json"
-              name={commentatorA?.name || 'Hiyori'}
-              teamColor={commentatorA?.team === 'home' ? '#4a90d9' : '#ff6b35'}
-              teamAbbr={commentatorA?.team === 'home' ? 'HOME' : 'AWAY'}
+              name={commentatorA.name}
+              teamColor={commentatorA.team === 'home' ? '#4a90d9' : '#ff6b35'}
+              teamAbbr={commentatorA.team === 'home' ? 'HOME' : 'AWAY'}
               isSpeaking={currentSpeaker === 'A'}
               lipSyncValue={lipSyncA}
             />
             
             <Live2DAvatar
               modelPath="/avatars/models/ren/ren.model3.json"
-              name={commentatorB?.name || 'Ren'}
-              teamColor={commentatorB?.team === 'home' ? '#4a90d9' : '#ff6b35'}
-              teamAbbr={commentatorB?.team === 'home' ? 'HOME' : 'AWAY'}
+              name={commentatorB.name}
+              teamColor={commentatorB.team === 'home' ? '#4a90d9' : '#ff6b35'}
+              teamAbbr={commentatorB.team === 'home' ? 'HOME' : 'AWAY'}
               isSpeaking={currentSpeaker === 'B'}
               lipSyncValue={lipSyncB}
             />
@@ -564,7 +557,7 @@
                 fontSize: '13px'
               }}>
                 <span style={{ color: 'rgba(255,255,255,0.5)' }}>TTS: </span>
-                <span style={{ color: '#FFB81C' }}>Piper Neural</span>
+                <span style={{ color: '#FFB81C' }}>Web Speech API</span>
               </div>
               <div style={{ 
                 padding: '12px 20px', 
