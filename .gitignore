@@ -5,4 +5,3 @@ build/
 .env.local
 .DS_Store
 .netlify/
-public/lib/
