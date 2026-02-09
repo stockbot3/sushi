@@ -64,149 +64,130 @@
     /* ─── STREAM MODE ─── */
     .stream-overlay {
       position: fixed; inset: 0; z-index: 9999;
-      background: #000;
+      background: #050508;
       display: flex; flex-direction: column;
-      cursor: pointer;
-      overflow: hidden;
+      cursor: pointer; overflow: hidden;
     }
     .stream-overlay * { cursor: pointer; }
-    .stream-bg {
-      position: absolute; inset: 0;
-      background: radial-gradient(ellipse at 50% 30%, rgba(255,184,28,0.06) 0%, transparent 70%),
-                  radial-gradient(ellipse at 20% 80%, rgba(255,107,53,0.04) 0%, transparent 60%),
-                  #050508;
-    }
     .stream-scanline {
-      position: absolute; inset: 0; pointer-events: none;
-      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.008) 2px, rgba(255,255,255,0.008) 4px);
+      position: absolute; inset: 0; pointer-events: none; z-index: 10;
+      background: repeating-linear-gradient(0deg, transparent, transparent 2px, rgba(255,255,255,0.006) 2px, rgba(255,255,255,0.006) 4px);
     }
-    .stream-scoreboard {
-      position: relative;
-      display: flex; align-items: center; justify-content: center;
-      padding: 12px 20px;
-      background: rgba(0,0,0,0.6);
-      z-index: 2;
-      flex-shrink: 0;
+
+    /* ── HUD: score + play in one unit ── */
+    .stream-hud {
+      flex-shrink: 0; z-index: 5;
+      background: linear-gradient(180deg, rgba(10,10,15,0.98) 0%, rgba(10,10,15,0.92) 100%);
+      border-bottom: 1px solid rgba(255,255,255,0.06);
     }
-    .stream-score-box {
-      display: flex; align-items: center; gap: 16px;
-      background: rgba(0,0,0,0.6); backdrop-filter: blur(20px);
-      border: 1px solid rgba(255,255,255,0.08);
-      border-radius: 12px; padding: 8px 20px;
+    .stream-hud-top {
+      display: flex; align-items: center; justify-content: space-between;
+      padding: 10px 16px;
     }
-    .stream-team { text-align: center; min-width: 50px; }
-    .stream-team-abbr { font-size: 11px; font-weight: 800; letter-spacing: 1px; opacity: 0.7; }
-    .stream-team-score { font-size: 32px; font-weight: 900; line-height: 1; }
-    .stream-divider { font-size: 20px; color: rgba(255,255,255,0.2); font-weight: 300; }
-    .stream-quarter {
-      position: absolute; top: 14px; right: 20px;
-      display: flex; align-items: center; gap: 6px;
+    .stream-hud-scores {
+      display: flex; align-items: center; gap: 0;
     }
-    .stream-live-badge {
+    .stream-hud-team {
+      display: flex; align-items: center; gap: 8px;
+      padding: 4px 12px;
+    }
+    .stream-hud-team-away { border-radius: 8px 0 0 8px; background: rgba(255,255,255,0.04); }
+    .stream-hud-team-home { border-radius: 0 8px 8px 0; background: rgba(255,255,255,0.04); }
+    .stream-hud-abbr { font-size: 13px; font-weight: 800; letter-spacing: 1px; }
+    .stream-hud-pts { font-size: 28px; font-weight: 900; line-height: 1; min-width: 28px; text-align: center; }
+    .stream-hud-sep {
+      font-size: 20px; color: rgba(255,255,255,0.12); padding: 0 6px; font-weight: 200;
+    }
+    .stream-hud-info {
+      display: flex; align-items: center; gap: 8px;
+    }
+    .stream-hud-clock {
+      font-size: 13px; font-weight: 700; color: rgba(255,255,255,0.5);
+      font-variant-numeric: tabular-nums;
+    }
+    .stream-hud-live {
       display: flex; align-items: center; gap: 4px;
-      background: rgba(239,68,68,0.2); border: 1px solid rgba(239,68,68,0.4);
-      padding: 3px 8px; border-radius: 6px;
-      font-size: 10px; font-weight: 800; color: #ef4444; letter-spacing: 1px;
+      background: rgba(239,68,68,0.15); border: 1px solid rgba(239,68,68,0.3);
+      padding: 2px 8px; border-radius: 6px;
+      font-size: 9px; font-weight: 800; color: #ef4444; letter-spacing: 1px;
     }
-    .stream-live-dot { width: 6px; height: 6px; border-radius: 50%; background: #ef4444; animation: livePulse 1.5s ease-in-out infinite; }
-    .stream-clock { font-size: 11px; color: rgba(255,255,255,0.5); font-weight: 600; font-variant-numeric: tabular-nums; }
-    .stream-hint {
-      position: absolute; top: 16px; left: 20px;
-      font-size: 9px; color: rgba(255,255,255,0.15);
-      letter-spacing: 1px; text-transform: uppercase;
+    .stream-hud-live-dot { width: 5px; height: 5px; border-radius: 50%; background: #ef4444; animation: livePulse 1.5s ease-in-out infinite; }
+    .stream-hud-hint {
+      font-size: 8px; color: rgba(255,255,255,0.12); letter-spacing: 1px; text-transform: uppercase;
     }
-    .stream-commentary {
-      position: relative; z-index: 2;
-      padding: 16px 20px 24px;
-      flex: 1; overflow-y: auto;
+
+    /* ── Play ticker ── */
+    .stream-play-ticker {
+      padding: 8px 16px 10px;
+      border-top: 1px solid rgba(255,184,28,0.08);
+      background: linear-gradient(135deg, rgba(255,184,28,0.04), rgba(255,107,53,0.02));
+    }
+    .stream-play-ticker.fresh { animation: tickerFlash 0.6s ease-out; }
+    @keyframes tickerFlash {
+      0% { background: linear-gradient(135deg, rgba(255,184,28,0.15), rgba(255,107,53,0.08)); }
+      100% { background: linear-gradient(135deg, rgba(255,184,28,0.04), rgba(255,107,53,0.02)); }
+    }
+    .stream-ticker-top {
+      display: flex; align-items: center; gap: 6px; margin-bottom: 4px;
+    }
+    .stream-ticker-dot { width: 5px; height: 5px; border-radius: 50%; background: #FFB81C; animation: livePulse 1s ease-in-out infinite; }
+    .stream-ticker-label { font-size: 8px; font-weight: 800; color: #FFB81C; letter-spacing: 1.5px; text-transform: uppercase; }
+    .stream-ticker-type { font-size: 9px; font-weight: 700; color: rgba(255,255,255,0.3); text-transform: uppercase; letter-spacing: 0.5px; }
+    .stream-ticker-mood {
+      font-size: 8px; font-weight: 800; letter-spacing: 0.5px;
+      padding: 1px 6px; border-radius: 4px; margin-left: auto;
+    }
+    .stream-ticker-desc {
+      font-size: 13px; font-weight: 500; color: rgba(255,255,255,0.75);
+      line-height: 1.4; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden;
+    }
+
+    /* ── Commentary area ── */
+    .stream-chat {
+      flex: 1; overflow-y: auto; z-index: 2;
+      padding: 16px 16px 20px;
       display: flex; flex-direction: column; justify-content: flex-end;
+      background: radial-gradient(ellipse at 50% 80%, rgba(255,184,28,0.03) 0%, transparent 70%);
       -ms-overflow-style: none; scrollbar-width: none;
     }
-    .stream-commentary::-webkit-scrollbar { display: none; }
-    .stream-play-banner {
-      position: relative; z-index: 3;
-      background: linear-gradient(135deg, rgba(255,184,28,0.12), rgba(255,107,53,0.06));
-      border: 1px solid rgba(255,184,28,0.2);
-      border-radius: 14px; padding: 12px 16px;
-      backdrop-filter: blur(24px);
-      margin: 0 16px;
-      flex-shrink: 0;
-      animation: playSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards;
-    }
-    .stream-play-banner.new-play { animation: playSlideIn 0.5s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
-    @keyframes playSlideIn {
-      0% { opacity: 0; transform: translateY(-20px) scale(0.95); }
-      100% { opacity: 1; transform: translateY(0) scale(1); }
-    }
-    .stream-play-label {
-      display: inline-flex; align-items: center; gap: 5px;
-      font-size: 9px; font-weight: 800; letter-spacing: 1.5px; text-transform: uppercase;
-      color: #FFB81C; margin-bottom: 6px;
-    }
-    .stream-play-label-dot {
-      width: 6px; height: 6px; border-radius: 50%; background: #FFB81C;
-      animation: livePulse 1s ease-in-out infinite;
-    }
-    .stream-play-type {
-      font-size: 11px; font-weight: 700; color: rgba(255,255,255,0.5);
-      margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
-    }
-    .stream-play-desc {
-      font-size: 14px; font-weight: 500; color: rgba(255,255,255,0.88);
-      line-height: 1.45;
-    }
-    .stream-play-meta {
-      display: flex; align-items: center; gap: 8px; margin-top: 6px;
-    }
-    .stream-play-qtr {
-      font-size: 10px; font-weight: 700; color: #FFB81C;
-      background: rgba(255,184,28,0.15); padding: 2px 8px; border-radius: 6px;
-    }
-    .stream-play-mood {
-      font-size: 9px; font-weight: 800; letter-spacing: 0.5px;
-      padding: 2px 8px; border-radius: 6px;
-    }
-    .stream-play-ctx {
-      font-size: 10px; color: rgba(255,255,255,0.35);
-      margin-bottom: 12px; letter-spacing: 0.5px;
-      max-width: 80%;
-    }
+    .stream-chat::-webkit-scrollbar { display: none; }
     .stream-bubble {
       padding: 10px 14px; border-radius: 12px;
       margin-bottom: 8px; max-width: 85%;
       animation: bubbleIn 0.4s ease-out forwards;
     }
     .stream-bubble-a {
-      background: linear-gradient(135deg, rgba(255,107,53,0.12), rgba(255,107,53,0.04));
+      background: linear-gradient(135deg, rgba(255,107,53,0.1), rgba(255,107,53,0.03));
       border-left: 3px solid var(--stream-color-a, #ff6b35);
       align-self: flex-start;
     }
     .stream-bubble-b {
-      background: linear-gradient(135deg, rgba(74,144,217,0.12), rgba(74,144,217,0.04));
+      background: linear-gradient(135deg, rgba(74,144,217,0.1), rgba(74,144,217,0.03));
       border-left: 3px solid var(--stream-color-b, #4a90d9);
       align-self: flex-end;
     }
     .stream-speaker { font-size: 10px; font-weight: 800; margin-bottom: 3px; letter-spacing: 0.5px; }
-    .stream-text { font-size: 14px; line-height: 1.5; color: rgba(255,255,255,0.9); }
+    .stream-text { font-size: 14px; line-height: 1.5; color: rgba(255,255,255,0.88); }
     .stream-powered {
-      text-align: center; padding-top: 12px;
-      font-size: 8px; color: rgba(255,255,255,0.1); letter-spacing: 2px; text-transform: uppercase;
+      text-align: center; padding-top: 16px;
+      font-size: 8px; color: rgba(255,255,255,0.08); letter-spacing: 2px; text-transform: uppercase;
     }
     @media (orientation: landscape) {
-      .stream-commentary { padding-bottom: 16px; }
-      .stream-bubble { max-width: 70%; }
+      .stream-hud-top { padding: 8px 20px; }
+      .stream-play-ticker { padding: 6px 20px 8px; }
+      .stream-chat { padding: 12px 20px 16px; }
+      .stream-bubble { max-width: 65%; }
       .stream-text { font-size: 15px; }
-      .stream-team-score { font-size: 36px; }
-      .stream-play-banner { margin: 0 20px; }
-      .stream-play-desc { font-size: 15px; }
+      .stream-hud-pts { font-size: 32px; }
     }
     @media (min-width: 768px) {
-      .stream-bubble { max-width: 60%; }
+      .stream-hud-top { padding: 12px 32px; }
+      .stream-play-ticker { padding: 8px 32px 10px; }
+      .stream-chat { padding: 20px 32px 24px; }
+      .stream-bubble { max-width: 55%; }
       .stream-text { font-size: 16px; }
-      .stream-team-score { font-size: 40px; }
-      .stream-commentary { padding: 16px 40px 32px; }
-      .stream-play-banner { margin: 0 40px; }
-      .stream-play-desc { font-size: 16px; }
+      .stream-hud-pts { font-size: 36px; }
+      .stream-ticker-desc { font-size: 14px; }
     }
   </style>
 </head>
@@ -875,6 +856,7 @@
       const [liveCommentary, setLiveCommentary] = useState(initialCommentary);
       const [playKey, setPlayKey] = useState(0);
       const lastPlayRef = useRef(initialCommentary?.play?.description || '');
+      const chatEndRef = useRef(null);
       const pollRef = useRef(null);
 
       const moodColors = {
@@ -898,7 +880,6 @@
             const data = await res.json();
             if (data.turns?.length > 0) {
               const newDesc = data.play?.description || '';
-              // Detect new play — bump key to re-trigger animation
               if (newDesc && newDesc !== lastPlayRef.current) {
                 lastPlayRef.current = newDesc;
                 setPlayKey(k => k + 1);
@@ -917,84 +898,90 @@
         };
       }, [isLive]);
 
+      // Auto-scroll chat to bottom
+      useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, [liveCommentary]);
+
       const commentary = liveCommentary;
+      const awayScore = commentary?.score ? Object.values(commentary.score)[0] : game?.away?.score || 0;
+      const homeScore = commentary?.score ? Object.values(commentary.score)[1] : game?.home?.score || 0;
+      const mood = commentary?.play?.mood;
+      const moodInfo = mood && moodColors[mood] ? moodColors[mood] : null;
 
       return (
         <div className="stream-overlay" onClick={onClose}>
-          <div className="stream-bg" />
           <div className="stream-scanline" />
 
-          <div className="stream-hint">tap to exit</div>
-
-          {/* Scoreboard bar */}
-          <div className="stream-scoreboard">
-            <div className="stream-score-box">
-              <div className="stream-team">
-                <div className="stream-team-abbr" style={{ color: awayColor }}>{awayAbbr}</div>
-                <div className="stream-team-score">{commentary?.score ? Object.values(commentary.score)[0] : game?.away?.score || 0}</div>
-              </div>
-              <div className="stream-divider">—</div>
-              <div className="stream-team">
-                <div className="stream-team-abbr" style={{ color: homeColor }}>{homeAbbr}</div>
-                <div className="stream-team-score">{commentary?.score ? Object.values(commentary.score)[1] : game?.home?.score || 0}</div>
-              </div>
-            </div>
-            <div className="stream-quarter">
-              {isLive && (
-                <div className="stream-live-badge">
-                  <div className="stream-live-dot" />
-                  LIVE
+          {/* ── HUD: score bar + play ticker as one fixed unit ── */}
+          <div className="stream-hud">
+            {/* Score bar */}
+            <div className="stream-hud-top">
+              <div className="stream-hud-scores">
+                <div className="stream-hud-team stream-hud-team-away">
+                  <span className="stream-hud-abbr" style={{ color: awayColor }}>{awayAbbr}</span>
+                  <span className="stream-hud-pts">{awayScore}</span>
                 </div>
-              )}
-              {commentary?.play && (
-                <span className="stream-clock">Q{commentary.play.quarter} {commentary.play.clock}</span>
-              )}
+                <span className="stream-hud-sep">:</span>
+                <div className="stream-hud-team stream-hud-team-home">
+                  <span className="stream-hud-pts">{homeScore}</span>
+                  <span className="stream-hud-abbr" style={{ color: homeColor }}>{homeAbbr}</span>
+                </div>
+              </div>
+              <div className="stream-hud-info">
+                {commentary?.play && (
+                  <span className="stream-hud-clock">Q{commentary.play.quarter} {commentary.play.clock}</span>
+                )}
+                {isLive && (
+                  <div className="stream-hud-live">
+                    <div className="stream-hud-live-dot" />
+                    LIVE
+                  </div>
+                )}
+                <span className="stream-hud-hint">tap to exit</span>
+              </div>
             </div>
+
+            {/* Play ticker */}
+            {commentary?.play && (
+              <div key={playKey} className={`stream-play-ticker ${playKey > 0 ? 'fresh' : ''}`} onClick={(e) => e.stopPropagation()}>
+                <div className="stream-ticker-top">
+                  <div className="stream-ticker-dot" />
+                  <span className="stream-ticker-label">Latest Play</span>
+                  <span className="stream-ticker-type">{commentary.play.playType} / {commentary.play.result}</span>
+                  {moodInfo && (
+                    <span className="stream-ticker-mood" style={{ background: moodInfo.bg, color: moodInfo.color }}>
+                      {moodInfo.label}
+                    </span>
+                  )}
+                </div>
+                <div className="stream-ticker-desc">{commentary.play.description}</div>
+              </div>
+            )}
           </div>
 
-          {/* Play Banner — always visible below scoreboard */}
-          {commentary?.play && (
-            <div key={playKey} className="stream-play-banner new-play" onClick={(e) => e.stopPropagation()}>
-              <div className="stream-play-label">
-                <div className="stream-play-label-dot" />
-                LATEST PLAY
-              </div>
-              <div className="stream-play-type">{commentary.play.playType} / {commentary.play.result}</div>
-              <div className="stream-play-desc">{commentary.play.description}</div>
-              <div className="stream-play-meta">
-                <span className="stream-play-qtr">Q{commentary.play.quarter} {commentary.play.clock}</span>
-                {commentary.play.mood && moodColors[commentary.play.mood] && (
-                  <span className="stream-play-mood"
-                    style={{ background: moodColors[commentary.play.mood].bg, color: moodColors[commentary.play.mood].color }}>
-                    {moodColors[commentary.play.mood].label}
-                  </span>
-                )}
-              </div>
-            </div>
-          )}
-
-          {/* Commentary — scrolls underneath */}
-          <div className="stream-commentary" style={{ '--stream-color-a': awayColor, '--stream-color-b': homeColor }}>
-            <div style={{ display: 'flex', flexDirection: 'column' }}>
-              {commentary?.turns?.map((turn, i) => {
-                const isA = turn.speaker === 'A';
-                return (
-                  <div key={`${commentary.timestamp}-${i}`} className={`stream-bubble ${isA ? 'stream-bubble-a' : 'stream-bubble-b'}`}
-                    style={{ animationDelay: `${i * 0.2}s` }}>
-                    <div className="stream-speaker" style={{ color: isA ? awayColor : homeColor }}>
-                      {turn.name}
-                    </div>
-                    <div className="stream-text">{turn.text}</div>
+          {/* ── Chat: scrollable commentary ── */}
+          <div className="stream-chat" style={{ '--stream-color-a': awayColor, '--stream-color-b': homeColor }}>
+            {commentary?.turns?.map((turn, i) => {
+              const isA = turn.speaker === 'A';
+              return (
+                <div key={`${commentary.timestamp}-${i}`}
+                  className={`stream-bubble ${isA ? 'stream-bubble-a' : 'stream-bubble-b'}`}
+                  style={{ animationDelay: `${i * 0.2}s` }}>
+                  <div className="stream-speaker" style={{ color: isA ? awayColor : homeColor }}>
+                    {turn.name}
                   </div>
-                );
-              })}
-            </div>
+                  <div className="stream-text">{turn.text}</div>
+                </div>
+              );
+            })}
             {(!commentary?.turns || commentary.turns.length === 0) && (
               <div style={{ textAlign: 'center', padding: '40px 0', color: 'rgba(255,255,255,0.2)', fontSize: '14px' }}>
                 Waiting for commentary...
               </div>
             )}
             <div className="stream-powered">sushi × modal ai</div>
+            <div ref={chatEndRef} />
           </div>
         </div>
       );
