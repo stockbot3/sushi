@@ -4,82 +4,143 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Sushi - Avatar Commentary</title>
+  
+  <!-- Tailwind -->
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script>window.react = window.React;</script>
-  <script src="https://unpkg.com/lucide-react@0.460.0/dist/umd/lucide-react.min.js"></script>
+  
+  <!-- React -->
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   
-  <!-- PixiJS -->
-  <script src="https://cdn.jsdelivr.net/npm/pixi.js@7.3.2/dist/pixi.min.js"></script>
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
   
-  <!-- Live2D Framework -->
-  <script src="https://cdn.jsdelivr.net/gh/dylanNew/live2d/webgl/Live2D/lib/live2d.min.js"></script>
+  <!-- Live2D Core -->
+  <script src="https://cubism.live2d.com/sdk-webcore/CubismSdkForWeb-4/Core/live2dcubismcore.js"></script>
   
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
+  <!-- PixiJS v7 -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
   
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
-          colors: {
-            dark: { 900: '#0a0a0f', 800: '#12121a', 700: '#1a1a25', 600: '#222230' }
-          }
-        }
-      }
-    }
-  </script>
+  <!-- Pixi Live2D Display -->
+  <script src="https://cdn.jsdelivr.net/npm/pixi-live2d-display@0.5.0/dist/index.min.js"></script>
+  
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
   <style>
-    body { background: #0a0a0f; color: white; }
+    * { box-sizing: border-box; }
+    body { 
+      margin: 0; 
+      padding: 0; 
+      background: #0a0a0f; 
+      color: white; 
+      font-family: 'Inter', sans-serif;
+      overflow: hidden;
+    }
+    
+    /* Portrait Mode - Single Avatar */
+    @media (orientation: portrait) {
+      .avatar-stage {
+        flex-direction: column;
+        justify-content: center;
+        align-items: center;
+      }
+      .avatar-wrapper {
+        width: 90vw;
+        height: 50vh;
+      }
+      .avatar-wrapper.hidden-portrait {
+        display: none;
+      }
+      .vs-badge {
+        display: none;
+      }
+      .avatar-switcher {
+        display: flex;
+      }
+    }
+    
+    /* Landscape Mode - Both Avatars */
+    @media (orientation: landscape) {
+      .avatar-stage {
+        flex-direction: row;
+        justify-content: center;
+        align-items: flex-end;
+        gap: 40px;
+      }
+      .avatar-wrapper {
+        width: 45vw;
+        height: 70vh;
+        max-width: 400px;
+      }
+      .avatar-wrapper.hidden-portrait {
+        display: flex;
+      }
+      .vs-badge {
+        display: flex;
+      }
+      .avatar-switcher {
+        display: none;
+      }
+    }
+    
     .avatar-stage {
       display: flex;
-      justify-content: center;
-      align-items: flex-end;
-      gap: 40px;
-      padding: 40px;
-      min-height: 500px;
+      padding: 20px;
+      min-height: 60vh;
       position: relative;
     }
-    .avatar-container {
+    
+    .avatar-wrapper {
       position: relative;
-      width: 350px;
-      height: 450px;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
       transition: all 0.3s ease;
     }
-    .avatar-container.speaking {
-      transform: scale(1.05);
-      filter: drop-shadow(0 0 30px rgba(255,184,28,0.4));
+    
+    .avatar-wrapper.active {
+      transform: scale(1.02);
       z-index: 10;
     }
-    .avatar-container.listening {
+    
+    .avatar-wrapper.inactive {
+      opacity: 0.6;
       transform: scale(0.95);
-      opacity: 0.8;
     }
+    
     .avatar-canvas {
       width: 100%;
       height: 100%;
+      border-radius: 16px;
+      overflow: hidden;
     }
+    
     .avatar-info {
       text-align: center;
-      margin-top: 16px;
+      margin-top: 12px;
+      padding: 12px 24px;
+      background: rgba(255,255,255,0.05);
+      border-radius: 12px;
+      backdrop-filter: blur(10px);
     }
-    .lip-sync-bar {
+    
+    .lip-sync-container {
       width: 100%;
-      height: 4px;
+      height: 6px;
       background: rgba(255,255,255,0.1);
-      border-radius: 2px;
+      border-radius: 3px;
       margin-top: 8px;
       overflow: hidden;
     }
-    .lip-sync-fill {
+    
+    .lip-sync-bar {
       height: 100%;
       background: linear-gradient(90deg, #FFB81C, #FF6B35);
       width: 0%;
-      transition: width 0.05s linear;
+      transition: width 0.03s linear;
     }
+    
     .vs-badge {
       position: absolute;
       left: 50%;
@@ -89,7 +150,6 @@
       height: 60px;
       background: linear-gradient(135deg, #FFB81C, #FF6B35);
       border-radius: 50%;
-      display: flex;
       align-items: center;
       justify-content: center;
       font-weight: 900;
@@ -97,17 +157,85 @@
       color: #000;
       z-index: 5;
     }
+    
     .subtitle-box {
       text-align: center;
-      padding: 24px;
-      background: rgba(0,0,0,0.4);
-      border-top: 1px solid rgba(255,255,255,0.1);
-    }
-    .controls-panel {
       padding: 20px;
+      background: rgba(0,0,0,0.5);
+      border-top: 1px solid rgba(255,255,255,0.1);
+      min-height: 100px;
+    }
+    
+    .controls-bar {
+      display: flex;
+      justify-content: center;
+      gap: 12px;
+      padding: 16px;
       background: rgba(255,255,255,0.03);
       border-top: 1px solid rgba(255,255,255,0.06);
     }
+    
+    .control-btn {
+      padding: 12px 24px;
+      border-radius: 12px;
+      border: none;
+      font-weight: 600;
+      cursor: pointer;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      transition: all 0.2s;
+    }
+    
+    .control-btn.primary {
+      background: linear-gradient(135deg, #FFB81C, #FF6B35);
+      color: #000;
+    }
+    
+    .control-btn.secondary {
+      background: rgba(255,255,255,0.1);
+      color: white;
+    }
+    
+    .avatar-switcher {
+      position: fixed;
+      bottom: 140px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(0,0,0,0.8);
+      padding: 8px;
+      border-radius: 24px;
+      display: flex;
+      gap: 8px;
+      z-index: 100;
+    }
+    
+    .switcher-dot {
+      width: 12px;
+      height: 12px;
+      border-radius: 50%;
+      background: rgba(255,255,255,0.3);
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    .switcher-dot.active {
+      background: #FFB81C;
+      transform: scale(1.2);
+    }
+    
+    .ios-start-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.9);
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      z-index: 1000;
+      cursor: pointer;
+    }
+    
     .loading-overlay {
       position: absolute;
       inset: 0;
@@ -116,9 +244,10 @@
       align-items: center;
       justify-content: center;
       background: rgba(0,0,0,0.8);
-      border-radius: 12px;
+      border-radius: 16px;
     }
-    .loading-spinner {
+    
+    .spinner {
       width: 40px;
       height: 40px;
       border: 3px solid rgba(255,255,255,0.1);
@@ -126,6 +255,7 @@
       border-radius: 50%;
       animation: spin 1s linear infinite;
     }
+    
     @keyframes spin { to { transform: rotate(360deg); } }
   </style>
 </head>
@@ -134,73 +264,118 @@
   
   <script type="text/babel">
     const { useState, useEffect, useRef, useCallback } = React;
-    const { Mic, Play, Pause, SkipForward, Volume2, Settings, ArrowLeft } = LucideReact;
+    
+    // iOS Audio Context Handler
+    const initAudioContext = async () => {
+      const AudioContext = window.AudioContext || window.webkitAudioContext;
+      if (!AudioContext) return null;
+      
+      const ctx = new AudioContext();
+      if (ctx.state === 'suspended') {
+        await ctx.resume();
+      }
+      return ctx;
+    };
 
-    // Simple TTS using Web Speech API (Piper would need WASM setup)
-    class SimpleTTS {
+    // TTS with iOS support
+    class TTSEngine {
       constructor() {
         this.synth = window.speechSynthesis;
+        this.audioContext = null;
+        this.isInitialized = false;
       }
-
-      async speak(text, onAudioData = null) {
+      
+      async init() {
+        this.audioContext = await initAudioContext();
+        this.isInitialized = true;
+      }
+      
+      async speak(text, onProgress) {
         return new Promise((resolve) => {
+          // Cancel any ongoing speech
+          this.synth.cancel();
+          
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.rate = 1.0;
           utterance.pitch = 1.0;
+          utterance.volume = 1.0;
           
-          // Create synthetic audio analysis for lip-sync
+          // Try to get a good voice
+          const voices = this.synth.getVoices();
+          const preferredVoice = voices.find(v => 
+            v.name.includes('Google US English') || 
+            v.name.includes('Samantha') ||
+            v.name.includes('Karen')
+          );
+          if (preferredVoice) {
+            utterance.voice = preferredVoice;
+          }
+          
+          // Simulate lip-sync data during speech
           let interval;
-          if (onAudioData) {
-            const fakeAnalyser = {
-              getByteFrequencyData: (array) => {
-                for (let i = 0; i < array.length; i++) {
-                  array[i] = Math.random() * 200 + 55;
-                }
-              }
-            };
-            
+          if (onProgress) {
             interval = setInterval(() => {
-              onAudioData(fakeAnalyser);
+              // Generate synthetic waveform data
+              const intensity = 0.3 + Math.random() * 0.7;
+              onProgress(intensity);
             }, 50);
           }
           
           utterance.onend = () => {
             if (interval) clearInterval(interval);
+            if (onProgress) onProgress(0);
+            resolve();
+          };
+          
+          utterance.onerror = () => {
+            if (interval) clearInterval(interval);
+            if (onProgress) onProgress(0);
             resolve();
           };
           
           this.synth.speak(utterance);
         });
       }
-
+      
       stop() {
         this.synth.cancel();
       }
     }
 
-    // Live2D Avatar Component using Pixi.js
-    function Live2DAvatar({ modelPath, name, teamColor, teamAbbr, isSpeaking, lipSyncValue }) {
+    // Live2D Avatar Component
+    function Live2DAvatar({ modelPath, name, teamColor, isActive, isSpeaking, lipSyncValue, onClick, scale = 1 }) {
       const containerRef = useRef(null);
       const [isLoading, setIsLoading] = useState(true);
       const [error, setError] = useState(null);
       const modelRef = useRef(null);
       const appRef = useRef(null);
-      const lipSyncRef = useRef(0);
-
+      const lipSyncTarget = useRef(0);
+      
       useEffect(() => {
-        let app = null;
+        lipSyncTarget.current = lipSyncValue;
+      }, [lipSyncValue]);
+      
+      useEffect(() => {
+        let app;
+        let model;
         
-        const initLive2D = async () => {
+        const loadModel = async () => {
           try {
-            // Check if Live2D is available
-            if (!window.Live2D) {
-              throw new Error('Live2D SDK not loaded');
+            // Wait for libraries to load
+            if (!window.PIXI || !window.PIXI.live2d) {
+              await new Promise(r => setTimeout(r, 1000));
             }
-
+            
+            const { Live2DModel } = window.PIXI.live2d;
+            
+            if (!Live2DModel) {
+              throw new Error('Live2D library not available');
+            }
+            
             // Create PIXI Application
             app = new PIXI.Application({
-              width: 350,
-              height: 450,
+              width: 400,
+              height: 500,
               transparent: true,
               antialias: true,
               resolution: window.devicePixelRatio || 1,
@@ -209,121 +384,105 @@
             
             appRef.current = app;
             containerRef.current.appendChild(app.view);
-
-            // Load Live2D model using the older but stable approach
-            // For now use a simplified placeholder since full Live2D integration is complex
-            await loadSimpleAvatar(app, modelPath);
+            
+            // Load Live2D model
+            console.log('Loading model:', modelPath);
+            model = await Live2DModel.from(modelPath);
+            modelRef.current = model;
+            
+            // Add to stage
+            app.stage.addChild(model);
+            
+            // Position and scale
+            model.anchor.set(0.5, 0.5);
+            model.x = 200;
+            model.y = 250;
+            
+            // Auto-scale to fit
+            const bounds = model.getLocalBounds();
+            const scaleX = 350 / bounds.width;
+            const scaleY = 450 / bounds.height;
+            model.scale.set(Math.min(scaleX, scaleY) * scale);
+            
+            // Enable drag
+            model.eventMode = 'static';
+            model.on('pointerdown', onClick);
+            
+            // Animation loop for lip-sync and expressions
+            app.ticker.add(() => {
+              if (model && model.internalModel) {
+                // Apply lip-sync to mouth
+                const current = model.internalModel.coreModel.getParamValue('ParamMouthOpenY') || 0;
+                const target = lipSyncTarget.current;
+                const smoothed = current + (target - current) * 0.3;
+                model.internalModel.coreModel.setParamValue('ParamMouthOpenY', smoothed);
+                
+                // Breathing animation
+                const time = Date.now() / 1000;
+                const breath = Math.sin(time * 2) * 0.5 + 0.5;
+                model.internalModel.coreModel.setParamValue('ParamBreath', breath * 0.3);
+                
+                // Eye tracking (subtle)
+                const trackX = Math.sin(time * 0.5) * 0.3;
+                const trackY = Math.cos(time * 0.7) * 0.2;
+                model.internalModel.coreModel.setParamValue('ParamEyeBallX', trackX);
+                model.internalModel.coreModel.coreModel.setParamValue('ParamEyeBallY', trackY);
+              }
+            });
             
             setIsLoading(false);
+            
           } catch (err) {
-            console.error('Live2D init error:', err);
+            console.error('Failed to load Live2D model:', err);
             setError(err.message);
             setIsLoading(false);
           }
         };
         
-        initLive2D();
+        loadModel();
         
         return () => {
-          if (app) app.destroy(true);
-        };
-      }, [modelPath]);
-
-      // Update lip-sync value
-      useEffect(() => {
-        lipSyncRef.current = lipSyncValue;
-      }, [lipSyncValue]);
-
-      const loadSimpleAvatar = async (app, path) => {
-        // Create a stylized avatar representation
-        const container = new PIXI.Container();
-        
-        // Background hexagon
-        const hex = new PIXI.Graphics();
-        hex.beginFill(0x1a1a25);
-        hex.lineStyle(3, parseInt(teamColor.replace('#', '0x')));
-        
-        // Draw hexagon
-        const size = 120;
-        const points = [];
-        for (let i = 0; i < 6; i++) {
-          const angle = (i * 60 - 30) * Math.PI / 180;
-          points.push(
-            175 + size * Math.cos(angle),
-            225 + size * Math.sin(angle)
-          );
-        }
-        hex.drawPolygon(points);
-        hex.endFill();
-        container.addChild(hex);
-        
-        // Character placeholder (circle with team color)
-        const circle = new PIXI.Graphics();
-        circle.beginFill(parseInt(teamColor.replace('#', '0x')));
-        circle.drawCircle(175, 200, 60);
-        circle.endFill();
-        container.addChild(circle);
-        
-        // Face features
-        const face = new PIXI.Graphics();
-        face.beginFill(0xffffff);
-        // Eyes
-        face.drawCircle(155, 190, 8);
-        face.drawCircle(195, 190, 8);
-        // Mouth (animated)
-        face.drawEllipse(175, 220, 20, 5);
-        face.endFill();
-        container.addChild(face);
-        
-        // Speaking ring
-        const ring = new PIXI.Graphics();
-        container.addChild(ring);
-        
-        // Animation loop
-        app.ticker.add(() => {
-          ring.clear();
-          if (lipSyncRef.current > 0.1) {
-            ring.lineStyle(4, parseInt(teamColor.replace('#', '0x')), 0.5 + lipSyncRef.current * 0.5);
-            const ringSize = 130 + lipSyncRef.current * 20;
-            const ringPoints = [];
-            for (let i = 0; i < 6; i++) {
-              const angle = (i * 60 - 30) * Math.PI / 180;
-              ringPoints.push(
-                175 + ringSize * Math.cos(angle),
-                225 + ringSize * Math.sin(angle)
-              );
-            }
-            ring.drawPolygon(ringPoints);
+          if (app) {
+            app.destroy(true);
           }
-        });
-        
-        app.stage.addChild(container);
-      };
-
+        };
+      }, [modelPath, scale, onClick]);
+      
       return (
-        <div className={`avatar-container ${isSpeaking ? 'speaking' : ''}`}>
+        <div 
+          className={`avatar-wrapper ${isActive ? 'active' : 'inactive'}`}
+          onClick={onClick}
+        >
           {isLoading && (
             <div className="loading-overlay">
-              <div className="loading-spinner"></div>
-              <div className="text-gray-400 mt-4">Loading {name}...</div>
+              <div className="spinner"></div>
+              <div className="text-gray-400 mt-4 text-sm">Loading {name}...</div>
             </div>
           )}
+          
           {error && (
             <div className="loading-overlay">
               <div className="text-red-400 text-center px-4">
-                <div>Failed to load avatar</div>
+                <div className="text-sm">Failed to load avatar</div>
                 <div className="text-xs mt-2 text-gray-500">{error}</div>
               </div>
             </div>
           )}
+          
           <div ref={containerRef} className="avatar-canvas" />
+          
           <div className="avatar-info">
-            <div style={{ color: teamColor, fontWeight: 700, fontSize: '18px' }}>{name}</div>
-            <div style={{ color: 'rgba(255,255,255,0.5)', fontSize: '12px', textTransform: 'uppercase' }}>
-              {teamAbbr} Commentator
+            <div style={{ color: teamColor, fontWeight: 700, fontSize: '16px' }}>
+              {name}
             </div>
-            <div className="lip-sync-bar">
-              <div className="lip-sync-fill" style={{ width: `${lipSyncValue * 100}%` }}></div>
+            <div className="text-gray-400 text-xs mt-1">
+              {isSpeaking ? 'Speaking...' : 'Listening'}
+            </div>
+            <div className="lip-sync-container">
+              <div 
+                className="lip-sync-bar" 
+                style={{ width: `${lipSyncValue * 100}%` }}
+              />
             </div>
           </div>
         </div>
@@ -331,7 +490,7 @@
     }
 
     // Main App
-    function AvatarMode() {
+    function App() {
       const [session, setSession] = useState(null);
       const [commentary, setCommentary] = useState([]);
       const [currentTurn, setCurrentTurn] = useState(0);
@@ -339,11 +498,29 @@
       const [lipSyncA, setLipSyncA] = useState(0);
       const [lipSyncB, setLipSyncB] = useState(0);
       const [currentSpeaker, setCurrentSpeaker] = useState(null);
-      const [subtitle, setSubtitle] = useState({ speaker: '', text: 'Ready for commentary... Press Play to start' });
+      const [subtitle, setSubtitle] = useState({ speaker: '', text: 'Tap Play to start commentary' });
+      const [showIOSStart, setShowIOSStart] = useState(true);
+      const [activeAvatar, setActiveAvatar] = useState('A'); // For portrait mode
+      const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
       
-      const ttsRef = useRef(new SimpleTTS());
-
-      // Get session from URL
+      const ttsRef = useRef(new TTSEngine());
+      
+      // Handle orientation changes
+      useEffect(() => {
+        const handleResize = () => {
+          setIsLandscape(window.innerWidth > window.innerHeight);
+        };
+        
+        window.addEventListener('resize', handleResize);
+        window.addEventListener('orientationchange', handleResize);
+        
+        return () => {
+          window.removeEventListener('resize', handleResize);
+          window.removeEventListener('orientationchange', handleResize);
+        };
+      }, []);
+      
+      // Get session
       useEffect(() => {
         const params = new URLSearchParams(window.location.search);
         const sessionId = params.get('session');
@@ -351,23 +528,41 @@
         if (sessionId) {
           fetch(`/api/sessions/${sessionId}`)
             .then(r => r.json())
-            .then(data => {
-              setSession(data);
-              // Fetch initial commentary
-              return fetch(`/api/sessions/${sessionId}/commentary/latest`);
-            })
-            .then(r => r.json())
-            .then(data => {
-              if (data.turns && data.turns.length > 0) {
-                setCommentary(data.turns);
-              }
-            })
+            .then(data => setSession(data))
             .catch(console.error);
         }
       }, []);
-
-      const playTurn = useCallback(async (index) => {
-        if (index >= commentary.length) {
+      
+      // iOS initialization
+      const handleIOSStart = async () => {
+        await ttsRef.current.init();
+        setShowIOSStart(false);
+      };
+      
+      const playCommentary = async () => {
+        const params = new URLSearchParams(window.location.search);
+        const sessionId = params.get('session');
+        
+        if (!sessionId) return;
+        
+        try {
+          const res = await fetch(`/api/sessions/${sessionId}/commentary/latest`);
+          const data = await res.json();
+          
+          if (data.turns && data.turns.length > 0) {
+            setCommentary(data.turns);
+            setIsPlaying(true);
+            playTurn(0, data.turns);
+          } else {
+            setSubtitle({ speaker: '', text: 'No commentary yet. Try again soon.' });
+          }
+        } catch (err) {
+          setSubtitle({ speaker: 'Error', text: 'Failed to load commentary' });
+        }
+      };
+      
+      const playTurn = async (index, turns) => {
+        if (index >= turns.length || !isPlaying) {
           setIsPlaying(false);
           setCurrentSpeaker(null);
           setLipSyncA(0);
@@ -376,205 +571,165 @@
           return;
         }
         
-        const turn = commentary[index];
+        const turn = turns[index];
         setCurrentTurn(index);
         setCurrentSpeaker(turn.speaker);
         setSubtitle({ speaker: turn.name, text: turn.text });
         
-        // Lip-sync animation
-        let lipSyncInterval;
-        const animateLipSync = () => {
-          const value = Math.random();
+        // Auto-switch active avatar in portrait mode
+        if (!isLandscape) {
+          setActiveAvatar(turn.speaker);
+        }
+        
+        // Speak with lip-sync
+        await ttsRef.current.speak(turn.text, (intensity) => {
           if (turn.speaker === 'A') {
-            setLipSyncA(value);
+            setLipSyncA(intensity);
             setLipSyncB(0);
           } else {
-            setLipSyncB(value);
+            setLipSyncB(intensity);
             setLipSyncA(0);
           }
-        };
+        });
         
-        lipSyncInterval = setInterval(animateLipSync, 50);
-        
-        // Speak
-        await ttsRef.current.speak(turn.text);
-        
-        clearInterval(lipSyncInterval);
+        // Clear lip-sync
         setLipSyncA(0);
         setLipSyncB(0);
         
         // Pause between turns
-        await new Promise(r => setTimeout(r, 800));
+        await new Promise(r => setTimeout(r, 600));
         
-        // Next turn
-        playTurn(index + 1);
-      }, [commentary]);
-
-      const handlePlay = async () => {
-        // Fetch fresh commentary
-        const params = new URLSearchParams(window.location.search);
-        const sessionId = params.get('session');
-        
-        if (sessionId) {
-          try {
-            const res = await fetch(`/api/sessions/${sessionId}/commentary/latest`);
-            const data = await res.json();
-            if (data.turns && data.turns.length > 0) {
-              setCommentary(data.turns);
-              setCurrentTurn(0);
-              setIsPlaying(true);
-              playTurn(0);
-            } else {
-              setSubtitle({ speaker: '', text: 'No commentary available yet. Try again in a few seconds.' });
-            }
-          } catch (err) {
-            setSubtitle({ speaker: 'Error', text: 'Failed to fetch commentary' });
-          }
+        // Continue
+        if (isPlaying) {
+          playTurn(index + 1, turns);
         }
       };
-
+      
       const handlePause = () => {
         setIsPlaying(false);
         ttsRef.current.stop();
+        setLipSyncA(0);
+        setLipSyncB(0);
       };
-
+      
       const handleSkip = () => {
         ttsRef.current.stop();
-        playTurn(currentTurn + 1);
       };
-
+      
       const commentatorA = session?.commentators?.[0] || { name: 'Hiyori', team: 'away' };
       const commentatorB = session?.commentators?.[1] || { name: 'Ren', team: 'home' };
-
+      
+      const getTeamColor = (team) => team === 'home' ? '#4a90d9' : '#ff6b35';
+      
       return (
-        <div style={{ minHeight: '100vh', display: 'flex', flexDirection: 'column' }}>
+        <div className="h-screen flex flex-col">
+          {/* iOS Start Overlay */}
+          {showIOSStart && (
+            <div className="ios-start-overlay" onClick={handleIOSStart}>
+              <div className="text-6xl mb-4">🎙️</div>
+              <h1 className="text-2xl font-bold mb-2">Avatar Commentary</h1>
+              <p className="text-gray-400 mb-8">Tap anywhere to start</p>
+              <div className="text-sm text-gray-500">Enables audio on iOS</div>
+            </div>
+          )}
+          
           {/* Header */}
-          <div style={{ 
-            padding: '16px 24px', 
-            background: 'rgba(255,255,255,0.03)',
-            borderBottom: '1px solid rgba(255,255,255,0.06)',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'space-between'
-          }}>
-            <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-              <a href="/" style={{ color: 'rgba(255,255,255,0.5)' }}>
-                <ArrowLeft size={20} />
-              </a>
-              <div>
-                <div style={{ fontWeight: 700 }}>Avatar Mode</div>
-                <div style={{ fontSize: '12px', color: 'rgba(255,255,255,0.5)' }}>
-                  {session?.gameName || 'Live Commentary'}
-                </div>
-              </div>
+          <div className="bg-white/5 border-b border-white/10 p-4 flex items-center justify-between">
+            <a href="/" className="text-gray-400 hover:text-white">
+              <i data-lucide="arrow-left" className="w-6 h-6"></i>
+            </a>
+            <div className="text-center">
+              <div className="font-bold">Avatar Mode</div>
+              <div className="text-xs text-gray-400">{session?.gameName || 'Live Commentary'}</div>
             </div>
-            <div style={{ display: 'flex', gap: '12px' }}>
-              {!isPlaying ? (
-                <button onClick={handlePlay} style={{
-                  padding: '8px 16px',
-                  background: 'rgba(255,184,28,0.2)',
-                  border: '1px solid rgba(255,184,28,0.4)',
-                  borderRadius: '8px',
-                  color: '#FFB81C',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: 'pointer'
-                }}>
-                  <Play size={16} /> Play
-                </button>
-              ) : (
-                <button onClick={handlePause} style={{
-                  padding: '8px 16px',
-                  background: 'rgba(255,255,255,0.1)',
-                  border: '1px solid rgba(255,255,255,0.2)',
-                  borderRadius: '8px',
-                  color: 'white',
-                  display: 'flex',
-                  alignItems: 'center',
-                  gap: '8px',
-                  cursor: 'pointer'
-                }}>
-                  <Pause size={16} /> Pause
-                </button>
-              )}
-              <button onClick={handleSkip} style={{
-                padding: '8px 16px',
-                background: 'rgba(255,255,255,0.05)',
-                border: '1px solid rgba(255,255,255,0.1)',
-                borderRadius: '8px',
-                color: 'rgba(255,255,255,0.7)',
-                display: 'flex',
-                alignItems: 'center',
-                gap: '8px',
-                cursor: 'pointer'
-              }}>
-                <SkipForward size={16} /> Skip
-              </button>
-            </div>
+            <div className="w-6"></div>
           </div>
-
+          
           {/* Avatar Stage */}
-          <div className="avatar-stage" style={{ flex: 1 }}>
+          <div className="avatar-stage flex-1">
             <div className="vs-badge">VS</div>
             
-            <Live2DAvatar
-              modelPath="/avatars/models/hiyori/hiyori_pro_t11.model3.json"
-              name={commentatorA.name}
-              teamColor={commentatorA.team === 'home' ? '#4a90d9' : '#ff6b35'}
-              teamAbbr={commentatorA.team === 'home' ? 'HOME' : 'AWAY'}
-              isSpeaking={currentSpeaker === 'A'}
-              lipSyncValue={lipSyncA}
-            />
+            {/* Character A */}
+            <div className={`avatar-wrapper ${!isLandscape && activeAvatar !== 'A' ? 'hidden-portrait' : ''}`}>
+              <Live2DAvatar
+                modelPath="/avatars/models/hiyori/hiyori_pro_t11.model3.json"
+                name={commentatorA.name}
+                teamColor={getTeamColor(commentatorA.team)}
+                isActive={currentSpeaker === 'A'}
+                isSpeaking={currentSpeaker === 'A'}
+                lipSyncValue={lipSyncA}
+                onClick={() => setActiveAvatar('A')}
+                scale={0.9}
+              />
+            </div>
             
-            <Live2DAvatar
-              modelPath="/avatars/models/ren/ren.model3.json"
-              name={commentatorB.name}
-              teamColor={commentatorB.team === 'home' ? '#4a90d9' : '#ff6b35'}
-              teamAbbr={commentatorB.team === 'home' ? 'HOME' : 'AWAY'}
-              isSpeaking={currentSpeaker === 'B'}
-              lipSyncValue={lipSyncB}
+            {/* Character B */}
+            <div className={`avatar-wrapper ${!isLandscape && activeAvatar !== 'B' ? 'hidden-portrait' : ''}`}>
+              <Live2DAvatar
+                modelPath="/avatars/models/ren/ren.model3.json"
+                name={commentatorB.name}
+                teamColor={getTeamColor(commentatorB.team)}
+                isActive={currentSpeaker === 'B'}
+                isSpeaking={currentSpeaker === 'B'}
+                lipSyncValue={lipSyncB}
+                onClick={() => setActiveAvatar('B')}
+                scale={0.9}
+              />
+            </div>
+          </div>
+          
+          {/* Portrait Avatar Switcher */}
+          <div className="avatar-switcher">
+            <div 
+              className={`switcher-dot ${activeAvatar === 'A' ? 'active' : ''}`}
+              onClick={() => setActiveAvatar('A')}
+              style={{ background: activeAvatar === 'A' ? getTeamColor(commentatorA.team) : undefined }}
+            />
+            <div 
+              className={`switcher-dot ${activeAvatar === 'B' ? 'active' : ''}`}
+              onClick={() => setActiveAvatar('B')}
+              style={{ background: activeAvatar === 'B' ? getTeamColor(commentatorB.team) : undefined }}
             />
           </div>
-
+          
           {/* Subtitles */}
           <div className="subtitle-box">
-            <div style={{ fontSize: '11px', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '1px', color: '#FFB81C', marginBottom: '8px' }}>
+            <div className="text-yellow-400 text-xs font-bold uppercase tracking-wider mb-1">
               {subtitle.speaker || 'Commentary'}
             </div>
-            <div style={{ fontSize: '20px', fontWeight: 500, color: 'rgba(255,255,255,0.9)' }}>
+            <div className="text-lg font-medium text-white/90">
               {subtitle.text}
             </div>
           </div>
-
+          
           {/* Controls */}
-          <div className="controls-panel">
-            <div style={{ display: 'flex', gap: '16px', justifyContent: 'center', flexWrap: 'wrap' }}>
-              <div style={{ 
-                padding: '12px 20px', 
-                background: 'rgba(255,255,255,0.05)',
-                borderRadius: '8px',
-                fontSize: '13px'
-              }}>
-                <span style={{ color: 'rgba(255,255,255,0.5)' }}>TTS: </span>
-                <span style={{ color: '#FFB81C' }}>Web Speech API</span>
-              </div>
-              <div style={{ 
-                padding: '12px 20px', 
-                background: 'rgba(255,255,255,0.05)',
-                borderRadius: '8px',
-                fontSize: '13px'
-              }}>
-                <span style={{ color: 'rgba(255,255,255,0.5)' }}>Models: </span>
-                <span style={{ color: '#FFB81C' }}>Hiyori & Ren</span>
-              </div>
-            </div>
+          <div className="controls-bar">
+            {!isPlaying ? (
+              <button className="control-btn primary" onClick={playCommentary}>
+                <i data-lucide="play" className="w-5 h-5"></i>
+                Play
+              </button>
+            ) : (
+              <button className="control-btn secondary" onClick={handlePause}>
+                <i data-lucide="pause" className="w-5 h-5"></i>
+                Pause
+              </button>
+            )}
+            <button className="control-btn secondary" onClick={handleSkip}>
+              <i data-lucide="skip-forward" className="w-5 h-5"></i>
+              Skip
+            </button>
           </div>
         </div>
       );
     }
 
-    ReactDOM.createRoot(document.getElementById('root')).render(<AvatarMode />);
+    // Mount
+    const root = ReactDOM.createRoot(document.getElementById('root'));
+    root.render(<App />);
+    
+    // Initialize Lucide icons
+    lucide.createIcons();
   </script>
 </body>
 </html>
