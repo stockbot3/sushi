@@ -1,0 +1,470 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sushi Live2D Characters - Hiyori & Ren</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: linear-gradient(135deg, #0a0a0f 0%, #1a1a25 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: white;
+      overflow-x: hidden;
+    }
+    
+    .header {
+      text-align: center;
+      padding: 30px 20px;
+    }
+    
+    h1 {
+      font-size: 28px;
+      font-weight: 800;
+      background: linear-gradient(135deg, #FFB81C, #FF6B35);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+      margin-bottom: 8px;
+    }
+    
+    .subtitle {
+      color: rgba(255,255,255,0.5);
+      font-size: 14px;
+    }
+    
+    .stage {
+      display: flex;
+      gap: 40px;
+      align-items: flex-end;
+      justify-content: center;
+      padding: 20px 40px 40px;
+      background: rgba(255,255,255,0.02);
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,0.06);
+      margin: 0 20px 30px;
+      position: relative;
+      min-height: 500px;
+    }
+    
+    .avatar-wrapper {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      position: relative;
+    }
+    
+    .avatar-container {
+      width: 300px;
+      height: 400px;
+      position: relative;
+      transition: transform 0.3s ease, filter 0.3s ease;
+    }
+    
+    .avatar-container.speaking {
+      transform: scale(1.05);
+      filter: drop-shadow(0 0 30px rgba(255,184,28,0.3));
+      z-index: 10;
+    }
+    
+    .avatar-container canvas {
+      width: 100%;
+      height: 100%;
+    }
+    
+    .avatar-info {
+      text-align: center;
+      margin-top: 16px;
+    }
+    
+    .avatar-name {
+      font-size: 18px;
+      font-weight: 700;
+      margin-bottom: 4px;
+    }
+    
+    .avatar-role {
+      font-size: 12px;
+      color: rgba(255,255,255,0.5);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+    }
+    
+    .vs-divider {
+      position: absolute;
+      left: 50%;
+      top: 50%;
+      transform: translate(-50%, -50%);
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, #FFB81C, #FF6B35);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 12px;
+      color: #000;
+    }
+    
+    .controls {
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      padding: 0 20px 40px;
+      width: 100%;
+      max-width: 800px;
+    }
+    
+    .control-section {
+      background: rgba(255,255,255,0.03);
+      border-radius: 12px;
+      padding: 16px 20px;
+      border: 1px solid rgba(255,255,255,0.06);
+    }
+    
+    .control-label {
+      font-size: 11px;
+      color: rgba(255,255,255,0.4);
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin-bottom: 12px;
+    }
+    
+    .button-row {
+      display: flex;
+      gap: 8px;
+      flex-wrap: wrap;
+    }
+    
+    button {
+      padding: 10px 16px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      color: white;
+      font-size: 13px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    button:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.2);
+    }
+    
+    button.active {
+      background: rgba(255,184,28,0.2);
+      border-color: rgba(255,184,28,0.4);
+      color: #FFB81C;
+    }
+    
+    button:disabled {
+      opacity: 0.3;
+      cursor: not-allowed;
+    }
+    
+    .lip-sync-bar {
+      width: 100%;
+      height: 4px;
+      background: rgba(255,255,255,0.1);
+      border-radius: 2px;
+      margin-top: 8px;
+      overflow: hidden;
+    }
+    
+    .lip-sync-fill {
+      height: 100%;
+      background: linear-gradient(90deg, #FFB81C, #FF6B35);
+      width: 0%;
+      transition: width 0.05s linear;
+    }
+    
+    .loading {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: rgba(255,255,255,0.5);
+    }
+    
+    .loading-spinner {
+      width: 40px;
+      height: 40px;
+      border: 3px solid rgba(255,255,255,0.1);
+      border-top-color: #FFB81C;
+      border-radius: 50%;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 16px;
+    }
+    
+    @keyframes spin {
+      to { transform: rotate(360deg); }
+    }
+    
+    .subtitle-box {
+      text-align: center;
+      padding: 20px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 12px;
+      margin: 0 20px 20px;
+      min-width: 400px;
+    }
+    
+    .subtitle-speaker {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #FFB81C;
+      margin-bottom: 6px;
+    }
+    
+    .subtitle-text {
+      font-size: 18px;
+      color: rgba(255,255,255,0.9);
+      min-height: 24px;
+    }
+  </style>
+</head>
+<body>
+  <div class="header">
+    <h1>🏈 Live2D Commentary Avatars</h1>
+    <div class="subtitle">Hiyori & Ren - Real-time lip-sync demo</div>
+  </div>
+  
+  <div class="stage">
+    <!-- Hiyori (Left) -->
+    <div class="avatar-wrapper">
+      <div class="avatar-container" id="container-hiyori">
+        <div class="loading" id="loading-hiyori">
+          <div class="loading-spinner"></div>
+          <div>Loading Hiyori...</div>
+        </div>
+        <canvas id="canvas-hiyori"></canvas>
+      </div>
+      <div class="avatar-info">
+        <div class="avatar-name" style="color: #ff6b35;">Hiyori</div>
+        <div class="avatar-role">Away Commentator</div>
+        <div class="lip-sync-bar">
+          <div class="lip-sync-fill" id="lipsync-hiyori"></div>
+        </div>
+      </div>
+    </div>
+    
+    <div class="vs-divider">VS</div>
+    
+    <!-- Ren (Right) -->
+    <div class="avatar-wrapper">
+      <div class="avatar-container" id="container-ren">
+        <div class="loading" id="loading-ren">
+          <div class="loading-spinner"></div>
+          <div>Loading Ren...</div>
+        </div>
+        <canvas id="canvas-ren"></canvas>
+      </div>
+      <div class="avatar-info">
+        <div class="avatar-name" style="color: #4a90d9;">Ren</div>
+        <div class="avatar-role">Home Commentator</div>
+        <div class="lip-sync-bar">
+          <div class="lip-sync-fill" id="lipsync-ren"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  
+  <div class="subtitle-box">
+    <div class="subtitle-speaker" id="subtitle-speaker">Ready</div>
+    <div class="subtitle-text" id="subtitle-text">Click buttons below to test the avatars</div>
+  </div>
+  
+  <div class="controls">
+    <div class="control-section">
+      <div class="control-label">Speaking</div>
+      <div class="button-row">
+        <button onclick="setSpeaker('hiyori')">Hiyori Speaks</button>
+        <button onclick="setSpeaker('ren')">Ren Speaks</button>
+        <button onclick="setSpeaker('both')">Both React</button>
+        <button onclick="setSpeaker('none')">Stop</button>
+      </div>
+    </div>
+    
+    <div class="control-section">
+      <div class="control-label">Hiyori Expressions</div>
+      <div class="button-row">
+        <button onclick="setExpression('hiyori', 'neutral')">Neutral</button>
+        <button onclick="setExpression('hiyori', 'happy')">Happy</button>
+        <button onclick="setExpression('hiyori', 'angry')">Angry</button>
+        <button onclick="setExpression('hiyori', 'sad')">Sad</button>
+        <button onclick="setExpression('hiyori', 'surprised')">Surprised</button>
+      </div>
+    </div>
+    
+    <div class="control-section">
+      <div class="control-label">Ren Expressions</div>
+      <div class="button-row">
+        <button onclick="setExpression('ren', 'neutral')">Neutral</button>
+        <button onclick="setExpression('ren', 'happy')">Happy</button>
+        <button onclick="setExpression('ren', 'angry')">Angry</button>
+        <button onclick="setExpression('ren', 'sad')">Sad</button>
+        <button onclick="setExpression('ren', 'surprised')">Surprised</button>
+      </div>
+    </div>
+    
+    <div class="control-section">
+      <div class="control-label">Lip-Sync Test</div>
+      <div class="button-row">
+        <button onclick="testLipSync('hiyori')">Test Hiyori Lips</button>
+        <button onclick="testLipSync('ren')">Test Ren Lips</button>
+        <button onclick="simulateCommentary()">Simulate Commentary</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Live2D Cubism SDK -->
+  <script src="https://cdn.jsdelivr.net/gh/Live2D/CubismWebFramework@4.2.3/Core/live2dcubismcore.min.js"></script>
+  
+  <script>
+    // Simple Live2D loader (without the full framework for demo purposes)
+    // In production, you'd use the complete Live2D framework
+    
+    const avatars = {};
+    let currentSpeaker = null;
+    let lipSyncInterval = null;
+    
+    // Initialize when SDK loads
+    window.addEventListener('load', async () => {
+      if (typeof Live2DCubismCore === 'undefined') {
+        console.error('Live2D SDK not loaded');
+        return;
+      }
+      
+      console.log('Live2D SDK loaded:', Live2DCubismCore);
+      
+      // For this demo, we'll use a simplified placeholder approach
+      // Full implementation would load the .moc3 files
+      await initAvatars();
+    });
+    
+    async function initAvatars() {
+      // Simulate loading (in real implementation, load model3.json and moc3)
+      setTimeout(() => {
+        document.getElementById('loading-hiyori').style.display = 'none';
+        avatars.hiyori = {
+          loaded: true,
+          name: 'Hiyori',
+          expressions: ['neutral', 'happy', 'angry', 'sad', 'surprised'],
+          currentExpression: 'neutral'
+        };
+      }, 1500);
+      
+      setTimeout(() => {
+        document.getElementById('loading-ren').style.display = 'none';
+        avatars.ren = {
+          loaded: true,
+          name: 'Ren',
+          expressions: ['neutral', 'happy', 'angry', 'sad', 'surprised'],
+          currentExpression: 'neutral'
+        };
+      }, 2000);
+    }
+    
+    function setSpeaker(who) {
+      // Clear previous
+      document.getElementById('container-hiyori').classList.remove('speaking');
+      document.getElementById('container-ren').classList.remove('speaking');
+      
+      clearInterval(lipSyncInterval);
+      
+      if (who === 'hiyori') {
+        currentSpeaker = 'hiyori';
+        document.getElementById('container-hiyori').classList.add('speaking');
+        startLipSync('hiyori');
+        updateSubtitle('Hiyori', "That play was absolutely incredible!");
+      } else if (who === 'ren') {
+        currentSpeaker = 'ren';
+        document.getElementById('container-ren').classList.add('speaking');
+        startLipSync('ren');
+        updateSubtitle('Ren', "I can't believe what I'm seeing here.");
+      } else if (who === 'both') {
+        document.getElementById('container-hiyori').classList.add('speaking');
+        document.getElementById('container-ren').classList.add('speaking');
+        startLipSync('both');
+        updateSubtitle('Both', "WOW! AMAZING PLAY!");
+      } else {
+        currentSpeaker = null;
+        updateSubtitle('', 'Ready for commentary...');
+      }
+    }
+    
+    function startLipSync(who) {
+      lipSyncInterval = setInterval(() => {
+        if (who === 'hiyori' || who === 'both') {
+          const intensity = Math.random() * 100;
+          document.getElementById('lipsync-hiyori').style.width = intensity + '%';
+        }
+        if (who === 'ren' || who === 'both') {
+          const intensity = Math.random() * 100;
+          document.getElementById('lipsync-ren').style.width = intensity + '%';
+        }
+      }, 50);
+    }
+    
+    function setExpression(avatar, expression) {
+      if (!avatars[avatar]) return;
+      
+      avatars[avatar].currentExpression = expression;
+      
+      // Visual feedback
+      const btn = event.target;
+      btn.style.transform = 'scale(0.95)';
+      setTimeout(() => btn.style.transform = 'scale(1)', 100);
+      
+      updateSubtitle(avatars[avatar].name, `Expression: ${expression}`);
+    }
+    
+    function testLipSync(who) {
+      setSpeaker(who);
+      setTimeout(() => setSpeaker('none'), 3000);
+    }
+    
+    function simulateCommentary() {
+      const script = [
+        { who: 'hiyori', text: "That was a TURRIBLE call!", expr: 'angry' },
+        { who: 'ren', text: "Come on Mike, it wasn't that bad.", expr: 'neutral' },
+        { who: 'hiyori', text: "Not that bad?! He was CLEARLY out of bounds!", expr: 'angry' },
+        { who: 'ren', text: "Okay okay, settle down...", expr: 'sad' },
+        { who: 'hiyori', text: "I can't settle down! This is the SUPER BOWL!", expr: 'surprised' },
+      ];
+      
+      let i = 0;
+      function playNext() {
+        if (i >= script.length) {
+          setSpeaker('none');
+          return;
+        }
+        
+        const line = script[i];
+        setSpeaker(line.who);
+        setExpression(line.who, line.expr);
+        updateSubtitle(line.who === 'hiyori' ? 'Hiyori' : 'Ren', line.text);
+        
+        i++;
+        setTimeout(playNext, 3000);
+      }
+      
+      playNext();
+    }
+    
+    function updateSubtitle(speaker, text) {
+      document.getElementById('subtitle-speaker').textContent = speaker || 'Commentary';
+      document.getElementById('subtitle-text').textContent = text;
+    }
+  </script>
+</body>
+</html>

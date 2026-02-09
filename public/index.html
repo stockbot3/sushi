@@ -995,6 +995,9 @@
               <button onClick={() => setStreamMode(true)} className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors font-bold">
                 <Maximize2 size={10} /> STREAM
               </button>
+              <a href={`/avatar.html?session=${sessionId}`} className="flex items-center gap-1 text-[9px] px-2 py-0.5 rounded-full bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 transition-colors font-bold">
+                <Mic size={10} /> AVATAR
+              </a>
             </div>
           </div>
           {streamMode && <StreamOverlay commentary={commentary} game={game} onClose={() => setStreamMode(false)} sessionId={sessionId} commentators={sessionCommentators} />}

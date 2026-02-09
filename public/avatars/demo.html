@@ -1,0 +1,328 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Abstract Avatar Demo</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      background: linear-gradient(180deg, #0a0a0f 0%, #12121a 100%);
+      min-height: 100vh;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      color: white;
+      padding: 40px;
+    }
+    
+    h1 {
+      font-size: 24px;
+      font-weight: 800;
+      margin-bottom: 8px;
+      background: linear-gradient(135deg, #FFB81C, #FF6B35);
+      -webkit-background-clip: text;
+      -webkit-text-fill-color: transparent;
+    }
+    
+    .subtitle {
+      color: rgba(255,255,255,0.5);
+      font-size: 14px;
+      margin-bottom: 40px;
+    }
+    
+    .stage {
+      display: flex;
+      gap: 60px;
+      align-items: center;
+      justify-content: center;
+      padding: 40px 60px;
+      background: rgba(255,255,255,0.03);
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,0.06);
+      margin-bottom: 40px;
+    }
+    
+    .vs-badge {
+      width: 50px;
+      height: 50px;
+      background: linear-gradient(135deg, #FFB81C, #FF6B35);
+      border-radius: 50%;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-weight: 900;
+      font-size: 14px;
+      color: #000;
+      flex-shrink: 0;
+    }
+    
+    .controls {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      justify-content: center;
+      max-width: 600px;
+    }
+    
+    .control-group {
+      display: flex;
+      gap: 8px;
+      align-items: center;
+    }
+    
+    button {
+      padding: 10px 20px;
+      background: rgba(255,255,255,0.05);
+      border: 1px solid rgba(255,255,255,0.1);
+      border-radius: 8px;
+      color: white;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.2s;
+    }
+    
+    button:hover {
+      background: rgba(255,255,255,0.1);
+      border-color: rgba(255,255,255,0.2);
+    }
+    
+    button.active {
+      background: rgba(255,184,28,0.2);
+      border-color: rgba(255,184,28,0.4);
+      color: #FFB81C;
+    }
+    
+    .section-title {
+      width: 100%;
+      text-align: center;
+      color: rgba(255,255,255,0.4);
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      margin: 16px 0 8px;
+    }
+    
+    .expression-grid {
+      display: grid;
+      grid-template-columns: repeat(5, 1fr);
+      gap: 8px;
+    }
+    
+    .expression-btn {
+      padding: 12px;
+      font-size: 20px;
+    }
+    
+    .subtitle-preview {
+      margin-top: 30px;
+      padding: 20px 40px;
+      background: rgba(0,0,0,0.3);
+      border-radius: 12px;
+      text-align: center;
+      min-width: 400px;
+    }
+    
+    .subtitle-speaker {
+      font-size: 11px;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: #FFB81C;
+      margin-bottom: 6px;
+    }
+    
+    .subtitle-text {
+      font-size: 18px;
+      color: rgba(255,255,255,0.9);
+    }
+  </style>
+</head>
+<body>
+  <h1>🏈 Sushi Commentary Avatars</h1>
+  <div class="subtitle">Abstract geometric avatars with real-time effects</div>
+  
+  <div class="stage">
+    <div id="avatar-a"></div>
+    <div class="vs-badge">VS</div>
+    <div id="avatar-b"></div>
+  </div>
+  
+  <div class="controls">
+    <div class="section-title">Speaking</div>
+    <div class="control-group">
+      <button onclick="setSpeaking('A')">Big Mike Speaks</button>
+      <button onclick="setSpeaking('B')">Salty Steve Speaks</button>
+      <button onclick="setSpeaking('none')">Neither</button>
+    </div>
+    
+    <div class="section-title">Expressions - Big Mike</div>
+    <div class="expression-grid">
+      <button class="expression-btn" onclick="setExpressionA('neutral')">😐</button>
+      <button class="expression-btn" onclick="setExpressionA('happy')">😄</button>
+      <button class="expression-btn" onclick="setExpressionA('excited')">🤩</button>
+      <button class="expression-btn" onclick="setExpressionA('angry')">😤</button>
+      <button class="expression-btn" onclick="setExpressionA('laughing')">😂</button>
+    </div>
+    
+    <div class="section-title">Expressions - Salty Steve</div>
+    <div class="expression-grid">
+      <button class="expression-btn" onclick="setExpressionB('neutral')">😐</button>
+      <button class="expression-btn" onclick="setExpressionB('sad')">😔</button>
+      <button class="expression-btn" onclick="setExpressionB('surprised')">😮</button>
+      <button class="expression-btn" onclick="setExpressionB('frustrated')">😒</button>
+      <button class="expression-btn" onclick="setExpressionB('cool')">😎</button>
+    </div>
+    
+    <div class="section-title">Reactions</div>
+    <div class="control-group">
+      <button onclick="celebrateA()">Mike Celebrates 🎉</button>
+      <button onclick="celebrateB()">Steve Celebrates 🎉</button>
+      <button onclick="celebrateBoth()">Both Celebrate 🎊</button>
+    </div>
+    
+    <div class="section-title">Play Moods (Auto-expressions)</div>
+    <div class="control-group">
+      <button onclick="setMood('electric')">Electric ⚡</button>
+      <button onclick="setMood('disaster')">Disaster 💥</button>
+      <button onclick="setMood('big_play')">Big Play 🏆</button>
+      <button onclick="setMood('controversial')">Controversial 🤬</button>
+    </div>
+  </div>
+  
+  <div class="subtitle-preview">
+    <div class="subtitle-speaker" id="speaker-label">Waiting...</div>
+    <div class="subtitle-text" id="subtitle-text">Click a button above to see the avatars in action</div>
+  </div>
+
+  <script src="AbstractAvatar.js"></script>
+  <script>
+    // Create avatars
+    const avatarA = new AbstractAvatar('avatar-a', {
+      name: 'Big Mike',
+      teamColor: '#ff6b35', // Orange
+      teamAbbr: 'KC',
+      size: 180
+    });
+    
+    const avatarB = new AbstractAvatar('avatar-b', {
+      name: 'Salty Steve',
+      teamColor: '#4a90d9', // Blue
+      teamAbbr: 'BUF',
+      size: 180
+    });
+    
+    let currentSpeaker = null;
+    
+    // Simulate audio waveform for speaking effect
+    setInterval(() => {
+      if (currentSpeaker === 'A') {
+        const data = new Array(32).fill(0).map(() => Math.random());
+        avatarA.setWaveform(data);
+      } else if (currentSpeaker === 'B') {
+        const data = new Array(32).fill(0).map(() => Math.random());
+        avatarB.setWaveform(data);
+      }
+    }, 50);
+    
+    function setSpeaking(who) {
+      currentSpeaker = who === 'none' ? null : who;
+      
+      avatarA.setSpeaking(who === 'A');
+      avatarB.setSpeaking(who === 'B');
+      
+      // Listener looks at speaker
+      if (who === 'A') {
+        avatarA.lookAt('center');
+        avatarB.lookAt('left');
+        updateSubtitle('Big Mike', "That's a TURRIBLE call, ref!");
+      } else if (who === 'B') {
+        avatarB.lookAt('center');
+        avatarA.lookAt('right');
+        updateSubtitle('Salty Steve', "You say that about every call, Mike...");
+      } else {
+        avatarA.lookAt('center');
+        avatarB.lookAt('center');
+        updateSubtitle('', 'Waiting for commentary...');
+      }
+    }
+    
+    function setExpressionA(expr) {
+      avatarA.setExpression(expr);
+    }
+    
+    function setExpressionB(expr) {
+      avatarB.setExpression(expr);
+    }
+    
+    function celebrateA() {
+      avatarA.celebrate(1.5);
+      avatarA.setExpression('excited');
+    }
+    
+    function celebrateB() {
+      avatarB.celebrate(1.5);
+      avatarB.setExpression('happy');
+    }
+    
+    function celebrateBoth() {
+      avatarA.celebrate(1);
+      avatarB.celebrate(1);
+      setTimeout(() => {
+        avatarA.setExpression('excited');
+        avatarB.setExpression('excited');
+      }, 200);
+    }
+    
+    function setMood(mood) {
+      avatarA.setExpression(mood);
+      avatarB.setExpression(mood);
+      
+      const moodTexts = {
+        electric: { speaker: 'Big Mike', text: 'OH MY GOODNESS! DID YOU SEE THAT?!' },
+        disaster: { speaker: 'Salty Steve', text: 'That\'s just awful. Simply awful.' },
+        big_play: { speaker: 'Big Mike', text: 'HERE WE GO! GAME CHANGER!' },
+        controversial: { speaker: 'Salty Steve', text: 'The refs are blind! BLIND I tell you!' }
+      };
+      
+      const mt = moodTexts[mood];
+      if (mt) updateSubtitle(mt.speaker, mt.text);
+      
+      // Auto celebration for good moods
+      if (['electric', 'big_play'].includes(mood)) {
+        celebrateBoth();
+      }
+    }
+    
+    function updateSubtitle(speaker, text) {
+      document.getElementById('speaker-label').textContent = speaker || 'Commentary';
+      document.getElementById('subtitle-text').textContent = text;
+      
+      // Fade effect
+      const sub = document.querySelector('.subtitle-preview');
+      sub.style.opacity = '0.5';
+      setTimeout(() => sub.style.opacity = '1', 100);
+    }
+    
+    // Demo loop
+    let demoStep = 0;
+    const demoActions = [
+      () => setSpeaking('A'),
+      () => setExpressionA('excited'),
+      () => setSpeaking('B'),
+      () => setExpressionB('frustrated'),
+      () => setSpeaking('none'),
+      () => setMood('big_play'),
+    ];
+    
+    // Uncomment for auto demo:
+    // setInterval(() => {
+    //   demoActions[demoStep % demoActions.length]();
+    //   demoStep++;
+    // }, 3000);
+  </script>
+</body>
+</html>
