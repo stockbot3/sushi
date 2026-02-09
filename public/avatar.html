@@ -6,22 +6,26 @@
   <title>Sushi - Avatar Commentary</title>
   
   <script src="https://cdn.tailwindcss.com"></script>
-  <script crossorigin src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+  
+  <!-- Local Libraries -->
+  <script src="/lib/pixi.min.js"></script>
+  <script src="/lib/cubism4.min.js"></script>
+  <script src="/lib/index.min.js"></script>
+  
+  <!-- Piper TTS -->
+  <script type="module">
+    import * as piper from 'https://cdn.jsdelivr.net/npm/@piper-tts/web@1.0.0/+esm';
+    window.Piper = piper;
+  </script>
   
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   
   <style>
     * { box-sizing: border-box; }
-    body { 
-      margin: 0; 
-      padding: 0; 
-      background: #0a0a0f; 
-      color: white; 
-      font-family: 'Inter', sans-serif;
-      overflow: hidden;
-    }
+    body { margin: 0; padding: 0; background: #0a0a0f; color: white; font-family: 'Inter', sans-serif; overflow: hidden; }
     
     @media (orientation: portrait) {
       .avatar-stage { flex-direction: column; justify-content: center; align-items: center; }
@@ -41,227 +45,295 @@
     
     .avatar-stage { display: flex; padding: 20px; min-height: 60vh; position: relative; }
     .avatar-wrapper { position: relative; display: flex; flex-direction: column; align-items: center; transition: all 0.3s ease; }
-    .avatar-wrapper.active { transform: scale(1.02); z-index: 10; }
-    .avatar-wrapper.inactive { opacity: 0.6; transform: scale(0.95); }
-    .avatar-canvas { width: 100%; height: 100%; border-radius: 16px; overflow: hidden; }
-    .avatar-info { text-align: center; margin-top: 12px; padding: 12px 24px; background: rgba(255,255,255,0.05); border-radius: 12px; backdrop-filter: blur(10px); }
+    .avatar-wrapper.speaking { transform: scale(1.05); filter: drop-shadow(0 0 30px rgba(255,184,28,0.4)); z-index: 10; }
+    .avatar-canvas { width: 100%; height: 100%; border-radius: 16px; }
+    .avatar-info { text-align: center; margin-top: 12px; padding: 12px 24px; background: rgba(255,255,255,0.05); border-radius: 12px; backdrop-filter: blur(10px); border: 1px solid rgba(255,255,255,0.1); }
     .lip-sync-container { width: 100%; height: 6px; background: rgba(255,255,255,0.1); border-radius: 3px; margin-top: 8px; overflow: hidden; }
-    .lip-sync-bar { height: 100%; background: linear-gradient(90deg, #FFB81C, #FF6B35); width: 0%; transition: width 0.03s linear; }
+    .lip-sync-bar { height: 100%; background: linear-gradient(90deg, #FFB81C, #FF6B35); width: 0%; transition: width 0.05s linear; }
     .vs-badge { position: absolute; left: 50%; top: 50%; transform: translate(-50%, -50%); width: 60px; height: 60px; background: linear-gradient(135deg, #FFB81C, #FF6B35); border-radius: 50%; align-items: center; justify-content: center; font-weight: 900; font-size: 14px; color: #000; z-index: 5; }
     .subtitle-box { text-align: center; padding: 20px; background: rgba(0,0,0,0.5); border-top: 1px solid rgba(255,255,255,0.1); min-height: 100px; }
     .controls-bar { display: flex; justify-content: center; gap: 12px; padding: 16px; background: rgba(255,255,255,0.03); border-top: 1px solid rgba(255,255,255,0.06); }
     .control-btn { padding: 12px 24px; border-radius: 12px; border: none; font-weight: 600; cursor: pointer; display: flex; align-items: center; gap: 8px; transition: all 0.2s; }
     .control-btn.primary { background: linear-gradient(135deg, #FFB81C, #FF6B35); color: #000; }
     .control-btn.secondary { background: rgba(255,255,255,0.1); color: white; }
+    .control-btn:disabled { opacity: 0.5; cursor: not-allowed; }
     .avatar-switcher { position: fixed; bottom: 140px; left: 50%; transform: translateX(-50%); background: rgba(0,0,0,0.8); padding: 8px; border-radius: 24px; gap: 8px; z-index: 100; }
     .switcher-dot { width: 12px; height: 12px; border-radius: 50%; background: rgba(255,255,255,0.3); cursor: pointer; transition: all 0.2s; }
     .switcher-dot.active { transform: scale(1.2); }
-    .ios-start-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; cursor: pointer; }
+    .ios-overlay { position: fixed; inset: 0; background: rgba(0,0,0,0.95); display: flex; flex-direction: column; align-items: center; justify-content: center; z-index: 1000; cursor: pointer; }
     .loading-overlay { position: absolute; inset: 0; display: flex; flex-direction: column; align-items: center; justify-content: center; background: rgba(0,0,0,0.9); border-radius: 16px; z-index: 20; }
     .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #FFB81C; border-radius: 50%; animation: spin 1s linear infinite; }
     @keyframes spin { to { transform: rotate(360deg); } }
-    .error-message { color: #ff4444; text-align: center; padding: 20px; }
+    .error-box { color: #ff4444; text-align: center; padding: 20px; }
   </style>
 </head>
 <body>
   <div id="root"></div>
   
-  <!-- Load libraries in order -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pixi.js/7.3.2/pixi.min.js"></script>
-  
   <script type="text/babel">
-    const { useState, useEffect, useRef, useCallback } = React;
+    const { useState, useEffect, useRef } = React;
     
-    // TTS Engine
-    class TTSEngine {
+    // Check if libraries loaded
+    const hasPixi = typeof window.PIXI !== 'undefined';
+    const hasLive2D = hasPixi && window.PIXI.live2d;
+    
+    console.log('PIXI loaded:', hasPixi);
+    console.log('Live2D loaded:', hasLive2D);
+
+    // Piper TTS Engine
+    class PiperTTSEngine {
       constructor() {
-        this.synth = window.speechSynthesis;
-        this.isInitialized = false;
+        this.piper = null;
+        this.audioContext = null;
+        this.isReady = false;
       }
       
       async init() {
-        // iOS requires user interaction to unlock audio
-        const AudioContext = window.AudioContext || window.webkitAudioContext;
-        if (AudioContext) {
-          const ctx = new AudioContext();
-          if (ctx.state === 'suspended') {
-            await ctx.resume();
+        try {
+          // Initialize AudioContext (required for iOS)
+          this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+          if (this.audioContext.state === 'suspended') {
+            await this.audioContext.resume();
           }
+          
+          // Load Piper
+          if (window.Piper) {
+            this.piper = new window.Piper.Piper();
+            await this.piper.loadVoice('en_US-lessac');
+            this.isReady = true;
+            console.log('Piper TTS ready');
+          } else {
+            console.warn('Piper not available, using fallback');
+          }
+        } catch (err) {
+          console.error('TTS init error:', err);
         }
-        this.isInitialized = true;
       }
       
-      async speak(text, onProgress) {
+      async speak(text, onLipSync) {
+        if (!this.isReady || !this.piper) {
+          // Fallback to Web Speech
+          return this._speakFallback(text, onLipSync);
+        }
+        
+        try {
+          // Generate speech with Piper
+          const audioData = await this.piper.synthesize(text);
+          
+          // Create audio buffer
+          const audioBuffer = await this.audioContext.decodeAudioData(audioData.buffer.slice(0));
+          
+          // Create source and analyser
+          const source = this.audioContext.createBufferSource();
+          const analyser = this.audioContext.createAnalyser();
+          analyser.fftSize = 256;
+          
+          source.buffer = audioBuffer;
+          source.connect(analyser);
+          analyser.connect(this.audioContext.destination);
+          
+          // Start playback
+          source.start(0);
+          
+          // Analyze audio for lip-sync
+          const dataArray = new Uint8Array(analyser.frequencyBinCount);
+          let isPlaying = true;
+          
+          source.onended = () => {
+            isPlaying = false;
+            if (onLipSync) onLipSync(0);
+          };
+          
+          // Lip-sync loop
+          const analyze = () => {
+            if (!isPlaying) {
+              if (onLipSync) onLipSync(0);
+              return;
+            }
+            
+            analyser.getByteFrequencyData(dataArray);
+            const average = dataArray.reduce((a, b) => a + b, 0) / dataArray.length;
+            const normalized = average / 255;
+            
+            if (onLipSync) onLipSync(normalized);
+            
+            requestAnimationFrame(analyze);
+          };
+          
+          analyze();
+          
+          // Return promise that resolves when done
+          return new Promise((resolve) => {
+            source.onended = () => {
+              isPlaying = false;
+              if (onLipSync) onLipSync(0);
+              resolve();
+            };
+          });
+          
+        } catch (err) {
+          console.error('Piper speak error:', err);
+          return this._speakFallback(text, onLipSync);
+        }
+      }
+      
+      _speakFallback(text, onLipSync) {
         return new Promise((resolve) => {
-          this.synth.cancel();
+          const synth = window.speechSynthesis;
+          synth.cancel();
           
           const utterance = new SpeechSynthesisUtterance(text);
           utterance.rate = 1.0;
           utterance.pitch = 1.0;
-          utterance.volume = 1.0;
-          
-          // Get voices
-          const voices = this.synth.getVoices();
-          const goodVoice = voices.find(v => 
-            v.name.includes('Google') || 
-            v.name.includes('Samantha') ||
-            v.lang === 'en-US'
-          );
-          if (goodVoice) utterance.voice = goodVoice;
           
           let interval;
-          if (onProgress) {
+          if (onLipSync) {
             interval = setInterval(() => {
-              onProgress(0.3 + Math.random() * 0.7);
-            }, 60);
+              onLipSync(0.3 + Math.random() * 0.5);
+            }, 80);
           }
           
           utterance.onend = () => {
-            if (interval) clearInterval(interval);
-            if (onProgress) onProgress(0);
+            clearInterval(interval);
+            if (onLipSync) onLipSync(0);
             resolve();
           };
           
           utterance.onerror = () => {
-            if (interval) clearInterval(interval);
-            if (onProgress) onProgress(0);
+            clearInterval(interval);
+            if (onLipSync) onLipSync(0);
             resolve();
           };
           
-          this.synth.speak(utterance);
+          synth.speak(utterance);
         });
       }
       
       stop() {
-        this.synth.cancel();
+        if (this.audioContext) {
+          this.audioContext.suspend();
+          this.audioContext.resume();
+        }
+        window.speechSynthesis.cancel();
       }
     }
 
-    // Simple Avatar using PIXI (works without Live2D)
-    function SimpleAvatar({ name, teamColor, isActive, isSpeaking, lipSyncValue, onClick }) {
+    // Live2D Avatar Component
+    function Live2DAvatar({ modelPath, name, teamColor, isSpeaking, lipSyncValue, onClick }) {
       const containerRef = useRef(null);
       const [isLoading, setIsLoading] = useState(true);
+      const [error, setError] = useState(null);
+      const modelRef = useRef(null);
       const appRef = useRef(null);
-      const lipSyncRef = useRef(0);
+      const lipSyncTarget = useRef(0);
       
       useEffect(() => {
-        lipSyncRef.current = lipSyncValue;
+        lipSyncTarget.current = lipSyncValue;
       }, [lipSyncValue]);
       
       useEffect(() => {
-        if (!window.PIXI) {
-          setTimeout(() => setIsLoading(false), 1000);
+        if (!hasPixi || !hasLive2D) {
+          setError('Live2D libraries not loaded');
+          setIsLoading(false);
           return;
         }
         
-        const app = new PIXI.Application({
-          width: 400,
-          height: 500,
-          transparent: true,
-          antialias: true,
-          resolution: window.devicePixelRatio || 1,
-          autoDensity: true
-        });
+        const { Live2DModel } = window.PIXI.live2d;
+        let app;
+        let model;
         
-        appRef.current = app;
-        containerRef.current.appendChild(app.view);
-        
-        const container = new PIXI.Container();
-        app.stage.addChild(container);
-        
-        // Background hexagon
-        const hex = new PIXI.Graphics();
-        const color = parseInt(teamColor.replace('#', ''), 16);
-        
-        // Draw hexagon background
-        hex.beginFill(0x1a1a25);
-        hex.lineStyle(4, color);
-        const size = 140;
-        const points = [];
-        for (let i = 0; i < 6; i++) {
-          const angle = (i * 60 - 30) * Math.PI / 180;
-          points.push(200 + size * Math.cos(angle), 220 + size * Math.sin(angle));
-        }
-        hex.drawPolygon(points);
-        hex.endFill();
-        container.addChild(hex);
-        
-        // Character circle
-        const circle = new PIXI.Graphics();
-        circle.beginFill(color, 0.8);
-        circle.drawCircle(200, 200, 70);
-        circle.endFill();
-        container.addChild(circle);
-        
-        // Eyes
-        const eyes = new PIXI.Graphics();
-        eyes.beginFill(0xffffff);
-        eyes.drawCircle(175, 185, 12);
-        eyes.drawCircle(225, 185, 12);
-        eyes.endFill();
-        // Pupils
-        eyes.beginFill(0x000000);
-        eyes.drawCircle(175, 185, 6);
-        eyes.drawCircle(225, 185, 6);
-        eyes.endFill();
-        container.addChild(eyes);
-        
-        // Mouth (animated)
-        const mouth = new PIXI.Graphics();
-        container.addChild(mouth);
-        
-        // Speaking ring
-        const ring = new PIXI.Graphics();
-        container.addChild(ring);
-        
-        // Animation
-        let time = 0;
-        app.ticker.add(() => {
-          time += 0.05;
-          
-          // Animate mouth based on lip-sync
-          mouth.clear();
-          mouth.beginFill(0x330000);
-          const openAmount = lipSyncRef.current * 30;
-          mouth.drawEllipse(200, 235, 25, 5 + openAmount);
-          mouth.endFill();
-          
-          // Speaking ring animation
-          ring.clear();
-          if (lipSyncRef.current > 0.1) {
-            ring.lineStyle(3 + lipSyncRef.current * 3, color, 0.3 + lipSyncRef.current * 0.5);
-            const ringSize = 150 + lipSyncRef.current * 25;
-            const ringPoints = [];
-            for (let i = 0; i < 6; i++) {
-              const angle = (i * 60 - 30) * Math.PI / 180;
-              ringPoints.push(200 + ringSize * Math.cos(angle), 220 + ringSize * Math.sin(angle));
-            }
-            ring.drawPolygon(ringPoints);
+        const loadModel = async () => {
+          try {
+            // Create PIXI Application
+            app = new PIXI.Application({
+              width: 400,
+              height: 500,
+              transparent: true,
+              antialias: true,
+              resolution: window.devicePixelRatio || 1,
+              autoDensity: true
+            });
+            
+            appRef.current = app;
+            containerRef.current.appendChild(app.view);
+            
+            // Load Live2D model
+            console.log('Loading Live2D model:', modelPath);
+            model = await Live2DModel.from(modelPath);
+            modelRef.current = model;
+            
+            // Add to stage
+            app.stage.addChild(model);
+            
+            // Position
+            model.anchor.set(0.5, 0.5);
+            model.x = 200;
+            model.y = 250;
+            model.scale.set(0.4);
+            
+            // Enable interactions
+            model.eventMode = 'static';
+            model.on('pointerdown', onClick);
+            
+            // Animation loop
+            app.ticker.add(() => {
+              if (model && model.internalModel) {
+                // Apply lip-sync to mouth parameter
+                const currentMouth = model.internalModel.coreModel.getParamValue('ParamMouthOpenY') || 0;
+                const targetMouth = lipSyncTarget.current;
+                const smoothed = currentMouth + (targetMouth - currentMouth) * 0.4;
+                model.internalModel.coreModel.setParamValue('ParamMouthOpenY', smoothed);
+                
+                // Breathing animation
+                const time = Date.now() / 1000;
+                const breath = Math.sin(time * 2) * 0.5 + 0.5;
+                model.internalModel.coreModel.setParamValue('ParamBreath', breath * 0.3);
+                
+                // Eye tracking (subtle random movement)
+                const eyeX = Math.sin(time * 0.5) * 0.3;
+                const eyeY = Math.cos(time * 0.7) * 0.2;
+                model.internalModel.coreModel.setParamValue('ParamEyeBallX', eyeX);
+                model.internalModel.coreModel.setParamValue('ParamEyeBallY', eyeY);
+              }
+            });
+            
+            setIsLoading(false);
+            console.log('Live2D model loaded:', name);
+            
+          } catch (err) {
+            console.error('Live2D load error:', err);
+            setError(err.message);
+            setIsLoading(false);
           }
-          
-          // Breathing animation
-          container.scale.set(1 + Math.sin(time) * 0.01);
-        });
+        };
         
-        setIsLoading(false);
+        loadModel();
         
         return () => {
-          app.destroy(true);
+          if (app) app.destroy(true);
         };
-      }, [teamColor]);
+      }, [modelPath, name, onClick]);
       
       return (
-        <div 
-          className={`avatar-wrapper ${isActive ? 'active' : 'inactive'}`}
-          onClick={onClick}
-        >
+        <div className={`avatar-wrapper ${isSpeaking ? 'speaking' : ''}`} onClick={onClick}>
           {isLoading && (
             <div className="loading-overlay">
               <div className="spinner"></div>
               <div className="text-gray-400 mt-4 text-sm">Loading {name}...</div>
             </div>
           )}
+          
+          {error && (
+            <div className="loading-overlay">
+              <div className="error-box">
+                <div className="text-sm">Failed to load avatar</div>
+                <div className="text-xs mt-2 text-gray-500">{error}</div>
+              </div>
+            </div>
+          )}
+          
           <div ref={containerRef} className="avatar-canvas" />
+          
           <div className="avatar-info">
             <div style={{ color: teamColor, fontWeight: 700, fontSize: '16px' }}>{name}</div>
             <div className="text-gray-400 text-xs mt-1">{isSpeaking ? 'Speaking...' : 'Listening'}</div>
@@ -273,93 +345,47 @@
       );
     }
 
-    // Live2D Avatar with fallback
-    function Live2DAvatar({ modelPath, name, teamColor, isActive, isSpeaking, lipSyncValue, onClick }) {
-      const [useFallback, setUseFallback] = useState(false);
-      const [isLoading, setIsLoading] = useState(true);
-      const [error, setError] = useState(null);
-      const containerRef = useRef(null);
-      const modelRef = useRef(null);
-      const appRef = useRef(null);
-      const lipSyncRef = useRef(0);
-      
-      useEffect(() => {
-        lipSyncRef.current = lipSyncValue;
-      }, [lipSyncValue]);
-      
-      useEffect(() => {
-        let app;
-        let model;
-        
-        const loadLive2D = async () => {
-          try {
-            // Check if we have all required libraries
-            if (!window.PIXI) {
-              throw new Error('PIXI not loaded');
-            }
-            
-            // Try to load Live2D - but it might not be available
-            // For now, use fallback since Live2D CDN is unreliable
-            setTimeout(() => {
-              setUseFallback(true);
-              setIsLoading(false);
-            }, 500);
-            
-          } catch (err) {
-            console.log('Live2D failed, using fallback:', err);
-            setUseFallback(true);
-            setIsLoading(false);
-          }
-        };
-        
-        loadLive2D();
-      }, [modelPath]);
-      
-      // If fallback needed, render simple avatar
-      if (useFallback) {
-        return (
-          <SimpleAvatar
-            name={name}
-            teamColor={teamColor}
-            isActive={isActive}
-            isSpeaking={isSpeaking}
-            lipSyncValue={lipSyncValue}
-            onClick={onClick}
-          />
-        );
-      }
-      
-      return (
-        <div className="loading-overlay">
-          <div className="spinner"></div>
-          <div className="text-gray-400 mt-4 text-sm">Loading Live2D...</div>
-        </div>
-      );
-    }
-
     // Main App
     function App() {
       const [session, setSession] = useState(null);
       const [commentary, setCommentary] = useState([]);
-      const [currentTurn, setCurrentTurn] = useState(0);
       const [isPlaying, setIsPlaying] = useState(false);
       const [lipSyncA, setLipSyncA] = useState(0);
       const [lipSyncB, setLipSyncB] = useState(0);
       const [currentSpeaker, setCurrentSpeaker] = useState(null);
-      const [subtitle, setSubtitle] = useState({ speaker: '', text: 'Tap Play to start commentary' });
+      const [subtitle, setSubtitle] = useState({ speaker: '', text: 'Tap Play to start' });
       const [showIOSStart, setShowIOSStart] = useState(true);
       const [activeAvatar, setActiveAvatar] = useState('A');
       const [isLandscape, setIsLandscape] = useState(window.innerWidth > window.innerHeight);
+      const [libsLoaded, setLibsLoaded] = useState(hasPixi && hasLive2D);
       
-      const ttsRef = useRef(new TTSEngine());
+      const ttsRef = useRef(new PiperTTSEngine());
+      const isPlayingRef = useRef(false);
       
       useEffect(() => {
+        isPlayingRef.current = isPlaying;
+      }, [isPlaying]);
+      
+      useEffect(() => {
+        // Check library loading
+        const checkLibs = setInterval(() => {
+          if (typeof window.PIXI !== 'undefined' && window.PIXI.live2d) {
+            setLibsLoaded(true);
+            clearInterval(checkLibs);
+          }
+        }, 500);
+        
+        setTimeout(() => clearInterval(checkLibs), 10000);
+        
         const handleResize = () => {
           setIsLandscape(window.innerWidth > window.innerHeight);
         };
+        
         window.addEventListener('resize', handleResize);
         window.addEventListener('orientationchange', handleResize);
+        
         return () => {
+          clearInterval(checkLibs);
           window.removeEventListener('resize', handleResize);
           window.removeEventListener('orientationchange', handleResize);
         };
@@ -404,7 +430,7 @@
       };
       
       const playTurn = async (index, turns) => {
-        if (index >= turns.length) {
+        if (index >= turns.length || !isPlayingRef.current) {
           setIsPlaying(false);
           setCurrentSpeaker(null);
           setLipSyncA(0);
@@ -414,7 +440,6 @@
         }
         
         const turn = turns[index];
-        setCurrentTurn(index);
         setCurrentSpeaker(turn.speaker);
         setSubtitle({ speaker: turn.name, text: turn.text });
         
@@ -432,12 +457,13 @@
           }
         });
         
+        // Ensure lip-sync stops
         setLipSyncA(0);
         setLipSyncB(0);
         
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 500));
         
-        if (isPlaying) {
+        if (isPlayingRef.current) {
           playTurn(index + 1, turns);
         }
       };
@@ -458,10 +484,19 @@
       
       const getTeamColor = (team) => team === 'home' ? '#4a90d9' : '#ff6b35';
       
+      if (!libsLoaded) {
+        return (
+          <div className="h-screen flex flex-col items-center justify-center bg-black">
+            <div className="spinner"></div>
+            <div className="text-gray-400 mt-4">Loading Live2D libraries...</div>
+          </div>
+        );
+      }
+      
       return (
         <div className="h-screen flex flex-col">
           {showIOSStart && (
-            <div className="ios-start-overlay" onClick={handleIOSStart}>
+            <div className="ios-overlay" onClick={handleIOSStart}>
               <div className="text-6xl mb-4">🎙️</div>
               <h1 className="text-2xl font-bold mb-2">Avatar Commentary</h1>
               <p className="text-gray-400 mb-8">Tap anywhere to start</p>
@@ -486,7 +521,6 @@
                 modelPath="/avatars/models/hiyori/hiyori_pro_t11.model3.json"
                 name={commentatorA.name}
                 teamColor={getTeamColor(commentatorA.team)}
-                isActive={currentSpeaker === 'A'}
                 isSpeaking={currentSpeaker === 'A'}
                 lipSyncValue={lipSyncA}
                 onClick={() => setActiveAvatar('A')}
@@ -498,7 +532,6 @@
                 modelPath="/avatars/models/ren/ren.model3.json"
                 name={commentatorB.name}
                 teamColor={getTeamColor(commentatorB.team)}
-                isActive={currentSpeaker === 'B'}
                 isSpeaking={currentSpeaker === 'B'}
                 lipSyncValue={lipSyncB}
                 onClick={() => setActiveAvatar('B')}
