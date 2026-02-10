@@ -803,54 +803,119 @@ const MAX_HISTORY = 20;
 function buildCommentaryPayload(game, summary, session) {
   if (!game || !summary) return null;
 
-  const drives = summary.drives || [];
-  const latestDrive = drives[drives.length - 1];
-  const latestPlays = latestDrive?.playList || [];
-  const latestPlay = latestPlays[latestPlays.length - 1];
-  if (!latestPlay) return null;
-
   const awayName = game.away?.name || game.away?.abbreviation || 'Away';
   const homeName = game.home?.name || game.home?.abbreviation || 'Home';
   const awayAbbr = game.away?.abbreviation || 'AWY';
   const homeAbbr = game.home?.abbreviation || 'HME';
 
-  const offenseTeam = latestDrive.abbreviation || awayAbbr;
-  const isAwayOffense = offenseTeam === awayAbbr;
+  // Get sport type
+  const sport = session?.sport || 'football';
+  
+  // Extract plays based on sport type
+  let latestPlays = [];
+  let latestPlay = null;
+  let offenseTeam = awayAbbr;
+  let isAwayOffense = true;
+  
+  if (sport === 'football') {
+    // Football uses drives
+    const drives = summary.drives || [];
+    const latestDrive = drives[drives.length - 1];
+    latestPlays = latestDrive?.playList || [];
+    latestPlay = latestPlays[latestPlays.length - 1];
+    offenseTeam = latestDrive?.abbreviation || awayAbbr;
+    isAwayOffense = offenseTeam === awayAbbr;
+  } else {
+    // Basketball (and other sports) use plays array or keyEvents
+    // Basketball plays can be in various locations in the ESPN API response
+    let allPlays = [];
+    if (sport === 'basketball') {
+      // Basketball plays might be in different places depending on API response
+      allPlays = summary.plays || summary.keyEvents || summary.teamStats?.plays || [];
+      // Also check for plays nested in periods
+      if (allPlays.length === 0 && summary.periods) {
+        summary.periods.forEach(period => {
+          if (period.plays) allPlays = allPlays.concat(period.plays);
+        });
+      }
+    } else {
+      allPlays = summary.plays || summary.keyEvents || [];
+    }
+    if (allPlays.length > 0) {
+      latestPlays = allPlays.slice(-10); // Last 10 plays
+      latestPlay = allPlays[allPlays.length - 1];
+    }
+    // For basketball, determine offense from play data
+    offenseTeam = latestPlay?.team?.abbreviation || awayAbbr;
+    isAwayOffense = offenseTeam === awayAbbr;
+  }
+  
+  if (!latestPlay) return null;
 
-  const last3 = latestPlays.slice(-4, -1).map(p => p.text || '').filter(Boolean);
+  const last3 = latestPlays.slice(-4, -1).map(p => p.text || p.description || '').filter(Boolean);
   const playTypes = latestPlays.slice(-6).map(p => p.type || '');
-  const passCount = playTypes.filter(t => t.toLowerCase().includes('pass')).length;
-  const runCount = playTypes.filter(t => t.toLowerCase().includes('rush') || t.toLowerCase().includes('run')).length;
-  const tendency = passCount > runCount ? 'pass-heavy' : runCount > passCount ? 'run-heavy' : 'balanced';
-
-  const rollingSummary = `${isAwayOffense ? awayName : homeName} has been ${tendency} on this drive${latestDrive.yards ? ` and has gained ${latestDrive.yards} yards` : ''}.`;
-
-  const playTypeStr = (latestPlay.type || '').toLowerCase();
+  
+  // Sport-specific play type detection
   let playType = 'Unknown';
-  if (playTypeStr.includes('pass')) playType = 'Pass';
-  else if (playTypeStr.includes('rush') || playTypeStr.includes('run')) playType = 'Run';
-  else if (playTypeStr.includes('punt')) playType = 'Punt';
-  else if (playTypeStr.includes('kickoff')) playType = 'Kickoff';
-  else if (playTypeStr.includes('field goal')) playType = 'Field Goal';
-  else if (playTypeStr.includes('sack')) playType = 'Sack';
-  else if (playTypeStr.includes('penalty')) playType = 'Penalty';
-
   let result = 'Play';
-  const yards = latestPlay.yardsGained || latestPlay.statYardage || 0;
-  if (latestPlay.scoringPlay) result = 'Scoring Play';
-  else if (latestPlay.text?.toLowerCase().includes('first down') || (latestPlay.down === 1 && yards >= (latestPlay.distance || 10))) result = 'First Down';
-  else if (latestPlay.text?.toLowerCase().includes('incomplete')) result = 'Incomplete';
-  else if (latestPlay.text?.toLowerCase().includes('interception') || latestPlay.text?.toLowerCase().includes('intercepted')) result = 'Turnover - Interception';
-  else if (latestPlay.text?.toLowerCase().includes('fumble')) result = 'Turnover - Fumble';
-  else result = `Gain of ${yards}`;
+  let yards = 0;
+  
+  if (sport === 'football') {
+    const passCount = playTypes.filter(t => t.toLowerCase().includes('pass')).length;
+    const runCount = playTypes.filter(t => t.toLowerCase().includes('rush') || t.toLowerCase().includes('run')).length;
+    const tendency = passCount > runCount ? 'pass-heavy' : runCount > passCount ? 'run-heavy' : 'balanced';
+
+    const playTypeStr = (latestPlay.type || '').toLowerCase();
+    if (playTypeStr.includes('pass')) playType = 'Pass';
+    else if (playTypeStr.includes('rush') || playTypeStr.includes('run')) playType = 'Run';
+    else if (playTypeStr.includes('punt')) playType = 'Punt';
+    else if (playTypeStr.includes('kickoff')) playType = 'Kickoff';
+    else if (playTypeStr.includes('field goal')) playType = 'Field Goal';
+    else if (playTypeStr.includes('sack')) playType = 'Sack';
+    else if (playTypeStr.includes('penalty')) playType = 'Penalty';
+    
+    yards = latestPlay.yardsGained || latestPlay.statYardage || 0;
+    if (latestPlay.scoringPlay) result = 'Scoring Play';
+    else if (latestPlay.text?.toLowerCase().includes('first down') || (latestPlay.down === 1 && yards >= (latestPlay.distance || 10))) result = 'First Down';
+    else if (latestPlay.text?.toLowerCase().includes('incomplete')) result = 'Incomplete';
+    else if (latestPlay.text?.toLowerCase().includes('interception') || latestPlay.text?.toLowerCase().includes('intercepted')) result = 'Turnover - Interception';
+    else if (latestPlay.text?.toLowerCase().includes('fumble')) result = 'Turnover - Fumble';
+    else result = `Gain of ${yards}`;
+  } else if (sport === 'basketball') {
+    // Basketball play types
+    const playText = (latestPlay.text || latestPlay.description || '').toLowerCase();
+    if (playText.includes('three-pointer') || playText.includes('3-point')) playType = 'Three Pointer';
+    else if (playText.includes('dunk')) playType = 'Dunk';
+    else if (playText.includes('layup')) playType = 'Layup';
+    else if (playText.includes('free throw')) playType = 'Free Throw';
+    else if (playText.includes('jump shot')) playType = 'Jump Shot';
+    else if (playText.includes('steal')) playType = 'Steal';
+    else if (playText.includes('block')) playType = 'Block';
+    else if (playText.includes('rebound')) playType = 'Rebound';
+    else if (playText.includes('turnover')) playType = 'Turnover';
+    else playType = 'Field Goal';
+    
+    yards = latestPlay.scoreValue || 0;
+    if (latestPlay.scoringPlay || playText.includes('makes')) result = `${yards} Points`;
+    else if (playText.includes('miss')) result = 'Missed Shot';
+    else if (playText.includes('rebound')) result = 'Rebound';
+    else if (playText.includes('turnover')) result = 'Turnover';
+    else if (playText.includes('foul')) result = 'Foul';
+    else result = playType;
+  } else {
+    // Generic for other sports
+    playType = latestPlay.type || 'Play';
+    yards = latestPlay.yardsGained || latestPlay.statYardage || 0;
+    result = latestPlay.result || 'Play';
+  }
 
   let mood = 'routine';
   if (latestPlay.scoringPlay) mood = 'electric';
-  else if (latestPlay.text?.toLowerCase().includes('interception') || latestPlay.text?.toLowerCase().includes('fumble')) mood = 'disaster';
-  else if (yards >= 20) mood = 'momentum_shift';
-  else if (yards >= 10) mood = 'big_play';
-  else if (latestPlay.text?.toLowerCase().includes('sack')) mood = 'defensive_dominance';
-  else if (latestPlay.text?.toLowerCase().includes('penalty')) mood = 'controversial';
+  else if ((latestPlay.text || latestPlay.description || '').toLowerCase().includes('turnover')) mood = 'disaster';
+  else if (yards >= 20 || (sport === 'basketball' && latestPlay.scoreValue >= 3)) mood = 'momentum_shift';
+  else if (yards >= 10 || (sport === 'basketball' && latestPlay.scoreValue === 2)) mood = 'big_play';
+  else if ((latestPlay.text || '').toLowerCase().includes('sack')) mood = 'defensive_dominance';
+  else if ((latestPlay.text || '').toLowerCase().includes('foul') || (latestPlay.text || '').toLowerCase().includes('penalty')) mood = 'controversial';
   else if (yards <= 0) mood = 'stuffed';
 
   return {
@@ -868,13 +933,13 @@ function buildCommentaryPayload(game, summary, session) {
       yardLine: latestPlay.yardLine ? `${offenseTeam} ${latestPlay.yardLine}` : '',
       offense: isAwayOffense ? awayAbbr : homeAbbr,
       defense: isAwayOffense ? homeAbbr : awayAbbr,
-      playType, description: latestPlay.text || '', yardsGained: yards, result, mood,
+      playType, description: latestPlay.text || latestPlay.description || '', yardsGained: yards, result, mood,
     },
     state: {
       score: { [awayAbbr]: game.away?.score || 0, [homeAbbr]: game.home?.score || 0 },
       possession: offenseTeam,
-      last3Plays: last3.length > 0 ? last3 : ['Drive just started'],
-      rollingSummaryShort: rollingSummary,
+      last3Plays: last3.length > 0 ? last3 : ['Game in progress'],
+      rollingSummaryShort: sport === 'football' ? `${isAwayOffense ? awayName : homeName} on offense` : `${offenseTeam} with the ball`,
     },
   };
 }
@@ -916,6 +981,11 @@ CURRENT POSSESSION: ${offenseTeamName} (${payload.offenseTeam}) has the ball.
 This is an OFFENSIVE play by ${offenseTeamName} against ${defenseTeamName}.
 Yards gained = GOOD for ${offenseTeamName}, BAD for ${defenseTeamName}.
 Turnovers = BAD for ${offenseTeamName}, GOOD for ${defenseTeamName}.`;
+  } else if (sport === 'basketball') {
+    possessionBlock = `
+CURRENT POSSESSION: ${offenseTeamName} (${payload.offenseTeam}) has the ball.
+This is a BASKETBALL game. Points are scored via 2-pointers, 3-pointers, and free throws.
+Momentum shifts quickly with scoring runs.`;
   }
 
   // Roster block
