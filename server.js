@@ -143,7 +143,16 @@ app.get('/api/admin/sessions', requireAdmin, async (req, res) => {
 
 app.post('/api/admin/sessions', requireAdmin, async (req, res) => {
   const id = crypto.randomBytes(8).toString('hex');
-  const session = { ...req.body, id, createdAt: new Date().toISOString() };
+  const session = { 
+    ...req.body, 
+    id, 
+    status: 'active',
+    commentators: req.body.commentators || [
+      { id: 'A', name: 'Sakura', voice: 'amy', avatarUrl: null }, 
+      { id: 'B', name: 'Steve', voice: 'bryce', avatarUrl: null }
+    ],
+    createdAt: new Date().toISOString() 
+  };
   await db.collection('sessions').doc(id).set(session);
   res.json(session);
 });
@@ -183,12 +192,23 @@ function getRuntime(id) {
 
 function strip(text, name) {
   if (!text) return "";
-  return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '') // All emojis
-             .replace(new RegExp(`^${name}[:\\s—-]+`, 'i'), '') // Name prefix
-             .replace(/^\[[AB]\][:\s—-]*/, '') // [A] prefix
-             .replace(/^["']|["']$/g, '') // Quotes
-             .replace(/\bSpeaking\b/gi, '')
-             .trim();
+  let cleaned = text
+    .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '') // Emojis
+    .replace(/^\[[AB]\][:\s—-]*/i, '') // [A] or [B] prefix
+    .replace(new RegExp(`^${name}[:\\s—-]+`, 'i'), '') // Specific commentator name prefix
+    .replace(/^[a-z\s]+[:\\s—-]+/i, (match) => {
+       const prefix = match.split(':')[0].trim().toLowerCase();
+       if (prefix.length < 20) return ""; 
+       return match;
+    })
+    .replace(/^["']|["']$/g, '') // Surrounding quotes
+    .replace(/\bSpeaking\b/gi, '') // The word "Speaking"
+    .trim();
+  
+  if (name && cleaned.toLowerCase().startsWith(name.toLowerCase())) {
+    cleaned = cleaned.substring(name.length).replace(/^[:\s—-]+/, '').trim();
+  }
+  return cleaned;
 }
 
 app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
@@ -204,7 +224,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     const interval = (s.settings?.preGameInterval || 45) * 1000;
     if (rt.cache && (now - rt.ts) < interval) return res.json(rt.cache);
 
-    const prompt = `Argue unhinged about ${s.gameName}. [A] ${s.commentators[0].name}, [B] ${s.commentators[1].name}. 3 turns: [A], [B], [A]. NO NAMES. NO EMOJIS.`;
+    const prompt = `Argue unhinged about ${s.gameName}. [A] ${s.commentators[0].name}, [B] ${s.commentators[1].name}. 3 turns: [A], [B], [A]. NO NAMES. NO EMOJIS. ONLY THE LINES.`;
     const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
     const json = await r.json();
     const raw = json.choices[0].message.content;

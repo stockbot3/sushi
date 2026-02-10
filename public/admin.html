@@ -49,7 +49,7 @@
       const startWizard = async () => {
         const s = await api('/api/admin/sports');
         setSports(s); setWizardStep(1);
-        setEdit({ gameName: '', slug: '', status: 'active', settings: { preGameInterval: 45 }, commentators: [{ id: 'A', name: 'Big Mike', voice: 'bryce' }, { id: 'B', name: 'Salty Steve', voice: 'amy' }] });
+        setEdit({ gameName: '', slug: '', status: 'active', settings: { preGameInterval: 45 }, commentators: [{ id: 'A', name: 'Sakura', voice: 'amy' }, { id: 'B', name: 'Steve', voice: 'bryce' }] });
       };
 
       const browseGames = async (sport, league) => {
@@ -63,7 +63,9 @@
         const id = edit?.id;
         const method = id ? 'PATCH' : 'POST';
         const url = id ? `/api/admin/sessions/${id}` : '/api/admin/sessions';
-        await api(url, { method, body: JSON.stringify(edit) });
+        // Ensure settings exists
+        const payload = { ...edit, settings: edit.settings || { preGameInterval: 45 } };
+        await api(url, { method, body: JSON.stringify(payload) });
         setEdit(null); setWizardStep(0); fetchSessions(); setLoading(false);
       };
 
@@ -91,17 +93,17 @@
             <button onClick={startWizard} className="bg-yellow-400 text-black p-3 rounded-full"><Plus/></button>
           </div>
 
-          {wizardStep > 0 && (
+          {(wizardStep > 0 || edit) && (
             <div className="fixed inset-0 z-50 bg-black/95 p-4 overflow-y-auto">
               <div className="max-w-lg mx-auto glass p-6 rounded-2xl space-y-6">
                 <div className="flex justify-between font-black">
-                  <h2>{edit.id ? 'EDIT SESSION' : 'NEW SESSION'}</h2>
+                  <h2>{edit?.id ? 'EDIT SESSION' : 'NEW SESSION'}</h2>
                   <button type="button" onClick={() => { setWizardStep(0); setEdit(null); }}><X/></button>
                 </div>
 
                 {wizardStep === 1 && (
                   <div className="grid grid-cols-1 gap-3">
-                    {Object.entries(sports).map(([k, s]) => (
+                    {sports && Object.entries(sports).map(([k, s]) => (
                       <div key={k} className="p-4 glass rounded-xl">
                         <div className="text-xs font-black opacity-30 uppercase mb-2">{s.name}</div>
                         <div className="flex flex-wrap gap-2">
@@ -118,7 +120,7 @@
                   <div className="space-y-4">
                     <div className="flex items-center gap-3 bg-white/5 p-4 rounded-xl">
                       <Calendar className="text-yellow-400" />
-                      <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="bg-transparent outline-none flex-1 font-bold" />
+                      <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="bg-transparent outline-none flex-1 font-bold text-white" />
                     </div>
                     <button onClick={() => browseGames(edit.sport, edit.league)} disabled={loading} className="w-full bg-yellow-400 text-black font-black p-4 rounded-xl flex items-center justify-center gap-2">
                       {loading ? <RefreshCw className="animate-spin" /> : <ChevronRight />} FIND GAMES
@@ -130,7 +132,7 @@
                 {wizardStep === 3 && (
                   <div className="space-y-3">
                     {games.length === 0 ? <div className="text-center py-8 opacity-50">No games found for this date.</div> : games.map(g => (
-                      <button key={g.id} onClick={() => { setEdit({...edit, espnEventId: g.id, gameName: g.name || g.shortName, espnSlug: sports[edit.sport].leagues.find(x => x.id === edit.league).espnSlug || ''}); setWizardStep(4); }} className="w-full p-4 glass rounded-xl text-left hover:border-yellow-400/50 transition-all">
+                      <button key={g.id} onClick={() => { setEdit({...edit, espnEventId: g.id, gameName: g.name || g.shortName, espnSlug: sports[edit.sport].leagues.find(x => x.id === edit.league).espnSlug || ''}); setWizardStep(4); }} className="w-full p-4 glass rounded-xl text-left hover:border-yellow-400/50 transition-all text-white">
                         <div className="text-[10px] opacity-30 font-black mb-1">{g.status.detail}</div>
                         <div className="font-bold">{g.away.abbreviation} @ {g.home.abbreviation}</div>
                       </button>
@@ -139,9 +141,9 @@
                   </div>
                 )}
 
-                {(wizardStep === 4 || edit.id) && (
+                {(wizardStep === 4 || edit?.id) && (
                   <div className="space-y-4">
-                    <input value={edit.gameName} onChange={e => setEdit({ ...edit, gameName: e.target.value })} className="w-full bg-white/5 p-3 rounded-xl text-white" placeholder="Game Name" />
+                    <input value={edit.gameName} onChange={e => setEdit({ ...edit, gameName: e.target.value })} className="w-full bg-white/5 p-3 rounded-xl text-white font-bold" placeholder="Game Name" />
                     <div className="flex items-center gap-2 bg-white/5 p-3 rounded-xl">
                       <Link size={16} className="text-gray-500" />
                       <span className="text-gray-500">/</span>
@@ -149,7 +151,7 @@
                     </div>
                     <div>
                       <label className="text-xs text-gray-500 font-bold uppercase">Pre-Game Interval (seconds)</label>
-                      <input type="number" value={edit.settings?.preGameInterval} onChange={e => setEdit({ ...edit, settings: { ...edit.settings, preGameInterval: parseInt(e.target.value) } })} className="w-full bg-white/5 p-3 rounded-xl text-white" />
+                      <input type="number" value={edit.settings?.preGameInterval || 45} onChange={e => setEdit({ ...edit, settings: { ...edit.settings, preGameInterval: parseInt(e.target.value) } })} className="w-full bg-white/5 p-3 rounded-xl text-white" />
                     </div>
 
                     {edit.commentators.map((c, i) => (
@@ -161,14 +163,14 @@
                           <option value="bryce">Male (Bryce)</option>
                         </select>
                         <div className="flex gap-2 items-center">
-                          <input value={c.avatarUrl} onChange={e => { const n = [...edit.commentators]; n[i].avatarUrl = e.target.value; setEdit({ ...edit, commentators: n }); }} className="flex-1 bg-white/5 p-2 rounded-lg text-xs text-white" placeholder="Model URL" />
+                          <input value={c.avatarUrl} onChange={e => { const n = [...edit.commentators]; n[i].avatarUrl = e.target.value; setEdit({ ...edit, commentators: n }); }} className="flex-1 bg-white/5 p-2 rounded-lg text-[10px] text-white" placeholder="Model URL" />
                           <label className="cursor-pointer p-2 glass rounded-lg"><Upload size={14}/><input type="file" className="hidden" onChange={e => uploadModel(i, e.target.files[0])} /></label>
                         </div>
                       </div>
                     ))}
 
                     <button onClick={saveSession} disabled={loading} className="w-full bg-green-500 text-black font-black p-4 rounded-xl flex items-center justify-center gap-2">
-                      {loading ? <RefreshCw className="animate-spin" /> : <Save />} {edit.id ? 'UPDATE' : 'CREATE'}
+                      {loading ? <RefreshCw className="animate-spin" /> : <Save />} {edit?.id ? 'UPDATE' : 'CREATE'}
                     </button>
                   </div>
                 )}
@@ -187,7 +189,7 @@
                   </div>
                 </div>
                 <div className="flex gap-2">
-                  <button onClick={() => setEdit(s)} className="p-2 bg-white/5 rounded-lg"><Edit2 size={18}/></button>
+                  <button onClick={() => setEdit(s)} className="p-2 bg-white/5 rounded-lg text-yellow-400"><Edit2 size={18}/></button>
                   <button onClick={async () => { if (confirm('Delete?')) { await api(`/api/admin/sessions/${s.id}`, { method: 'DELETE' }); fetchSessions(); } }} className="p-2 bg-red-500/20 text-red-400 rounded-lg"><Trash2 size={18}/></button>
                 </div>
               </div>
