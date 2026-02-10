@@ -93,30 +93,15 @@
 </head>
 <body>
     <div id="root"></div>
-    
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    
-    <script type="importmap">
-    {
-        "imports": {
-            "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
-            "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
-            "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js"
-        }
-    }
-    </script>
-    
+    <script type="importmap"> { "imports": { "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js", "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/", "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js" } } </script>
     <script type="module">
-        import * as THREE from 'three';
-        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
-        import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
-        window.THREE = THREE; window.GLTFLoader = GLTFLoader;
-        window.VRMLoaderPlugin = VRMLoaderPlugin; window.VRMUtils = VRMUtils;
+        import * as THREE from 'three'; import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js'; import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+        window.THREE = THREE; window.GLTFLoader = GLTFLoader; window.VRMLoaderPlugin = VRMLoaderPlugin; window.VRMUtils = VRMUtils;
         window.modulesLoaded = true; window.dispatchEvent(new Event('modulesLoaded'));
     </script>
-    
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
         const DEFAULT_SAKURA_URL = 'https://raw.githubusercontent.com/pixiv/three-vrm/release/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
@@ -139,22 +124,19 @@
                 const b = this.audioContext.createBuffer(1, 1, 22050);
                 const s = this.audioContext.createBufferSource(); s.buffer = b;
                 s.connect(this.audioContext.destination); s.start(0);
-                const u = new SpeechSynthesisUtterance(" ");
-                u.volume = 0; window.speechSynthesis.speak(u);
             }
-            async speak(text, side, voiceId) {
+            async speak(text, side, voice) {
                 if (this.isSpeaking) return; this.isSpeaking = true;
                 await this.init();
                 try {
                     const res = await fetch('/api/tts', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text, voiceId })
+                        body: JSON.stringify({ text, voice })
                     });
-                    if (!res.ok) throw new Error("TTS API Error");
                     const data = await res.json();
-                    if (!data.audio) throw new Error("No audio");
-                    const bin = atob(data.audio.replace(/\s/g, ''));
+                    if (!data.audio) throw new Error();
+                    const bin = atob(data.audio);
                     const buf = new Uint8Array(bin.length);
                     for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
                     const audioBuffer = await this.audioContext.decodeAudioData(buf.buffer);
@@ -179,11 +161,10 @@
                         source.start(0); loop();
                     });
                 } catch (e) {
-                    console.warn("TTS Fallback", e);
+                    this.isSpeaking = false;
                     return new Promise(r => {
                         const u = new SpeechSynthesisUtterance(text);
-                        u.onboundary = (ev) => { if (ev.name === 'word') { avatarEvents.emit(side, 'viseme', { viseme: ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)], volume: 0.5 }); setTimeout(() => avatarEvents.emit(side, 'viseme', { viseme: 'sil', volume: 0 }), 100); } };
-                        u.onend = () => { this.isSpeaking = false; r(); }; window.speechSynthesis.speak(u);
+                        u.onend = r; window.speechSynthesis.speak(u);
                     });
                 }
             }
@@ -223,6 +204,7 @@
                         if (!mounted) return; requestAnimationFrame(animate);
                         const dt = Math.min(clock.getDelta(), 0.05), time = clock.getElapsedTime();
                         if (vrmRef.current && isLoadedRef.current) {
+                            vrmRef.current.update(dt);
                             const h = vrmRef.current.humanoid;
                             if (h) {
                                 const spine = h.getNormalizedBoneNode('spine'), head = h.getNormalizedBoneNode('head'), lua = h.getNormalizedBoneNode('leftUpperArm'), rua = h.getNormalizedBoneNode('rightUpperArm'), lla = h.getNormalizedBoneNode('leftLowerArm'), rla = h.getNormalizedBoneNode('rightLowerArm');
@@ -235,7 +217,6 @@
                                 if (rua) { rua.rotation.z = damp(rua.rotation.z, rz, 4, dt); rua.rotation.x = damp(rua.rotation.x, rx, 4, dt); }
                                 if (lla) lla.rotation.x = damp(lla.rotation.x, llx, 4, dt); if (rla) rla.rotation.x = damp(rla.rotation.x, rlx, 4, dt);
                             }
-                            vrmRef.current.update(dt);
                             const m = vrmRef.current.expressionManager;
                             if (m && Math.random() < 0.005) { m.setValue('blink', 1); setTimeout(() => m.setValue('blink', 0), 150); }
                         }
@@ -277,19 +258,12 @@
             useEffect(() => {
                 const sid = new URLSearchParams(window.location.search).get('session');
                 if (!started || !sid) return;
-                
-                // Fetch session meta once
                 fetch('/api/sessions').then(r => r.json()).then(sessions => {
-                    const s = sessions.find(s => s.id === sid);
-                    if (s) setSessionMeta(s);
+                    const s = sessions.find(s => s.id === sid); if (s) setSessionMeta(s);
                 });
-
                 const poll = async () => {
                     try {
-                        const [g, c] = await Promise.all([
-                            fetch(`/api/sessions/${sid}/game`).then(r => r.json()),
-                            fetch(`/api/sessions/${sid}/commentary/latest`).then(r => r.json())
-                        ]);
+                        const [g, c] = await Promise.all([ fetch(`/api/sessions/${sid}/game`).then(r => r.json()), fetch(`/api/sessions/${sid}/commentary/latest`).then(r => r.json()) ]);
                         setGame(g);
                         const seq = c.play?.seq || c.timestamp, pid = c.play?.description || c.timestamp;
                         if (seq !== lastSeqRef.current && !voicedRef.current.has(pid)) {
@@ -308,46 +282,35 @@
                 while (queueRef.current.length > 0) {
                     const t = queueRef.current.shift();
                     const side = t.speaker === 'A' ? 'left' : 'right';
-                    const voiceId = side === 'left' ? '21m00Tcm4TlvDq8ikWAM' : 'ErXwobaYiN019PkySvjV';
+                    const cMeta = sessionMeta?.commentators?.[t.speaker === 'A' ? 0 : 1];
                     setSub({ name: t.name, text: t.text }); setActiveSpeaker(side);
-                    await voiceRef.current.speak(t.text, side, voiceId);
+                    await voiceRef.current.speak(t.text, side, cMeta?.voice || (side === 'left' ? 'bryce' : 'amy'));
                     setActiveSpeaker(null); setSub({ name: "", text: "" });
                     await new Promise(r => setTimeout(r, 1000));
                 }
                 isProcessingRef.current = false;
             };
 
-            if (!started) return <div className="start-overlay" onClick={async () => { await voiceRef.current.init(); setStarted(true); }}><div className="start-btn">TAP TO START STREAM</div></div>;
+            if (!started) return <div className="start-overlay" onClick={async () => { await voiceRef.current.init(); setStarted(true); }}><div className="start-btn">TAP TO ENTER STREAM</div></div>;
 
             const cA = sessionMeta?.commentators?.[0], cB = sessionMeta?.commentators?.[1];
-
             return (
                 <div id="root">
                     <div className="stream-hud">
                         <div className="hud-top">
                             <div className="hud-scores">
-                                <div className="hud-team"><span className="hud-abbr">{game?.away?.abbreviation}</span><span className="hud-pts">{game?.away?.score}</span></div>
+                                <div className="hud-team"><span className="hud-abbr" style={{color: game?.away?.color}}>{game?.away?.abbreviation}</span><span className="hud-pts">{game?.away?.score}</span></div>
                                 <span className="hud-sep">:</span>
-                                <div className="hud-team"><span className="hud-pts">{game?.home?.score}</span><span className="hud-abbr">{game?.home?.abbreviation}</span></div>
+                                <div className="hud-team"><span className="hud-pts">{game?.home?.score}</span><span className="hud-abbr" style={{color: game?.home?.color}}>{game?.home?.abbreviation}</span></div>
                             </div>
                         </div>
-                        {commentary?.play && (
-                            <div className="play-ticker">
-                                <span className="ticker-label">LIVE</span>
-                                <span className="ticker-desc">{commentary.play.description}</span>
-                            </div>
-                        )}
+                        {commentary?.play && ( <div className="play-ticker"> <span className="ticker-label">LIVE</span> <span className="ticker-desc">{commentary.play.description}</span> </div> )}
                     </div>
                     <div className="vrm-stage">
                         <Avatar side="left" modelUrl={cA?.avatarUrl} activeSpeaker={activeSpeaker} />
                         <Avatar side="right" modelUrl={cB?.avatarUrl} activeSpeaker={activeSpeaker} />
                     </div>
-                    {sub.text && (
-                        <div className="subtitle-box">
-                            <div className="subtitle-name">{sub.name}</div>
-                            <div className="subtitle-text">{sub.text}</div>
-                        </div>
-                    )}
+                    {sub.text && ( <div className="subtitle-box"> <div className="subtitle-name">{sub.name}</div> <div className="subtitle-text">{sub.text}</div> </div> )}
                 </div>
             );
         }

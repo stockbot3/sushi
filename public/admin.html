@@ -1,265 +1,150 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta charset="UTF-8" /><meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Sushi Admin</title>
   <script src="https://cdn.tailwindcss.com"></script>
-  <script src="https://unpkg.com/react@18/umd/react.development.js"></script>
-  <script src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-  <script>window.react = window.React;</script>
+  <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+  <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script src="https://unpkg.com/lucide-react@0.460.0/dist/umd/lucide-react.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-  <script>
-    tailwind.config = {
-      theme: {
-        extend: {
-          fontFamily: { sans: ['Inter', 'system-ui', 'sans-serif'] },
-          colors: { dark: { 900: '#0a0a0f', 800: '#12121a', 700: '#1a1a25', 600: '#222230' } }
-        }
-      }
-    }
-  </script>
   <style>
-    body { background: #0a0a0f; }
+    body { background: #050508; color: #fff; font-family: sans-serif; }
     .glass { background: rgba(255,255,255,0.03); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.06); }
-    .glass-bright { background: rgba(255,255,255,0.06); backdrop-filter: blur(20px); border: 1px solid rgba(255,255,255,0.1); }
     .text-gradient { background: linear-gradient(135deg, #FFB81C, #FF6B35); -webkit-background-clip: text; -webkit-text-fill-color: transparent; }
   </style>
 </head>
-<body class="font-sans text-white min-h-screen">
+<body class="p-4">
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, useCallback, useRef } = React;
-    const {
-      Trophy, Shield, Play, Pause, Trash2, Plus, ArrowLeft,
-      Loader2, Settings, Lock, Eye, EyeOff, Check, X, RefreshCw,
-      ChevronRight, Calendar, Users, Save, Download, Bookmark, Upload, Clock
-    } = LucideReact;
+    const { useState, useEffect, useCallback } = React;
+    const { Lock, Plus, Trash2, Edit2, Upload, X, Save, RefreshCw, Link } = LucideReact;
 
-    const SPORT_ICONS = { football: '\uD83C\uDFC8', basketball: '\uD83C\uDFC0', baseball: '\u26BE', hockey: '\uD83C\uDFD2', soccer: '\u26BD' };
-
-    const PRESETS = {
-      barkley: { name: 'Sir Charles (Barkley)', desc: 'Loud, bold, wrong but confident, "TURRIBLE"' },
-      skip: { name: 'Hot Take Skip (Bayless)', desc: 'Contrarian, dismissive, conspiracy theories' },
-      snoop: { name: 'Uncle Snoop (Snoop Dogg)', desc: 'Laid-back, slang, music/food metaphors' },
-      romo: { name: 'Stats Guru Tony (Romo)', desc: 'Analytical, predicts plays, "HERE IT COMES!"' },
+    const api = async (p, o = {}) => {
+      const t = localStorage.getItem('sushi_token');
+      const r = await fetch(p, { ...o, headers: { 'Content-Type': 'application/json', ...(t ? { Authorization: `Bearer ${t}` } : {}), ...(o.headers || {}) } });
+      if (r.status === 401) { localStorage.removeItem('sushi_token'); window.location.reload(); }
+      return r.json();
     };
 
-    function getToken() { return localStorage.getItem('sushi_admin_token'); }
-    function setToken(t) { localStorage.setItem('sushi_admin_token', t); }
-    function clearToken() { localStorage.removeItem('sushi_admin_token'); }
-
-    async function api(path, opts = {}) {
-      const token = getToken();
-      const headers = { 'Content-Type': opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
-      if (opts.body instanceof FormData) delete headers['Content-Type'];
-      const res = await fetch(path, { ...opts, headers });
-      if (res.status === 401) { clearToken(); throw new Error('Unauthorized'); }
-      return res.json();
-    }
-
-    function LoginScreen({ onLogin }) {
-      const [password, setPassword] = useState('');
-      const [error, setError] = useState('');
+    function App() {
+      const [authed, setAuthed] = useState(false), [sessions, setSessions] = useState([]), [edit, setEdit] = useState(null);
       const [loading, setLoading] = useState(false);
-      const [showPw, setShowPw] = useState(false);
 
-      const handleLogin = async (e) => {
-        e.preventDefault(); setLoading(true); setError('');
-        try {
-          const data = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ password }) });
-          if (data.token) { setToken(data.token); onLogin(); }
-          else setError(data.error || 'Login failed');
-        } catch (err) { setError(err.message || 'Login failed'); }
-        finally { setLoading(false); }
-      };
-
-      return (
-        <div className="min-h-screen flex items-center justify-center px-4">
-          <div className="glass rounded-2xl p-8 w-full max-w-sm text-center">
-            <Lock size={32} className="text-yellow-400 mx-auto mb-3" />
-            <h1 className="text-xl font-black text-gradient">SUSHI ADMIN</h1>
-            <form onSubmit={handleLogin} className="mt-6">
-              <div className="relative mb-4">
-                <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-yellow-400/50" placeholder="Password" />
-                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-3 text-gray-600">{showPw ? <EyeOff size={16} /> : <Eye size={16} />}</button>
-              </div>
-              <button type="submit" disabled={loading} className="w-full py-3 rounded-xl bg-yellow-400/20 text-yellow-400 font-bold hover:bg-yellow-400/30 disabled:opacity-50">
-                {loading ? '...' : 'Login'}
-              </button>
-            </form>
-          </div>
-        </div>
-      );
-    }
-
-    function CreateSessionWizard({ onCreated, onCancel }) {
-      const [step, setStep] = useState(1);
-      const [sports, setSports] = useState(null);
-      const [selectedSport, setSelectedSport] = useState(null);
-      const [selectedLeague, setSelectedLeague] = useState(null);
-      const [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0, 10));
-      const [games, setGames] = useState([]);
-      const [loadingGames, setLoadingGames] = useState(false);
-      const [selectedGame, setSelectedGame] = useState(null);
-      const [preGameInterval, setPreGameInterval] = useState(45);
-      const [commentators, setCommentators] = useState([
-        { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', avatarUrl: '' },
-        { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', avatarUrl: '' },
-      ]);
-      const [creating, setCreating] = useState(false);
+      const fetchSessions = () => api('/api/admin/sessions').then(setSessions);
 
       useEffect(() => {
-        api('/api/admin/sports').then(setSports).catch(() => {});
+        const t = localStorage.getItem('sushi_token');
+        if (t) api('/api/admin/verify').then(d => { if (d.ok) { setAuthed(true); fetchSessions(); } });
       }, []);
 
-      const browseGames = async () => {
-        setLoadingGames(true);
-        try {
-          const d = await api(`/api/admin/browse/${selectedSport}/${selectedLeague}?date=${selectedDate.replace(/-/g, '')}`);
-          setGames(d.events || []);
-        } finally { setLoadingGames(false); }
+      const login = async (e) => {
+        e.preventDefault();
+        const d = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ password: e.target.password.value }) });
+        if (d.token) { localStorage.setItem('sushi_token', d.token); setAuthed(true); fetchSessions(); }
       };
 
-      useEffect(() => { if (step === 3) browseGames(); }, [step]);
+      const saveSession = async (e) => {
+        e.preventDefault(); setLoading(true);
+        const id = edit?.id;
+        const method = id ? 'PATCH' : 'POST';
+        const url = id ? `/api/admin/sessions/${id}` : '/api/admin/sessions';
+        await api(url, { method, body: JSON.stringify(edit) });
+        setEdit(null); fetchSessions(); setLoading(false);
+      };
 
-      const handleUpload = async (idx, file) => {
+      const uploadModel = async (idx, file) => {
         const fd = new FormData(); fd.append('file', file);
-        try {
-          const d = await api('/api/admin/upload', { method: 'POST', body: fd });
-          updateCommentator(idx, 'avatarUrl', d.url);
-        } catch (e) { alert("Upload failed"); }
+        const d = await api('/api/admin/upload', { method: 'POST', body: fd, headers: {} });
+        const n = [...edit.commentators]; n[idx].avatarUrl = d.url;
+        setEdit({ ...edit, commentators: n });
       };
 
-      const updateCommentator = (idx, f, v) => {
-        const n = [...commentators]; n[idx] = { ...n[idx], [f]: v }; setCommentators(n);
-      };
-
-      const handleCreate = async () => {
-        setCreating(true);
-        try {
-          const body = {
-            sport: selectedSport, league: selectedLeague, espnEventId: selectedGame.id,
-            gameName: selectedGame.name || selectedGame.shortName,
-            homeTeam: selectedGame.home, awayTeam: selectedGame.away,
-            commentators, settings: { preGameInterval }
-          };
-          await api('/api/admin/sessions', { method: 'POST', body: JSON.stringify(body) });
-          onCreated();
-        } finally { setCreating(false); }
-      };
-
-      return (
-        <div className="glass rounded-2xl p-6">
-          <div className="flex justify-between mb-6">
-            <h2 className="font-bold">New Session</h2>
-            <button onClick={onCancel}><X size={20}/></button>
-          </div>
-
-          {step === 1 && (
-            <div className="grid grid-cols-2 gap-3">
-              {sports && Object.entries(sports).map(([k, s]) => (
-                <button key={k} onClick={() => { setSelectedSport(k); setStep(2); }} className="p-4 glass-bright rounded-xl hover:bg-white/10">
-                  <div className="text-3xl mb-2">{SPORT_ICONS[k]}</div>
-                  <div className="text-sm font-bold">{s.name}</div>
-                </button>
-              ))}
-            </div>
-          )}
-
-          {step === 2 && (
-            <div className="space-y-4">
-              {sports[selectedSport].leagues.map(l => (
-                <button key={l.id} onClick={() => { setSelectedLeague(l.id); setStep(3); }} className="w-full p-3 glass-bright rounded-xl text-left font-bold">{l.name}</button>
-              ))}
-              <button onClick={() => setStep(1)} className="text-xs text-gray-500">Back</button>
-            </div>
-          )}
-
-          {step === 3 && (
-            <div className="space-y-3">
-              {games.map(g => (
-                <button key={g.id} onClick={() => { setSelectedGame(g); setStep(4); }} className="w-full p-4 glass-bright rounded-xl text-left">
-                  <div className="text-xs opacity-50 mb-1">{g.status.detail}</div>
-                  <div className="font-bold">{g.away.abbreviation} @ {g.home.abbreviation}</div>
-                </button>
-              ))}
-              <button onClick={() => setStep(2)} className="text-xs text-gray-500">Back</button>
-            </div>
-          )}
-
-          {step === 4 && (
-            <div className="space-y-6">
-              <div className="p-4 glass-bright rounded-xl">
-                <label className="text-xs text-gray-500 uppercase font-black flex items-center gap-2 mb-2"><Clock size={12}/> Pre-Game Interval (seconds)</label>
-                <input type="number" value={preGameInterval} onChange={e => setPreGameInterval(e.target.value)} className="w-full bg-white/5 p-2 rounded-lg" />
-              </div>
-
-              {commentators.map((c, i) => (
-                <div key={i} className="p-4 glass-bright rounded-xl space-y-3">
-                  <div className="font-black text-xs opacity-50 uppercase">Commentator {c.id}</div>
-                  <input value={c.name} onChange={e => updateCommentator(i, 'name', e.target.value)} className="w-full bg-white/5 p-2 rounded-lg text-sm" placeholder="Name" />
-                  <div>
-                    <label className="text-[10px] opacity-50 uppercase block mb-1">Avatar Model (.vrm/.glb)</label>
-                    <div className="flex gap-2">
-                      <input value={c.avatarUrl} onChange={e => updateCommentator(i, 'avatarUrl', e.target.value)} className="flex-1 bg-white/5 p-2 rounded-lg text-xs" placeholder="URL or Upload ->" />
-                      <label className="cursor-pointer p-2 glass-bright rounded-lg hover:bg-white/10"><Upload size={14}/><input type="file" className="hidden" onChange={e => handleUpload(i, e.target.files[0])} /></label>
-                    </div>
-                  </div>
-                </div>
-              ))}
-              
-              <button onClick={handleCreate} disabled={creating} className="w-full py-4 bg-green-500/20 text-green-400 font-black rounded-xl hover:bg-green-500/30">
-                {creating ? 'CREATING...' : 'CREATE SESSION'}
-              </button>
-            </div>
-          )}
+      if (!authed) return (
+        <div className="min-h-screen flex items-center justify-center">
+          <form onSubmit={login} className="glass p-8 rounded-2xl w-full max-w-sm text-center">
+            <Lock size={32} className="mx-auto mb-4 text-yellow-400" />
+            <input name="password" type="password" className="w-full bg-white/5 border border-white/10 p-3 rounded-xl mb-4" placeholder="Admin Password" />
+            <button className="w-full bg-yellow-400 text-black font-black p-3 rounded-xl">LOGIN</button>
+          </form>
         </div>
       );
-    }
-
-    function Dashboard({ onLogout }) {
-      const [sessions, setSessions] = useState([]), [loading, setLoading] = useState(true), [showCreate, setShowCreate] = useState(false);
-      const fetch = useCallback(async () => {
-        api('/api/admin/sessions').then(d => { setSessions(d); setLoading(false); }).catch(onLogout);
-      }, [onLogout]);
-      useEffect(() => fetch(), [fetch]);
 
       return (
-        <div className="max-w-2xl mx-auto p-4 py-8">
+        <div className="max-w-3xl mx-auto">
           <div className="flex justify-between items-center mb-8">
             <h1 className="text-2xl font-black text-gradient">SUSHI ADMIN</h1>
-            <button onClick={() => setShowCreate(true)} className="p-3 bg-yellow-400 text-black rounded-full"><Plus/></button>
+            <button onClick={() => setEdit({ gameName: '', slug: '', settings: { preGameInterval: 45 }, commentators: [{ id: 'A', name: 'Big Mike', voice: 'bryce' }, { id: 'B', name: 'Salty Steve', voice: 'amy' }] })} className="bg-yellow-400 text-black p-3 rounded-full"><Plus/></button>
           </div>
 
-          {showCreate ? <CreateSessionWizard onCreated={() => { setShowCreate(false); fetch(); }} onCancel={() => setShowCreate(false)} /> : (
-            <div className="space-y-4">
-              {sessions.map(s => (
-                <div key={s.id} className="p-4 glass rounded-2xl flex justify-between items-center">
-                  <div>
-                    <div className="font-black">{s.gameName}</div>
-                    <div className="text-[10px] opacity-50 uppercase tracking-widest">{s.id} | {s.settings?.preGameInterval}s interval</div>
-                  </div>
-                  <button onClick={async () => { await api(`/api/admin/sessions/${s.id}`, { method: 'DELETE' }); fetch(); }} className="text-red-400 p-2"><Trash2 size={18}/></button>
+          {edit && (
+            <div className="fixed inset-0 z-50 bg-black/90 p-4 overflow-y-auto">
+              <form onSubmit={saveSession} className="max-w-lg mx-auto glass p-6 rounded-2xl space-y-6">
+                <div className="flex justify-between font-black">
+                  <h2>{edit.id ? 'EDIT SESSION' : 'NEW SESSION'}</h2>
+                  <button type="button" onClick={() => setEdit(null)}><X/></button>
                 </div>
-              ))}
+                
+                <div className="space-y-4">
+                  <input value={edit.gameName} onChange={e => setEdit({ ...edit, gameName: e.target.value })} className="w-full bg-white/5 p-3 rounded-xl" placeholder="Game Name (e.g. Knicks vs Lakers)" />
+                  <div className="flex items-center gap-2 bg-white/5 p-3 rounded-xl">
+                    <Link size={16} className="text-gray-500" />
+                    <span className="text-gray-500">/</span>
+                    <input value={edit.slug} onChange={e => setEdit({ ...edit, slug: e.target.value.toLowerCase() })} className="bg-transparent outline-none flex-1" placeholder="custom-slug" />
+                  </div>
+                  {!edit.id && (
+                    <div className="flex gap-2">
+                      <input value={edit.sport} onChange={e => setEdit({ ...edit, sport: e.target.value })} className="flex-1 bg-white/5 p-3 rounded-xl" placeholder="sport (football/basketball)" />
+                      <input value={edit.espnEventId} onChange={e => setEdit({ ...edit, espnEventId: e.target.value })} className="flex-1 bg-white/5 p-3 rounded-xl" placeholder="ESPN Event ID" />
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-xs text-gray-500 font-bold uppercase">Pre-Game Interval (seconds)</label>
+                    <input type="number" value={edit.settings.preGameInterval} onChange={e => setEdit({ ...edit, settings: { ...edit.settings, preGameInterval: parseInt(e.target.value) } })} className="w-full bg-white/5 p-3 rounded-xl" />
+                  </div>
+
+                  {edit.commentators.map((c, i) => (
+                    <div key={i} className="p-4 bg-white/5 rounded-xl space-y-3">
+                      <div className="font-bold text-xs opacity-50">COMMENTATOR {c.id}</div>
+                      <input value={c.name} onChange={e => { const n = [...edit.commentators]; n[i].name = e.target.value; setEdit({ ...edit, commentators: n }); }} className="w-full bg-transparent border-b border-white/10" placeholder="Name" />
+                      <select value={c.voice} onChange={e => { const n = [...edit.commentators]; n[i].voice = e.target.value; setEdit({ ...edit, commentators: n }); }} className="w-full bg-black/50 p-2 rounded-lg text-sm">
+                        <option value="amy">Female (Amy)</option>
+                        <option value="bryce">Male (Bryce)</option>
+                      </select>
+                      <div className="flex gap-2 items-center">
+                        <input value={c.avatarUrl} className="flex-1 bg-white/5 p-2 rounded-lg text-xs" placeholder="Model URL" />
+                        <label className="cursor-pointer p-2 glass rounded-lg"><Upload size={14}/><input type="file" className="hidden" onChange={e => uploadModel(i, e.target.files[0])} /></label>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+
+                <button disabled={loading} className="w-full bg-green-500 text-black font-black p-4 rounded-xl flex items-center justify-center gap-2">
+                  {loading ? <RefreshCw className="animate-spin" /> : <Save />} {edit.id ? 'UPDATE' : 'CREATE'}
+                </button>
+              </form>
             </div>
           )}
+
+          <div className="space-y-4">
+            {sessions.map(s => (
+              <div key={s.id} className="glass p-4 rounded-2xl flex justify-between items-center">
+                <div>
+                  <div className="font-black text-lg">{s.gameName}</div>
+                  <div className="text-[10px] opacity-50 font-bold uppercase tracking-widest flex gap-2">
+                    <span>{s.id}</span>
+                    {s.slug && <span className="text-yellow-400">/{s.slug}</span>}
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={() => setEdit(s)} className="p-2 bg-white/5 rounded-lg"><Edit2 size={18}/></button>
+                  <button onClick={async () => { if (confirm('Delete?')) { await api(`/api/admin/sessions/${s.id}`, { method: 'DELETE' }); fetchSessions(); } }} className="p-2 bg-red-500/20 text-red-400 rounded-lg"><Trash2 size={18}/></button>
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       );
-    }
-
-    function App() {
-      const [authed, setAuthed] = useState(false), [checking, setChecking] = useState(true);
-      useEffect(() => {
-        if (!getToken()) { setChecking(false); return; }
-        api('/api/admin/verify').then(d => { if (d.ok) setAuthed(true); }).finally(() => setChecking(false));
-      }, []);
-      if (checking) return null;
-      return authed ? <Dashboard onLogout={() => { clearToken(); setAuthed(false); }} /> : <LoginScreen onLogin={() => setAuthed(true)} />;
     }
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
   </script>

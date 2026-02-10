@@ -1,38 +1,46 @@
 """
 Piper TTS on Modal
-High-quality text-to-speech with Amy voice
+High-quality text-to-speech with Amy (Female) and Bryce (Male) voices
 """
 
 import modal
 import io
 import base64
 
-# Download voice model helper for image build
-def download_voice():
+# Download voice models helper for image build
+def download_voices():
     import urllib.request
     import os
     
     voice_dir = "/root/voices"
     os.makedirs(voice_dir, exist_ok=True)
     
-    # Amy voice (medium quality, ~60MB)
-    base_url = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/"
-    files = ["en_US-amy-medium.onnx", "en_US-amy-medium.onnx.json"]
+    # Amy voice (Female, medium quality)
+    amy_base = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/amy/medium/"
+    # Bryce voice (Male, medium quality)
+    bryce_base = "https://huggingface.co/rhasspy/piper-voices/resolve/v1.0.0/en/en_US/bryce/medium/"
     
-    for f in files:
-        path = os.path.join(voice_dir, f)
-        if not os.path.exists(path):
-            print(f"Downloading {f}...")
-            urllib.request.urlretrieve(base_url + f, path)
+    files = {
+        "amy": [amy_base + "en_US-amy-medium.onnx", amy_base + "en_US-amy-medium.onnx.json"],
+        "bryce": [bryce_base + "en_US-bryce-medium.onnx", bryce_base + "en_US-bryce-medium.onnx.json"]
+    }
+    
+    for v_name, urls in files.items():
+        for url in urls:
+            f_name = url.split("/")[-1]
+            path = os.path.join(voice_dir, f_name)
+            if not os.path.exists(path):
+                print(f"Downloading {f_name}...")
+                urllib.request.urlretrieve(url, path)
     
     return voice_dir
 
-# Create image with Piper and pre-downloaded voice
+# Create image with Piper and pre-downloaded voices
 image = (
     modal.Image.debian_slim()
     .apt_install("git", "build-essential", "cmake", "libespeak-ng-dev")
     .pip_install("piper-tts", "onnxruntime", "fastapi[standard]", "pathvalidate")
-    .run_function(download_voice)
+    .run_function(download_voices)
 )
 
 # Create Modal app
@@ -48,6 +56,7 @@ app = modal.App("sushi-piper-tts", image=image)
 def tts(request: dict):
     """
     Convert text to speech using Piper TTS CLI
+    Request: {"text": "...", "voice": "amy" | "bryce"}
     """
     import subprocess
     import tempfile
@@ -56,26 +65,32 @@ def tts(request: dict):
     
     start_time = time.time()
     text = request.get("text", "")
+    voice_key = request.get("voice", "amy").lower()
+    
     if not text:
         return {"error": "text required"}, 400
     
-    print(f"Synthesizing: {text[:50]}...")
+    # Map voice key to file
+    model_map = {
+        "amy": "/root/voices/en_US-amy-medium.onnx",
+        "bryce": "/root/voices/en_US-bryce-medium.onnx"
+    }
+    model_path = model_map.get(voice_key, model_map["amy"])
+    
+    print(f"Synthesizing ({voice_key}): {text[:50]}...")
     
     try:
-        model_path = "/root/voices/en_US-amy-medium.onnx"
-        
         # Use temp file to ensure WAV header is written correctly
         with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
             output_path = f.name
             
-        # Run piper via CLI - most robust method
+        # Run piper via CLI
         cmd = [
             "piper",
             "--model", model_path,
             "--output_file", output_path
         ]
         
-        # Pipe text to stdin
         process = subprocess.run(
             cmd,
             input=text.encode('utf-8'),
@@ -83,26 +98,24 @@ def tts(request: dict):
             check=True
         )
         
-        # Read the generated WAV file
         with open(output_path, "rb") as f:
             audio_data = f.read()
             
-        # Cleanup
         os.unlink(output_path)
         
         if not audio_data or len(audio_data) < 100:
             raise Exception(f"Generated audio too small. Stderr: {process.stderr.decode()}")
             
-        print(f"Generated {len(audio_data)} bytes of WAV audio")
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
-        
         elapsed = time.time() - start_time
+        print(f"Synthesized {len(audio_data)} bytes in {elapsed:.2f}s")
         
         return {
             "audio": audio_base64,
             "format": "wav",
             "sample_rate": 22050,
             "size": len(audio_data),
+            "voice": voice_key,
             "elapsed": elapsed
         }
     except subprocess.CalledProcessError as e:
@@ -113,17 +126,7 @@ def tts(request: dict):
         traceback.print_exc()
         return {"error": str(e)}, 500
 
-
 @app.function(image=image)
 @modal.fastapi_endpoint(method="GET")
 def health():
-    """Health check endpoint"""
-    return {"status": "ok", "service": "piper-tts"}
-
-
-if __name__ == "__main__":
-    # Test locally
-    print("Testing Piper TTS...")
-    download_voice()
-    result = tts.local({"text": "Hello from Piper TTS on Modal!"})
-    print(f"Generated {len(result['audio'])} bytes of audio")
+    return {"status": "ok", "service": "piper-tts", "voices": ["amy", "bryce"]}
