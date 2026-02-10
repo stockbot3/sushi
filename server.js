@@ -410,6 +410,24 @@ function parseSummary(data) {
       yardsGained: p.statYardage, scoringPlay: p.scoringPlay || false,
     })),
   }));
+  
+  // Extract plays for basketball and other sports
+  let plays = [];
+  if (data.plays) {
+    plays = data.plays.map(p => ({
+      text: p.text, description: p.text, type: p.type?.text || p.type, 
+      clock: p.clock?.displayValue, period: p.period?.number,
+      team: p.team?.abbreviation || p.team?.displayName,
+      scoreValue: p.scoreValue, scoringPlay: p.scoringPlay || false,
+    }));
+  } else if (data.keyEvents) {
+    plays = data.keyEvents.map(p => ({
+      text: p.text, description: p.text, type: p.type?.text || p.type,
+      clock: p.clock?.displayValue, period: p.period?.number,
+      team: p.team?.abbreviation || p.team?.displayName,
+      scoreValue: p.scoreValue, scoringPlay: p.scoringPlay || false,
+    }));
+  }
 
   const odds = pickcenter.map(p => ({
     provider: p.provider?.name, spread: p.details, overUnder: p.overUnder,
@@ -451,7 +469,7 @@ function parseSummary(data) {
   };
 
   return {
-    teamStats, playerStats, scoring, drives: allDrives, odds, leaders: teamLeaders,
+    teamStats, playerStats, scoring, drives: allDrives, plays, odds, leaders: teamLeaders,
     injuries: injuryReport, winProbability, prediction,
     news: news.slice(0, 10).map(n => ({
       headline: n.headline, description: n.description, published: n.published,

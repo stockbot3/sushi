@@ -480,27 +480,59 @@
                             // Apply neutral pose - relax arms from T-pose
                             if (vrm.humanoid) {
                                 try {
-                                    // Get raw bone nodes for posing
-                                    const leftUpperArm = vrm.humanoid.getRawBoneNode('leftUpperArm');
-                                    const rightUpperArm = vrm.humanoid.getRawBoneNode('rightUpperArm');
-                                    const leftLowerArm = vrm.humanoid.getRawBoneNode('leftLowerArm');
-                                    const rightLowerArm = vrm.humanoid.getRawBoneNode('rightLowerArm');
+                                    console.log('Attempting to fix T-pose...');
                                     
-                                    // Relax arms down (T-pose has arms out at 90 degrees)
-                                    if (leftUpperArm) {
-                                        leftUpperArm.rotation.z = Math.PI / 8; // ~22 degrees down
-                                        leftUpperArm.rotation.x = 0;
-                                    }
-                                    if (rightUpperArm) {
-                                        rightUpperArm.rotation.z = -Math.PI / 8; // ~22 degrees down
-                                        rightUpperArm.rotation.x = 0;
-                                    }
-                                    if (leftLowerArm) leftLowerArm.rotation.x = -Math.PI / 16;
-                                    if (rightLowerArm) rightLowerArm.rotation.x = -Math.PI / 16;
+                                    // Try different bone naming conventions
+                                    const boneNames = [
+                                        ['leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm'],
+                                        ['LeftUpperArm', 'RightUpperArm', 'LeftLowerArm', 'RightLowerArm'],
+                                        ['leftArm', 'rightArm', 'leftForeArm', 'rightForeArm'],
+                                        ['LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm']
+                                    ];
                                     
-                                    console.log('Pose applied - arms relaxed');
+                                    let poseApplied = false;
+                                    
+                                    for (const [leftUp, rightUp, leftLow, rightLow] of boneNames) {
+                                        try {
+                                            const leftUpper = vrm.humanoid.getNormalizedBoneNode(leftUp);
+                                            const rightUpper = vrm.humanoid.getNormalizedBoneNode(rightUp);
+                                            const leftLower = vrm.humanoid.getNormalizedBoneNode(leftLow);
+                                            const rightLower = vrm.humanoid.getNormalizedBoneNode(rightLow);
+                                            
+                                            if (leftUpper && rightUpper) {
+                                                // VRM T-pose has arms horizontal at 90 degrees (PI/2)
+                                                // We want them angled down at ~30 degrees
+                                                leftUpper.rotation.z = -0.5;  // Negative for left arm
+                                                leftUpper.rotation.x = 0;
+                                                leftUpper.rotation.y = 0;
+                                                
+                                                rightUpper.rotation.z = 0.5;  // Positive for right arm
+                                                rightUpper.rotation.x = 0;
+                                                rightUpper.rotation.y = 0;
+                                                
+                                                // Bend elbows slightly
+                                                if (leftLower) leftLower.rotation.x = -0.3;
+                                                if (rightLower) rightLower.rotation.x = -0.3;
+                                                
+                                                console.log(`Pose applied using bones: ${leftUp}, ${rightUp}`);
+                                                poseApplied = true;
+                                                break;
+                                            }
+                                        } catch (e) {
+                                            // Try next naming convention
+                                        }
+                                    }
+                                    
+                                    if (!poseApplied) {
+                                        console.log('Could not find arm bones, available bones:', 
+                                            Object.keys(vrm.humanoid.humanBones || {}));
+                                    }
+                                    
+                                    // Force update
+                                    vrm.humanoid.update();
+                                    
                                 } catch (e) {
-                                    console.log('Could not set pose:', e);
+                                    console.log('Pose error:', e);
                                 }
                             }
                             
