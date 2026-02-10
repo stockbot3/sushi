@@ -232,6 +232,11 @@
             const [loaded, setLoaded] = useState(false);
             const blinkTimerRef = useRef(0);
             const nextBlinkRef = useRef(2 + Math.random() * 3);
+            const activeSpeakerRef = useRef(activeSpeaker);
+
+            useEffect(() => {
+                activeSpeakerRef.current = activeSpeaker;
+            }, [activeSpeaker]);
 
             useEffect(() => {
                 let mounted = true;
@@ -267,7 +272,7 @@
                             const bones = ['leftUpperArm', 'rightUpperArm', 'LeftUpperArm', 'RightUpperArm'];
                             bones.forEach(b => {
                                 const node = vrm.humanoid.getNormalizedBoneNode(b);
-                                if (node) node.rotation.z = b.toLowerCase().includes('left') ? -1.4 : 1.4;
+                                if (node) node.rotation.z = b.toLowerCase().includes('left') ? -1.45 : 1.45;
                             });
                             vrm.humanoid.update();
                         }
@@ -293,59 +298,43 @@
                                 const lLowerArm = vrmRef.current.humanoid.getNormalizedBoneNode('leftLowerArm');
                                 const rLowerArm = vrmRef.current.humanoid.getNormalizedBoneNode('rightLowerArm');
 
-                                // Gentle breathing & sway
                                 if (spine) {
                                     spine.position.y = Math.sin(time * 1.2) * 0.006;
                                     spine.rotation.z = Math.sin(time * 0.5) * 0.01;
                                 }
-                                
                                 if (head) {
                                     head.rotation.y = Math.sin(time * 0.4) * 0.08;
                                     head.rotation.x = Math.cos(time * 0.7) * 0.04;
                                 }
 
                                 // ─── SPEAKING GESTURES ───
-                                if (activeSpeaker === side) {
-                                    // Animated arms when talking
+                                if (activeSpeakerRef.current === side) {
                                     if (lUpperArm && rUpperArm) {
-                                        // Base A-pose + dynamic motion
-                                        lUpperArm.rotation.z = -1.3 + Math.sin(time * 4) * 0.1;
-                                        rUpperArm.rotation.z = 1.3 + Math.cos(time * 4) * 0.1;
-                                        
-                                        // Gesturing forward
-                                        lUpperArm.rotation.x = -0.2 + Math.sin(time * 3) * 0.15;
-                                        rUpperArm.rotation.x = -0.2 + Math.cos(time * 3.5) * 0.15;
-                                        
-                                        if (lLowerArm) lLowerArm.rotation.x = -0.4 + Math.sin(time * 5) * 0.2;
-                                        if (rLowerArm) rLowerArm.rotation.x = -0.4 + Math.cos(time * 5.2) * 0.2;
+                                        lUpperArm.rotation.z = THREE.MathUtils.lerp(lUpperArm.rotation.z, -1.2 + Math.sin(time * 4) * 0.1, 0.1);
+                                        rUpperArm.rotation.z = THREE.MathUtils.lerp(rUpperArm.rotation.z, 1.2 + Math.cos(time * 4) * 0.1, 0.1);
+                                        lUpperArm.rotation.x = THREE.MathUtils.lerp(lUpperArm.rotation.x, -0.3 + Math.sin(time * 3) * 0.25, 0.1);
+                                        rUpperArm.rotation.x = THREE.MathUtils.lerp(rUpperArm.rotation.x, -0.3 + Math.cos(time * 3.5) * 0.25, 0.1);
+                                        if (lLowerArm) lLowerArm.rotation.x = THREE.MathUtils.lerp(lLowerArm.rotation.x, -0.6 + Math.sin(time * 5) * 0.3, 0.1);
+                                        if (rLowerArm) rLowerArm.rotation.x = THREE.MathUtils.lerp(rLowerArm.rotation.x, -0.6 + Math.cos(time * 5.2) * 0.3, 0.1);
                                     }
-                                    
-                                    // Head "bobbing" while talking
                                     if (head) {
-                                        head.rotation.x += Math.sin(time * 12) * 0.03;
+                                        head.rotation.x += Math.sin(time * 12) * 0.04;
+                                        head.rotation.y += Math.cos(time * 8) * 0.04;
                                     }
                                 } else {
-                                    // Calm A-pose when listening
-                                    if (lUpperArm) {
-                                        lUpperArm.rotation.z = -1.45;
-                                        lUpperArm.rotation.x = 0;
-                                    }
-                                    if (rUpperArm) {
-                                        rUpperArm.rotation.z = 1.45;
-                                        rUpperArm.rotation.x = 0;
-                                    }
-                                    if (lLowerArm) lLowerArm.rotation.x = -0.1;
-                                    if (rLowerArm) rLowerArm.rotation.x = -0.1;
-                                    
-                                    // Look slightly toward the other speaker
+                                    if (lUpperArm) lUpperArm.rotation.z = THREE.MathUtils.lerp(lUpperArm.rotation.z, -1.45, 0.05);
+                                    if (rUpperArm) rUpperArm.rotation.z = THREE.MathUtils.lerp(rUpperArm.rotation.z, 1.45, 0.05);
+                                    if (lUpperArm) lUpperArm.rotation.x = THREE.MathUtils.lerp(lUpperArm.rotation.x, 0, 0.05);
+                                    if (rUpperArm) rUpperArm.rotation.x = THREE.MathUtils.lerp(rUpperArm.rotation.x, 0, 0.05);
+                                    if (lLowerArm) lLowerArm.rotation.x = THREE.MathUtils.lerp(lLowerArm.rotation.x, -0.1, 0.05);
+                                    if (rLowerArm) rLowerArm.rotation.x = THREE.MathUtils.lerp(rLowerArm.rotation.x, -0.1, 0.05);
                                     if (head) {
-                                        const targetY = side === 'left' ? 0.3 : -0.3;
+                                        const targetY = side === 'left' ? 0.35 : -0.35;
                                         head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, targetY, 0.05);
                                     }
                                 }
                             }
 
-                            // ─── BLINKING ───
                             if (vrmRef.current.expressionManager) {
                                 blinkTimerRef.current += delta;
                                 if (blinkTimerRef.current > nextBlinkRef.current) {
@@ -373,7 +362,7 @@
                 if (window.modulesLoaded) init();
                 else window.addEventListener('modulesLoaded', init);
                 return () => { mounted = false; };
-            }, [activeSpeaker, side]);
+            }, [side]);
 
             useEffect(() => {
                 return visemeEmitter.subscribe((targetSide, viseme, volume) => {
@@ -381,24 +370,15 @@
                     const manager = vrmRef.current.expressionManager;
                     const map = manager._expressionMap;
                     
-                    // ─── HANDLE EMOTIONS ───
                     if (viseme.startsWith('emotion:')) {
                         const emotion = viseme.split(':')[1];
-                        ['happy', 'angry', 'sad', 'relaxed', 'surprised', 'neutral'].forEach(e => {
-                            if (e in map) manager.setValue(e, 0);
-                        });
-                        if (emotion !== 'neutral' && emotion in map) {
-                            manager.setValue(emotion, 1);
-                        }
+                        ['happy', 'angry', 'sad', 'relaxed', 'surprised', 'neutral'].forEach(e => { if (e in map) manager.setValue(e, 0); });
+                        if (emotion !== 'neutral' && emotion in map) manager.setValue(emotion, 1);
                         manager.update();
                         return;
                     }
 
-                    // ─── HANDLE VISEMES ───
-                    ['aa', 'ih', 'ou', 'E', 'oh', 'a', 'i', 'u', 'e', 'o'].forEach(v => {
-                        if (v in map) manager.setValue(v, 0);
-                    });
-                    
+                    ['aa', 'ih', 'ou', 'E', 'oh', 'a', 'i', 'u', 'e', 'o'].forEach(v => { if (v in map) manager.setValue(v, 0); });
                     if (viseme !== 'sil') {
                         let t = viseme;
                         if (!(t in map)) {
@@ -450,24 +430,15 @@
                 while (queueRef.current.length > 0) {
                     const turn = queueRef.current.shift();
                     const side = turn.speaker === 'A' ? 'left' : 'right';
-                    
                     setActiveSpeaker(side);
                     setCurrentSpeakerName(turn.name);
                     setCurrentText(turn.text);
-
-                    // ─── EMOTION DETECTION ───
                     const text = turn.text.toLowerCase();
                     let emotion = 'neutral';
-                    if (text.includes('!') || text.includes('amazing') || text.includes('wow') || text.includes('incredible')) emotion = 'happy';
-                    if (text.includes('turrible') || text.includes('terrible') || text.includes('bad') || text.includes('no way')) emotion = 'angry';
-                    if (text.includes('sad') || text.includes('shame') || text.includes('unfortunate')) emotion = 'sad';
-                    if (text.includes('?') || text.includes('what') || text.includes('how')) emotion = 'surprised';
-                    
-                    // Emit emotion change (using visemeEmitter for simplicity)
+                    if (text.includes('!') || text.includes('amazing') || text.includes('wow')) emotion = 'happy';
+                    if (text.includes('turrible') || text.includes('terrible') || text.includes('no way')) emotion = 'angry';
                     visemeEmitter.emit(side, 'emotion:' + emotion, 1);
-                    
                     await ttsRef.current.speak(turn.text, side);
-                    
                     setActiveSpeaker(null);
                     setCurrentText("");
                     visemeEmitter.emit(side, 'emotion:neutral', 1);
@@ -488,23 +459,15 @@
                         if (cRes.turns?.length > 0) {
                             const seq = cRes.play?.seq || cRes.timestamp;
                             const playId = cRes.play?.description || cRes.timestamp;
-                            
-                            // Prevent re-voicing the same play
                             if (seq !== lastSeq && !voicedPlaysRef.current.has(playId)) {
                                 setLastSeq(seq);
                                 voicedPlaysRef.current.add(playId);
-                                if (voicedPlaysRef.current.size > 50) {
-                                    // Cleanup set
-                                    const first = voicedPlaysRef.current.values().next().value;
-                                    voicedPlaysRef.current.delete(first);
-                                }
-                                
                                 setCommentary(cRes);
                                 queueRef.current = [...cRes.turns];
                                 runQueue();
                             }
                         }
-                    } catch (e) { console.error('Poll error:', e); }
+                    } catch (e) { console.error(e); }
                 };
                 poll();
                 const itv = setInterval(poll, 10000);
@@ -536,7 +499,7 @@
                                     <span className="hud-abbr" style={{ color: homeColor }}>{game?.home?.abbreviation || 'HME'}</span>
                                 </div>
                             </div>
-                            <div className="text-xs font-bold text-gray-500 uppercase tracking-tighter">
+                            <div className="text-xs font-bold text-gray-500 uppercase">
                                 {game?.status?.detail || 'LIVE'}
                             </div>
                         </div>
@@ -547,12 +510,10 @@
                             </div>
                         )}
                     </div>
-
                     <div className="vrm-stage">
                         <Avatar side="left" avatarName={commentary?.commentators?.a?.name || "Sakura"} activeSpeaker={activeSpeaker} />
                         <Avatar side="right" avatarName={commentary?.commentators?.b?.name || "Yuki"} activeSpeaker={activeSpeaker} />
                     </div>
-
                     {activeSpeaker && (
                         <div className="subtitle-box">
                             <div className="subtitle-name">{currentSpeakerName}</div>
