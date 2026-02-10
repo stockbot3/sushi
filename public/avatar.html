@@ -145,6 +145,12 @@
             color: #fa0;
             animation: pulse 0.5s infinite;
         }
+        .status-badge.fallback {
+            background: rgba(255, 200, 0, 0.2);
+            border-color: rgba(255, 200, 0, 0.4);
+            color: #ffcc00;
+            top: 50px;
+        }
         @keyframes pulse {
             0%, 100% { opacity: 1; }
             50% { opacity: 0.6; }
@@ -216,7 +222,7 @@
                 }
             }
             
-            async speak(text) {
+            async speak(text, onFallback = null) {
                 await this.initAudioContext();
                 this.isSpeaking = true;
                 
@@ -274,6 +280,7 @@
                     
                 } catch (err) {
                     console.error('Modal TTS failed, falling back to Web Speech:', err);
+                    if (onFallback) onFallback(true);
                     // Fallback to Web Speech API
                     await this.speakWithWebSpeech(text);
                 }
@@ -644,6 +651,8 @@
                 vrm.expressionManager.update();
             };
             
+            const [usingFallbackTTS, setUsingFallbackTTS] = useState(false);
+            
             const handleSpeak = async () => {
                 const texts = [
                     "What an incredible play!",
@@ -655,7 +664,16 @@
                 const text = texts[Math.floor(Math.random() * texts.length)];
                 
                 setIsSpeaking(true);
-                await ttsRef.current.speak(text);
+                setUsingFallbackTTS(false);
+                
+                try {
+                    await ttsRef.current.speak(text, (fallback) => {
+                        if (fallback) setUsingFallbackTTS(true);
+                    });
+                } catch (e) {
+                    console.error('Speak error:', e);
+                }
+                
                 setIsSpeaking(false);
             };
             
@@ -668,6 +686,12 @@
                             <div className={`status-badge ${isSpeaking ? 'speaking' : ''}`}>
                                 {isSpeaking ? '🔊 Speaking...' : '✅ Ready'}
                             </div>
+                            
+                            {usingFallbackTTS && (
+                                <div className="status-badge fallback">
+                                    ⚠️ Using Browser TTS
+                                </div>
+                            )}
                             
                             <div className="avatar-overlay">
                                 <div className="avatar-info">
