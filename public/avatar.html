@@ -198,93 +198,116 @@
         // Working VRM URL - verified with curl
         const VRM_URL = 'https://raw.githubusercontent.com/pixiv/three-vrm/release/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
         
+        // Piper TTS Service with real-time lip sync
         class TTSService {
             constructor() {
-                this.synthesis = window.speechSynthesis;
                 this.onViseme = null;
                 this.isSpeaking = false;
-                this.voices = [];
-                this.loadVoices();
+                this.audioContext = null;
+                this.analyser = null;
             }
             
-            loadVoices() {
-                const updateVoices = () => {
-                    this.voices = this.synthesis.getVoices();
-                    console.log('Loaded', this.voices.length, 'voices');
-                };
-                updateVoices();
-                this.synthesis.onvoiceschanged = updateVoices;
+            async initAudioContext() {
+                if (!this.audioContext) {
+                    this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                }
+                if (this.audioContext.state === 'suspended') {
+                    await this.audioContext.resume();
+                }
             }
             
             async speak(text) {
-                if (!this.synthesis) {
-                    alert('Speech synthesis not supported in this browser');
-                    return;
-                }
-                
-                // Make sure voices are loaded
-                if (this.voices.length === 0) {
-                    this.voices = this.synthesis.getVoices();
-                }
-                
+                await this.initAudioContext();
                 this.isSpeaking = true;
                 
-                return new Promise((resolve) => {
-                    this.synthesis.cancel();
-                    
-                    const utterance = new SpeechSynthesisUtterance(text);
-                    utterance.rate = 1;
-                    utterance.pitch = 1.1;
-                    utterance.volume = 1;
-                    
-                    // Select a good voice
-                    const voice = this.voices.find(v => 
-                        v.name.includes('Google US English') ||
-                        v.name.includes('Samantha') ||
-                        v.name.includes('Karen') ||
-                        (v.lang === 'en-US' && !v.name.includes('Microsoft'))
-                    ) || this.voices[0];
-                    
-                    if (voice) {
-                        console.log('Using voice:', voice.name);
-                        utterance.voice = voice;
+                try {
+                    // Call local Piper API
+                    console.log('Calling Piper TTS:', text);
+                    const response = await fetch(`/api/tts?text=${encodeURIComponent(text)}`);
+                    if (!response.ok) {
+                        throw new Error(`TTS API returned ${response.status}`);
                     }
                     
-                    // Generate visemes based on text
-                    const chars = text.split('');
-                    let charIndex = 0;
+                    const audioBuffer = await response.arrayBuffer();
+                    const audioData = await this.audioContext.decodeAudioData(audioBuffer);
                     
-                    utterance.onboundary = (e) => {
-                        if (e.name === 'word' && this.onViseme) {
-                            // Get approximate position in text
-                            const progress = e.charIndex / text.length;
-                            const word = text.substring(e.charIndex).split(/\s/)[0];
-                            const viseme = this.getVisemeForChar(word.charAt(0));
-                            
-                            console.log('Viseme:', viseme, 'for word:', word);
-                            this.onViseme(viseme, 0.15);
-                        }
-                    };
+                    // Create audio source
+                    const source = this.audioContext.createBufferSource();
+                    source.buffer = audioData;
                     
-                    utterance.onend = () => {
-                        this.isSpeaking = false;
-                        if (this.onViseme) this.onViseme('sil', 0);
-                        resolve();
-                    };
+                    // Create analyser for lip sync
+                    this.analyser = this.audioContext.createAnalyser();
+                    this.analyser.fftSize = 256;
                     
-                    utterance.onerror = (e) => {
-                        console.error('Speech error:', e);
-                        this.isSpeaking = false;
-                        if (this.onViseme) this.onViseme('sil', 0);
-                        resolve();
-                    };
+                    // Connect: source -> analyser -> destination
+                    source.connect(this.analyser);
+                    this.analyser.connect(this.audioContext.destination);
                     
-                    this.synthesis.speak(utterance);
-                });
+                    // Start lip sync analysis
+                    this.startLipSyncAnalysis(text, audioData.duration);
+                    
+                    // Play audio
+                    source.start(0);
+                    
+                    // Wait for playback to finish
+                    await new Promise((resolve) => {
+                        source.onended = () => {
+                            this.isSpeaking = false;
+                            if (this.onViseme) this.onViseme('sil', 0);
+                            resolve();
+                        };
+                    });
+                    
+                } catch (err) {
+                    console.error('TTS error:', err);
+                    this.isSpeaking = false;
+                    if (this.onViseme) this.onViseme('sil', 0);
+                    alert('TTS Error: ' + err.message);
+                }
             }
             
-            getVisemeForChar(char) {
-                char = char.toLowerCase();
+            startLipSyncAnalysis(text, duration) {
+                if (!this.analyser || !this.onViseme) return;
+                
+                const dataArray = new Uint8Array(this.analyser.frequencyBinCount);
+                const words = text.split(/\s+/);
+                const startTime = this.audioContext.currentTime;
+                const wordsPerSecond = words.length / duration;
+                
+                const analyze = () => {
+                    if (!this.isSpeaking) return;
+                    
+                    this.analyser.getByteFrequencyData(dataArray);
+                    
+                    // Calculate volume from frequency data
+                    let sum = 0;
+                    for (let i = 0; i < dataArray.length; i++) {
+                        sum += dataArray[i];
+                    }
+                    const average = sum / dataArray.length;
+                    const volume = average / 255;
+                    
+                    // Map volume to visemes
+                    if (volume > 0.15) {
+                        const elapsed = this.audioContext.currentTime - startTime;
+                        const wordIndex = Math.floor(elapsed * wordsPerSecond);
+                        if (wordIndex < words.length) {
+                            const word = words[wordIndex];
+                            const viseme = this.getVisemeForWord(word);
+                            this.onViseme(viseme, 0.1);
+                        }
+                    } else {
+                        this.onViseme('sil', 0.05);
+                    }
+                    
+                    requestAnimationFrame(analyze);
+                };
+                
+                analyze();
+            }
+            
+            getVisemeForWord(word) {
+                const char = word.charAt(0).toLowerCase();
                 const map = {
                     'a': 'aa', 'e': 'E', 'i': 'ih', 'o': 'oh', 'u': 'ou',
                     'b': 'PP', 'm': 'PP', 'p': 'PP',
@@ -295,6 +318,10 @@
                     'w': 'ou', 'y': 'ih'
                 };
                 return map[char] || 'aa';
+            }
+            
+            stop() {
+                this.isSpeaking = false;
             }
         }
         

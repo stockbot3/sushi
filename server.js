@@ -1392,6 +1392,53 @@ app.get('/api/status', (req, res) => {
   });
 });
 
+// ─── PIPER TTS PROXY ───
+// Forwards TTS requests to local Piper server
+const PIPER_URL = process.env.PIPER_URL || 'http://localhost:5000';
+
+app.get('/api/tts', async (req, res) => {
+  try {
+    const text = req.query.text;
+    if (!text) return res.status(400).json({ error: 'text parameter required' });
+    
+    const response = await fetch(`${PIPER_URL}/tts?text=${encodeURIComponent(text)}`);
+    if (!response.ok) {
+      throw new Error(`Piper returned ${response.status}`);
+    }
+    
+    const audioBuffer = await response.arrayBuffer();
+    res.set('Content-Type', 'audio/wav');
+    res.send(Buffer.from(audioBuffer));
+  } catch (err) {
+    console.error('TTS error:', err.message);
+    res.status(502).json({ error: 'TTS service unavailable', message: err.message });
+  }
+});
+
+app.post('/api/tts', async (req, res) => {
+  try {
+    const text = req.body.text;
+    if (!text) return res.status(400).json({ error: 'text required' });
+    
+    const response = await fetch(`${PIPER_URL}/tts`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    
+    if (!response.ok) {
+      throw new Error(`Piper returned ${response.status}`);
+    }
+    
+    const audioBuffer = await response.arrayBuffer();
+    res.set('Content-Type', 'audio/wav');
+    res.send(Buffer.from(audioBuffer));
+  } catch (err) {
+    console.error('TTS error:', err.message);
+    res.status(502).json({ error: 'TTS service unavailable', message: err.message });
+  }
+});
+
 // Serve the SPA (must be last)
 app.get('*', (req, res) => {
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
