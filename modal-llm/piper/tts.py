@@ -66,32 +66,29 @@ def tts(request: dict):
         model_path = "/root/voices/en_US-amy-medium.onnx"
         config_path = "/root/voices/en_US-amy-medium.onnx.json"
         
-        # Load voice
         voice = PiperVoice.load(model_path, config_path=config_path)
         
-        # Create WAV in memory
-        buf = io.BytesIO()
-        with wave.open(buf, 'wb') as wav_file:
+        # Synthesize PCM frames
+        wav_buffer = io.BytesIO()
+        with wave.open(wav_buffer, 'wb') as wav_file:
             wav_file.setnchannels(1)
             wav_file.setsampwidth(2)
             wav_file.setframerate(voice.config.sample_rate)
-            # Piper can synthesize directly to a file-like object
+            
+            # synthesize() writes PCM bytes to the file-like object
             voice.synthesize(text, wav_file)
         
-        # Get the full WAV data with headers
-        audio_data = buf.getvalue()
+        # Extract full WAV with headers
+        audio_data = wav_buffer.getvalue()
         
-        # Log stats
-        print(f"Generated WAV: {len(audio_data)} bytes, SR: {voice.config.sample_rate}")
-        
-        if len(audio_data) < 100:
-            raise Error("Generated audio is too small")
-
-        # Encode to base64
-        audio_b64 = base64.b64encode(audio_data).decode('utf-8')
+        if not audio_data:
+            raise Exception("Generated audio data is empty")
+            
+        print(f"Generated {len(audio_data)} bytes of WAV audio")
+        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
         
         return {
-            "audio": audio_b64,
+            "audio": audio_base64,
             "format": "wav",
             "sample_rate": voice.config.sample_rate,
             "size": len(audio_data)

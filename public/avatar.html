@@ -221,7 +221,9 @@
                     scene.add(new THREE.AmbientLight(0xffffff, 1.0));
                     const dl = new THREE.DirectionalLight(0xffffff, 1.5); dl.position.set(1, 2, 3); scene.add(dl);
 
-                    new GLTFLoader().register(p => new VRMLoaderPlugin(parser)).load(VRM_URL, gltf => {
+                    const loader = new GLTFLoader();
+                    loader.register(parser => new VRMLoaderPlugin(parser));
+                    loader.load(VRM_URL, gltf => {
                         if (!mounted) return;
                         const vrm = gltf.userData.vrm; vrmRef.current = vrm;
                         VRMUtils.rotateVRM0(vrm); scene.add(vrm.scene);
