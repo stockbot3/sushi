@@ -66,37 +66,35 @@ def tts(request: dict):
         model_path = "/root/voices/en_US-amy-medium.onnx"
         config_path = "/root/voices/en_US-amy-medium.onnx.json"
         
-        # Initialize Piper voice
+        # Load voice
         voice = PiperVoice.load(model_path, config_path=config_path)
         
-        # Generate audio frames into a WAV container
-        wav_buffer = io.BytesIO()
-        with wave.open(wav_buffer, 'wb') as wav_file:
-            wav_file.setnchannels(1)  # Mono
-            wav_file.setsampwidth(2)  # 16-bit
+        # Create WAV in memory
+        buf = io.BytesIO()
+        with wave.open(buf, 'wb') as wav_file:
+            wav_file.setnchannels(1)
+            wav_file.setsampwidth(2)
             wav_file.setframerate(voice.config.sample_rate)
-            
-            # Synthesize and write PCM frames
-            for audio_bytes in voice.synthesize_stream(text):
-                wav_file.writeframes(audio_bytes)
+            # Piper can synthesize directly to a file-like object
+            voice.synthesize(text, wav_file)
         
-        # GET VALUE AFTER CLOSE
-        audio_data = wav_buffer.getvalue()
+        # Get the full WAV data with headers
+        audio_data = buf.getvalue()
         
-        if not audio_data or len(audio_data) < 100:
-            print(f"Warning: synthesized very small buffer ({len(audio_data)} bytes)")
-            
-        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
+        # Log stats
+        print(f"Generated WAV: {len(audio_data)} bytes, SR: {voice.config.sample_rate}")
         
-        elapsed = time.time() - start_time
-        print(f"Synthesized {len(audio_data)} bytes in {elapsed:.2f}s for text: {text[:30]}...")
+        if len(audio_data) < 100:
+            raise Error("Generated audio is too small")
+
+        # Encode to base64
+        audio_b64 = base64.b64encode(audio_data).decode('utf-8')
         
         return {
-            "audio": audio_base64,
+            "audio": audio_b64,
             "format": "wav",
             "sample_rate": voice.config.sample_rate,
-            "size": len(audio_data),
-            "elapsed": elapsed
+            "size": len(audio_data)
         }
     except Exception as e:
         import traceback
