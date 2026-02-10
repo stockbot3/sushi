@@ -221,15 +221,29 @@
                 this.isSpeaking = true;
                 
                 try {
-                    // Call local Piper API
-                    console.log('Calling Piper TTS:', text);
-                    const response = await fetch(`/api/tts?text=${encodeURIComponent(text)}`);
+                    // Call Modal Piper TTS API
+                    console.log('Calling Modal Piper TTS:', text);
+                    const response = await fetch('/api/tts', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({ text }),
+                    });
+                    
                     if (!response.ok) {
                         throw new Error(`TTS API returned ${response.status}`);
                     }
                     
-                    const audioBuffer = await response.arrayBuffer();
-                    const audioData = await this.audioContext.decodeAudioData(audioBuffer);
+                    const data = await response.json();
+                    
+                    // Decode base64 audio
+                    const audioBytes = atob(data.audio);
+                    const arrayBuffer = new ArrayBuffer(audioBytes.length);
+                    const view = new Uint8Array(arrayBuffer);
+                    for (let i = 0; i < audioBytes.length; i++) {
+                        view[i] = audioBytes.charCodeAt(i);
+                    }
+                    
+                    const audioData = await this.audioContext.decodeAudioData(arrayBuffer);
                     
                     // Create audio source
                     const source = this.audioContext.createBufferSource();

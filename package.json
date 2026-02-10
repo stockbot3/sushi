@@ -4,9 +4,8 @@
   "description": "Super Bowl LIX Tracker - Scores, Players, Betting Odds",
   "main": "server.js",
   "scripts": {
-    "start": "bash start.sh",
-    "dev": "bash start.sh",
-    "server": "node server.js"
+    "start": "node server.js",
+    "dev": "node server.js"
   },
   "dependencies": {
     "express": "^4.18.2",

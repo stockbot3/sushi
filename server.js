@@ -1392,47 +1392,33 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ─── PIPER TTS PROXY ───
-// Forwards TTS requests to local Piper server
-const PIPER_URL = process.env.PIPER_URL || 'http://localhost:5000';
-
-app.get('/api/tts', async (req, res) => {
-  try {
-    const text = req.query.text;
-    if (!text) return res.status(400).json({ error: 'text parameter required' });
-    
-    const response = await fetch(`${PIPER_URL}/tts?text=${encodeURIComponent(text)}`);
-    if (!response.ok) {
-      throw new Error(`Piper returned ${response.status}`);
-    }
-    
-    const audioBuffer = await response.arrayBuffer();
-    res.set('Content-Type', 'audio/wav');
-    res.send(Buffer.from(audioBuffer));
-  } catch (err) {
-    console.error('TTS error:', err.message);
-    res.status(502).json({ error: 'TTS service unavailable', message: err.message });
-  }
-});
+// ─── PIPER TTS via MODAL ───
+const MODAL_PIPER_URL = process.env.MODAL_PIPER_URL;
 
 app.post('/api/tts', async (req, res) => {
   try {
-    const text = req.body.text;
+    const text = req.body.text || req.query.text;
     if (!text) return res.status(400).json({ error: 'text required' });
     
-    const response = await fetch(`${PIPER_URL}/tts`, {
+    // Call Modal Piper TTS
+    const response = await fetch(MODAL_PIPER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ text }),
     });
     
     if (!response.ok) {
-      throw new Error(`Piper returned ${response.status}`);
+      throw new Error(`Modal Piper returned ${response.status}`);
     }
     
-    const audioBuffer = await response.arrayBuffer();
-    res.set('Content-Type', 'audio/wav');
-    res.send(Buffer.from(audioBuffer));
+    const data = await response.json();
+    
+    // Return base64 audio
+    res.json({
+      audio: data.audio,
+      format: data.format || 'wav',
+      sample_rate: data.sample_rate || 22050
+    });
   } catch (err) {
     console.error('TTS error:', err.message);
     res.status(502).json({ error: 'TTS service unavailable', message: err.message });
