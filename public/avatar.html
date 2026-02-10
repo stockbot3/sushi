@@ -273,10 +273,9 @@
                     });
                     
                 } catch (err) {
-                    console.error('TTS error:', err);
-                    this.isSpeaking = false;
-                    if (this.onViseme) this.onViseme('sil', 0);
-                    alert('TTS Error: ' + err.message);
+                    console.error('Modal TTS failed, falling back to Web Speech:', err);
+                    // Fallback to Web Speech API
+                    await this.speakWithWebSpeech(text);
                 }
             }
             
@@ -332,6 +331,49 @@
                     'w': 'ou', 'y': 'ih'
                 };
                 return map[char] || 'aa';
+            }
+            
+            async speakWithWebSpeech(text) {
+                return new Promise((resolve) => {
+                    const synthesis = window.speechSynthesis;
+                    if (!synthesis) {
+                        this.isSpeaking = false;
+                        resolve();
+                        return;
+                    }
+                    
+                    synthesis.cancel();
+                    const utterance = new SpeechSynthesisUtterance(text);
+                    utterance.rate = 1.1;
+                    utterance.pitch = 1;
+                    
+                    const voices = synthesis.getVoices();
+                    const voice = voices.find(v => v.lang === 'en-US') || voices[0];
+                    if (voice) utterance.voice = voice;
+                    
+                    // Simulate visemes based on word boundaries
+                    utterance.onboundary = (e) => {
+                        if (e.name === 'word' && this.onViseme) {
+                            const word = text.substring(e.charIndex).split(/\s/)[0];
+                            const viseme = this.getVisemeForWord(word);
+                            this.onViseme(viseme, 0.15);
+                        }
+                    };
+                    
+                    utterance.onend = () => {
+                        this.isSpeaking = false;
+                        if (this.onViseme) this.onViseme('sil', 0);
+                        resolve();
+                    };
+                    
+                    utterance.onerror = () => {
+                        this.isSpeaking = false;
+                        if (this.onViseme) this.onViseme('sil', 0);
+                        resolve();
+                    };
+                    
+                    synthesis.speak(utterance);
+                });
             }
             
             stop() {
@@ -431,10 +473,25 @@
                             // Apply neutral pose - relax arms from T-pose
                             if (vrm.humanoid) {
                                 try {
-                                    const leftArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
-                                    const rightArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
-                                    if (leftArm) leftArm.rotation.z = 0.3;
-                                    if (rightArm) rightArm.rotation.z = -0.3;
+                                    // Get raw bone nodes for posing
+                                    const leftUpperArm = vrm.humanoid.getRawBoneNode('leftUpperArm');
+                                    const rightUpperArm = vrm.humanoid.getRawBoneNode('rightUpperArm');
+                                    const leftLowerArm = vrm.humanoid.getRawBoneNode('leftLowerArm');
+                                    const rightLowerArm = vrm.humanoid.getRawBoneNode('rightLowerArm');
+                                    
+                                    // Relax arms down (T-pose has arms out at 90 degrees)
+                                    if (leftUpperArm) {
+                                        leftUpperArm.rotation.z = Math.PI / 8; // ~22 degrees down
+                                        leftUpperArm.rotation.x = 0;
+                                    }
+                                    if (rightUpperArm) {
+                                        rightUpperArm.rotation.z = -Math.PI / 8; // ~22 degrees down
+                                        rightUpperArm.rotation.x = 0;
+                                    }
+                                    if (leftLowerArm) leftLowerArm.rotation.x = -Math.PI / 16;
+                                    if (rightLowerArm) rightLowerArm.rotation.x = -Math.PI / 16;
+                                    
+                                    console.log('Pose applied - arms relaxed');
                                 } catch (e) {
                                     console.log('Could not set pose:', e);
                                 }
