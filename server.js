@@ -10,20 +10,19 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3007;
 
-// Ensure upload dir
+// Uploads
 const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
-
-const storage = multer.diskStorage({
+const upload = multer({ storage: multer.diskStorage({
   destination: (req, file, cb) => cb(null, uploadDir),
   filename: (req, file, cb) => cb(null, `${Date.now()}-${file.originalname}`)
-});
-const upload = multer({ storage });
+})});
 
-// FIREBASE
-if (process.env.FIREBASE_SERVICE_ACCOUNT) {
+// Firebase
+const firebaseSA = process.env.FIREBASE_SERVICE_ACCOUNT;
+if (firebaseSA) {
   try {
-    const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
+    const sa = JSON.parse(firebaseSA);
     admin.initializeApp({ credential: admin.credential.cert(sa), projectId: sa.project_id });
   } catch (e) { admin.initializeApp({ projectId: 'akan-2ed41' }); }
 } else {
@@ -34,35 +33,38 @@ const db = admin.firestore();
 app.use(cors());
 app.use(express.json());
 
-// ─── ADMIN AUTH ───
+// Auth
 const adminTokens = new Set();
-async function getAdminDoc() {
+async function getAdmin() {
   const doc = await db.collection('config').doc('admin').get();
   return doc.exists ? doc.data() : null;
 }
-async function setAdminPassword(pw) {
-  const hash = await bcrypt.hash(pw, 10);
-  await db.collection('config').doc('admin').set({ passwordHash: hash });
-}
 function requireAdmin(req, res, next) {
   const t = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  if (!t || !adminTokens.has(t)) return res.status(401).json({ error: 'Unauthorized' });
+  if (!t || !adminTokens.has(t)) return res.status(401).json({ error: 'Auth required' });
   next();
 }
 
 app.post('/api/admin/login', async (req, res) => {
   const { password } = req.body;
-  let data = await getAdminDoc();
-  if (!data) { await setAdminPassword(password); data = { passwordHash: await bcrypt.hash(password, 10) }; }
-  if (await bcrypt.compare(password, data.passwordHash)) {
-    const t = crypto.randomBytes(32).toString('hex');
-    adminTokens.add(t); return res.json({ token: t });
+  let adminData = await getAdmin();
+  if (!adminData) {
+    const hash = await bcrypt.hash(password, 10);
+    await db.collection('config').doc('admin').set({ passwordHash: hash });
+    adminData = { passwordHash: hash };
+  }
+  if (await bcrypt.compare(password, adminData.passwordHash)) {
+    const token = crypto.randomBytes(32).toString('hex');
+    adminTokens.add(token);
+    return res.json({ token });
   }
   res.status(401).json({ error: 'Invalid' });
 });
 
-// ─── ROUTES ───
+app.get('/api/admin/verify', requireAdmin, (req, res) => res.json({ ok: true }));
+app.post('/api/admin/upload', requireAdmin, upload.single('file'), (req, res) => res.json({ url: `/uploads/${req.file.filename}` }));
 
+// Routes
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
 app.get('/:slug', async (req, res, next) => {
@@ -75,11 +77,7 @@ app.get('/:slug', async (req, res, next) => {
 
 app.use(express.static(path.join(__dirname, 'public')));
 
-// ─── API ───
-
-app.get('/api/admin/verify', requireAdmin, (req, res) => res.json({ ok: true }));
-app.post('/api/admin/upload', requireAdmin, upload.single('file'), (req, res) => res.json({ url: `/uploads/${req.file.filename}` }));
-
+// ─── TTS ───
 const MODAL_PIPER_URL = 'https://mousears1090--sushi-piper-tts-tts.modal.run';
 const ttsCache = new Map();
 
@@ -96,19 +94,20 @@ app.post('/api/tts', async (req, res) => {
       body: JSON.stringify({ text, voice: voice || 'amy' }),
     });
     const data = await r.json();
-    if (!data.audio) throw new Error(data.error || 'No audio from Modal');
+    if (!data.audio) throw new Error(data.error || 'Modal Error');
     const result = { audio: data.audio, format: 'wav' };
-    if (ttsCache.size > 500) ttsCache.delete(ttsCache.keys().next().value);
+    if (ttsCache.size > 1000) ttsCache.delete(ttsCache.keys().next().value);
     ttsCache.set(key, result);
     res.json(result);
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
+// ─── DATA FETCHING ───
+const cache = {};
 async function fetchCached(key, url, ttl = 8000) {
-  if (global.cache?.[key] && (Date.now() - global.cache[key].ts) < ttl) return global.cache[key].data;
+  if (cache[key] && (Date.now() - cache[key].ts) < ttl) return cache[key].data;
   const res = await fetch(url); const data = await res.json();
-  if (!global.cache) global.cache = {};
-  global.cache[key] = { data, ts: Date.now() };
+  cache[key] = { data, ts: Date.now() };
   return data;
 }
 
@@ -123,6 +122,18 @@ function parseScoreboard(data) {
   });
 }
 
+function parseSummary(data) {
+  const drives = data.drives || {};
+  const boxscore = data.boxscore || {};
+  const allDrives = (drives.previous || []).map(d => ({
+    team: d.team?.abbreviation, yards: d.yards,
+    playList: (d.plays || []).map(p => ({ text: p.text, type: p.type?.text }))
+  }));
+  let plays = (data.plays || data.keyEvents || []).map(p => ({ text: p.text, type: p.type?.text || p.type, team: p.team?.abbreviation }));
+  return { teamStats: boxscore.teams, drives: allDrives, plays };
+}
+
+// ─── SESSION MANAGEMENT ───
 const sessionRuntimes = new Map();
 function getRuntime(id) {
   if (!sessionRuntimes.has(id)) sessionRuntimes.set(id, { lastSeq: -1, cache: null, ts: 0 });
@@ -143,7 +154,8 @@ app.post('/api/admin/sessions', requireAdmin, async (req, res) => {
 
 app.patch('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
   await db.collection('sessions').doc(req.params.id).update({ ...req.body, updatedAt: new Date().toISOString() });
-  res.json({ ok: true });
+  const doc = await db.collection('sessions').doc(req.params.id).get();
+  res.json(doc.data());
 });
 
 app.delete('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
@@ -164,11 +176,12 @@ app.get('/api/sessions/:id/game', async (req, res) => {
   res.json(parseScoreboard(raw).find(x => x.id === s.espnEventId));
 });
 
+// ─── COMMENTARY ───
 const MODAL_MISTRAL_URL = 'https://mousears1090--claudeapps-mistral-mistralmodel-chat.modal.run';
 
 function strip(text, name) {
-  return text.replace(/🗣️|🎙️/g, '')
-             .replace(new RegExp(`^${name}[:\\s—]+`, 'i'), '')
+  return text.replace(/🗣️|🎙️|🔊/g, '')
+             .replace(new RegExp(`^${name}[:\\s—-]+`, 'i'), '')
              .replace(/^["']|["']$/g, '')
              .replace(/\bSpeaking\b/gi, '')
              .trim();
@@ -180,8 +193,6 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     const doc = await db.collection('sessions').doc(sessionId).get();
     if (!doc.exists) return res.status(404).send();
     const s = doc.data();
-    if (sessionRuntimes.get(sessionId)?.status === 'paused') return res.json({ turns: [] });
-
     const rt = getRuntime(sessionId);
     const now = Date.now();
 
@@ -193,7 +204,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     if (!game || game.status?.state !== 'in') {
       const interval = (s.settings?.preGameInterval || 45) * 1000;
       if (rt.cache && (now - rt.ts) < interval) return res.json(rt.cache);
-      const prompt = `Argue about ${game?.name || 'the game'}. 3 turns: [A], [B], [A]. No names. No emojis. unhinged.`;
+      const prompt = `Argue about ${game?.name || 'the game'}. [A] ${s.commentators[0].name}, [B] ${s.commentators[1].name}. 3 turns: [A], [B], [A]. No names in lines.`;
       const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
       const json = await r.json();
       const turns = json.choices[0].message.content.split('\n').filter(l => l.includes('[A]') || l.includes('[B]')).map(l => {
@@ -201,7 +212,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
         const c = isA ? s.commentators[0] : s.commentators[1];
         return { speaker: isA ? 'A' : 'B', name: c.name, text: strip(l.replace(/^\[[AB]\]/, ''), c.name) };
       });
-      rt.cache = { turns, status: 'pre', timestamp: now }; rt.ts = now;
+      rt.cache = { turns, status: 'pre', play: { description: 'Pre-game Banter', seq: now }, timestamp: now }; rt.ts = now;
       return res.json(rt.cache);
     }
 
@@ -214,7 +225,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     const seq = (summary.drives?.length || 0) * 100 + (latestDrive?.playList?.length || summary.plays?.length || 0);
     if (seq === rt.lastSeq && (now - rt.ts) < 45000) return res.json(rt.cache);
 
-    const prompt = `Live commentary for ${game.name}. Play: ${latestPlay.text}. 3 turns: [A], [B], [A]. Argue unhinged. No names.`;
+    const prompt = `Live commentary for ${game.name}. Play: ${latestPlay.text}. [A] ${s.commentators[0].name}, [B] ${s.commentators[1].name}. 3 turns: [A], [B], [A]. No names.`;
     const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
     const json = await r.json();
     const turns = json.choices[0].message.content.split('\n').filter(l => l.includes('[A]') || l.includes('[B]')).map(l => {
@@ -224,7 +235,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     });
 
     rt.lastSeq = seq;
-    rt.cache = { turns, status: 'live', play: { description: latestPlay.text }, timestamp: now }; rt.ts = now;
+    rt.cache = { turns, status: 'live', play: { description: latestPlay.text, seq }, timestamp: now }; rt.ts = now;
     res.json(rt.cache);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
