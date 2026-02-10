@@ -31,7 +31,7 @@ def download_voice():
 image = (
     modal.Image.debian_slim()
     .apt_install("git", "build-essential", "cmake", "libespeak-ng-dev")
-    .pip_install("piper-tts", "onnxruntime", "fastapi[standard]")
+    .pip_install("piper-tts", "onnxruntime", "fastapi[standard]", "pathvalidate")
     .run_function(download_voice)
 )
 

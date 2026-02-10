@@ -1072,14 +1072,25 @@ function parseCommentary(raw, commentatorA, commentatorB) {
 
   for (const line of lines) {
     const trimmed = line.trim();
-    if (trimmed.startsWith('[A]')) {
+    if (trimmed.startsWith('[A]') || trimmed.startsWith('[B]')) {
       if (current) turns.push(current);
-      current = { speaker: 'A', name: nameA, team: teamA, text: trimmed.replace(/^\[A\]\s*/, '').trim() };
-    } else if (trimmed.startsWith('[B]')) {
-      if (current) turns.push(current);
-      current = { speaker: 'B', name: nameB, team: teamB, text: trimmed.replace(/^\[B\]\s*/, '').trim() };
+      const speaker = trimmed.startsWith('[A]') ? 'A' : 'B';
+      const name = speaker === 'A' ? nameA : nameB;
+      const team = speaker === 'A' ? teamA : teamB;
+      
+      // Strip [A] or [B]
+      let text = trimmed.replace(/^\[[AB]\]\s*/, '').trim();
+      
+      // Strip "Name: " or "Name — " prefixes if LLM included them
+      const namePrefixPattern = new RegExp(`^${name}[:\\s—]+`, 'i');
+      text = text.replace(namePrefixPattern, '').trim();
+      
+      // Strip surrounding quotes
+      text = text.replace(/^["']|["']$/g, '').trim();
+      
+      current = { speaker, name, team, text };
     } else if (current) {
-      current.text += ' ' + trimmed;
+      current.text += ' ' + trimmed.replace(/^["']|["']$/g, '').trim();
     }
   }
   if (current) turns.push(current);
