@@ -388,7 +388,7 @@
             }
         }
         
-        function VRMAvatarViewer({ side, isDualMode, avatarName }) {
+        function VRMAvatarViewer({ side, isDualMode, avatarName, sessionId }) {
             const canvasRef = useRef(null);
             const vrmRef = useRef(null);
             const sceneRef = useRef(null);
@@ -397,16 +397,119 @@
             const ttsRef = useRef(new TTSService());
             const [isLoaded, setIsLoaded] = useState(false);
             const [isSpeaking, setIsSpeaking] = useState(false);
+            const [lastSeq, setLastSeq] = useState(-1);
             const animationIdRef = useRef(null);
+            const turnsQueueRef = useRef([]);
+            const isProcessingQueueRef = useRef(false);
             
+            // Pose arms down (relax from T-pose)
+            const relaxArms = useCallback((vrm) => {
+                if (!vrm || !vrm.humanoid) return;
+                
+                const bones = [
+                    { name: 'leftUpperArm', rotation: { z: -0.8, x: 0.1 } },
+                    { name: 'rightUpperArm', rotation: { z: 0.8, x: 0.1 } },
+                    { name: 'leftLowerArm', rotation: { x: -0.2 } },
+                    { name: 'rightLowerArm', rotation: { x: -0.2 } }
+                ];
+                
+                bones.forEach(b => {
+                    // Try different cases as some models use different naming
+                    const node = vrm.humanoid.getNormalizedBoneNode(b.name) || 
+                                vrm.humanoid.getNormalizedBoneNode(b.name.charAt(0).toUpperCase() + b.name.slice(1));
+                    
+                    if (node) {
+                        if (b.rotation.x !== undefined) node.rotation.x = b.rotation.x;
+                        if (b.rotation.y !== undefined) node.rotation.y = b.rotation.y;
+                        if (b.rotation.z !== undefined) node.rotation.z = b.rotation.z;
+                    }
+                });
+                
+                vrm.humanoid.update();
+            }, []);
+
+            // Process speech queue
+            const processQueue = useCallback(async () => {
+                if (isProcessingQueueRef.current || turnsQueueRef.current.length === 0) return;
+                
+                isProcessingQueueRef.current = true;
+                
+                while (turnsQueueRef.current.length > 0) {
+                    const turn = turnsQueueRef.current.shift();
+                    
+                    // Only speak if it's our turn
+                    const ourSpeakerId = side === 'left' ? 'A' : 'B';
+                    if (turn.speaker === ourSpeakerId) {
+                        setIsSpeaking(true);
+                        try {
+                            // Map mood to expression
+                            const moodMap = {
+                                electric: 'happy',
+                                big_play: 'happy',
+                                disaster: 'sad',
+                                controversial: 'angry',
+                                momentum_shift: 'surprised'
+                            };
+                            if (turn.mood && moodMap[turn.mood]) {
+                                setExpression(moodMap[turn.mood]);
+                            }
+
+                            await ttsRef.current.speak(turn.text, (fallback) => {
+                                if (fallback) setUsingFallbackTTS(true);
+                            });
+                            
+                            // Back to neutral after speaking
+                            setExpression('neutral');
+                        } catch (e) {
+                            console.error('Speech error:', e);
+                        }
+                        setIsSpeaking(false);
+                    } else {
+                        // Small delay while the other avatar "speaks"
+                        await new Promise(r => setTimeout(r, 1000));
+                    }
+                }
+                
+                isProcessingQueueRef.current = false;
+            }, [side]);
+
+            // Poll for commentary
+            useEffect(() => {
+                if (!sessionId || !isLoaded) return;
+                
+                const poll = async () => {
+                    try {
+                        const res = await fetch(`/api/sessions/${sessionId}/commentary/latest`);
+                        const data = await res.json();
+                        
+                        if (data.turns && data.turns.length > 0) {
+                            const seq = data.play?.seq || data.timestamp;
+                            if (seq !== lastSeq) {
+                                setLastSeq(seq);
+                                // Add all turns to queue with play context
+                                turnsQueueRef.current = data.turns.map(t => ({
+                                    ...t,
+                                    mood: data.play?.mood
+                                }));
+                                processQueue();
+                            }
+                        }
+                    } catch (err) {
+                        console.error('Polling error:', err);
+                    }
+                };
+                
+                const interval = setInterval(poll, 5000);
+                poll(); // Initial poll
+                
+                return () => clearInterval(interval);
+            }, [sessionId, isLoaded, lastSeq, processQueue]);
+
             useEffect(() => {
                 let isMounted = true;
                 
                 const init = () => {
-                    if (!window.THREE) {
-                        console.log('Waiting for THREE...');
-                        return;
-                    }
+                    if (!window.THREE) return;
                     
                     const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = window;
                     if (!canvasRef.current) return;
@@ -415,17 +518,14 @@
                     const width = canvas.clientWidth;
                     const height = canvas.clientHeight;
                     
-                    // Scene
                     const scene = new THREE.Scene();
                     sceneRef.current = scene;
                     
-                    // Camera - positioned for portrait view of avatar
                     const camera = new THREE.PerspectiveCamera(35, width / height, 0.1, 1000);
-                    camera.position.set(0, 1.1, 2.5);
-                    camera.lookAt(0, 1.0, 0);
+                    camera.position.set(0, 1.3, 2.5);
+                    camera.lookAt(0, 1.2, 0);
                     cameraRef.current = camera;
                     
-                    // Renderer
                     const renderer = new THREE.WebGLRenderer({
                         canvas, alpha: true, antialias: true
                     });
@@ -434,23 +534,15 @@
                     renderer.outputColorSpace = THREE.SRGBColorSpace;
                     rendererRef.current = renderer;
                     
-                    // Lights
-                    const ambient = new THREE.AmbientLight(0xffffff, 0.6);
+                    const ambient = new THREE.AmbientLight(0xffffff, 0.7);
                     scene.add(ambient);
                     
                     const main = new THREE.DirectionalLight(0xffffff, 1.0);
                     main.position.set(2, 3, 2);
                     scene.add(main);
                     
-                    const fill = new THREE.DirectionalLight(0x9090ff, 0.3);
-                    fill.position.set(-2, 1, 1);
-                    scene.add(fill);
-                    
-                    // Load VRM
                     const loader = new GLTFLoader();
                     loader.register((parser) => new VRMLoaderPlugin(parser));
-                    
-                    console.log('Loading VRM from:', VRM_URL);
                     
                     loader.load(
                         VRM_URL,
@@ -460,144 +552,44 @@
                             const vrm = gltf.userData.vrm;
                             vrmRef.current = vrm;
                             
-                            console.log('VRM loaded:', vrm);
-                            console.log('Expressions:', vrm.expressionManager?.expressions);
-                            console.log('Blendshapes:', Object.keys(vrm.expressionManager?._expressionMap || {}));
-                            
                             VRMUtils.rotateVRM0(vrm);
                             scene.add(vrm.scene);
                             
-                            // Set up lookAt
-                            if (vrm.lookAt) {
-                                vrm.lookAt.target = camera;
-                            }
+                            if (vrm.lookAt) vrm.lookAt.target = camera;
                             
-                            // Set up TTS callback
-                            ttsRef.current.onViseme = (viseme, duration) => {
-                                applyViseme(viseme);
-                            };
+                            ttsRef.current.onViseme = (viseme) => applyViseme(viseme);
                             
-                            // Apply neutral pose - relax arms from T-pose
-                            if (vrm.humanoid) {
-                                try {
-                                    console.log('Attempting to fix T-pose...');
-                                    
-                                    // Try different bone naming conventions
-                                    const boneNames = [
-                                        ['leftUpperArm', 'rightUpperArm', 'leftLowerArm', 'rightLowerArm'],
-                                        ['LeftUpperArm', 'RightUpperArm', 'LeftLowerArm', 'RightLowerArm'],
-                                        ['leftArm', 'rightArm', 'leftForeArm', 'rightForeArm'],
-                                        ['LeftArm', 'RightArm', 'LeftForeArm', 'RightForeArm']
-                                    ];
-                                    
-                                    let poseApplied = false;
-                                    
-                                    for (const [leftUp, rightUp, leftLow, rightLow] of boneNames) {
-                                        try {
-                                            const leftUpper = vrm.humanoid.getNormalizedBoneNode(leftUp);
-                                            const rightUpper = vrm.humanoid.getNormalizedBoneNode(rightUp);
-                                            const leftLower = vrm.humanoid.getNormalizedBoneNode(leftLow);
-                                            const rightLower = vrm.humanoid.getNormalizedBoneNode(rightLow);
-                                            
-                                            if (leftUpper && rightUpper) {
-                                                // VRM T-pose has arms horizontal at 90 degrees (PI/2)
-                                                // We want them angled down at ~30 degrees
-                                                leftUpper.rotation.z = -0.5;  // Negative for left arm
-                                                leftUpper.rotation.x = 0;
-                                                leftUpper.rotation.y = 0;
-                                                
-                                                rightUpper.rotation.z = 0.5;  // Positive for right arm
-                                                rightUpper.rotation.x = 0;
-                                                rightUpper.rotation.y = 0;
-                                                
-                                                // Bend elbows slightly
-                                                if (leftLower) leftLower.rotation.x = -0.3;
-                                                if (rightLower) rightLower.rotation.x = -0.3;
-                                                
-                                                console.log(`Pose applied using bones: ${leftUp}, ${rightUp}`);
-                                                poseApplied = true;
-                                                break;
-                                            }
-                                        } catch (e) {
-                                            // Try next naming convention
-                                        }
-                                    }
-                                    
-                                    if (!poseApplied) {
-                                        console.log('Could not find arm bones, available bones:', 
-                                            Object.keys(vrm.humanoid.humanBones || {}));
-                                    }
-                                    
-                                    // Force update
-                                    vrm.humanoid.update();
-                                    
-                                } catch (e) {
-                                    console.log('Pose error:', e);
-                                }
-                            }
+                            // Relax from T-pose
+                            relaxArms(vrm);
                             
                             setIsLoaded(true);
                         },
-                        (progress) => {
-                            const pct = Math.round((progress.loaded / progress.total) * 100);
-                            console.log('Loading:', pct + '%');
-                        },
-                        (error) => {
-                            console.error('VRM load error:', error);
-                            alert('Failed to load avatar: ' + error.message);
-                        }
+                        null,
+                        (error) => console.error('VRM load error:', error)
                     );
                     
-                    // Animation loop with idle animations
                     const clock = new THREE.Clock();
-                    let blinkTime = 0;
-                    let nextBlink = Math.random() * 3 + 2;
-                    
                     const animate = () => {
                         if (!isMounted) return;
                         animationIdRef.current = requestAnimationFrame(animate);
                         
                         const delta = clock.getDelta();
-                        const time = clock.getElapsedTime();
-                        
                         if (vrmRef.current) {
                             vrmRef.current.update(delta);
                             
-                            // Idle breathing animation
+                            // Idle subtle movement
                             if (vrmRef.current.humanoid) {
-                                try {
-                                    const breath = Math.sin(time * 2) * 0.02;
-                                    const chest = vrmRef.current.humanoid.getNormalizedBoneNode('chest');
-                                    const spine = vrmRef.current.humanoid.getNormalizedBoneNode('spine');
-                                    if (chest) chest.position.y = breath * 0.5;
-                                    if (spine) spine.position.y = breath;
-                                } catch (e) {}
-                            }
-                            
-                            // Blinking
-                            blinkTime += delta;
-                            if (blinkTime > nextBlink) {
-                                // Trigger blink
-                                if (vrmRef.current.expressionManager) {
-                                    vrmRef.current.expressionManager.setValue('blink', 1);
-                                    setTimeout(() => {
-                                        if (vrmRef.current?.expressionManager) {
-                                            vrmRef.current.expressionManager.setValue('blink', 0);
-                                        }
-                                    }, 150);
-                                }
-                                blinkTime = 0;
-                                nextBlink = Math.random() * 3 + 2;
+                                const t = clock.getElapsedTime();
+                                const breath = Math.sin(t * 1.5) * 0.005;
+                                const spine = vrmRef.current.humanoid.getNormalizedBoneNode('spine');
+                                if (spine) spine.position.y = breath;
                             }
                         }
-                        
                         renderer.render(scene, camera);
                     };
                     animate();
                     
-                    // Resize handler
                     const handleResize = () => {
-                        if (!canvas || !camera || !renderer) return;
                         const w = canvas.clientWidth;
                         const h = canvas.clientHeight;
                         camera.aspect = w / h;
@@ -607,58 +599,37 @@
                     window.addEventListener('resize', handleResize);
                 };
                 
-                if (window.modulesLoaded) {
-                    init();
-                } else {
-                    window.addEventListener('modulesLoaded', init);
-                }
+                if (window.modulesLoaded) init();
+                else window.addEventListener('modulesLoaded', init);
                 
                 return () => {
                     isMounted = false;
                     if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
                 };
-            }, [side]);
+            }, [side, relaxArms]);
             
             const applyViseme = (viseme) => {
                 const vrm = vrmRef.current;
                 if (!vrm?.expressionManager) return;
                 
-                // Available expressions in the model
                 const exprMap = vrm.expressionManager._expressionMap || {};
-                const availableExprs = Object.keys(exprMap);
                 
-                // Reset all visemes
-                const allVisemes = ['aa', 'ih', 'ou', 'E', 'oh', 'PP', 'FF', 'TH', 'DD', 'kk', 'CH', 'SS', 'nn', 'RR',
-                                   'aa', 'ih', 'ou', 'e', 'oh'];
-                allVisemes.forEach(v => {
+                // Reset common visemes
+                ['aa', 'ih', 'ou', 'E', 'oh', 'a', 'i', 'u', 'e', 'o'].forEach(v => {
                     if (v in exprMap) vrm.expressionManager.setValue(v, 0);
                 });
                 
-                // Apply if not silence
                 if (viseme !== 'sil') {
-                    // Try different cases
-                    const variants = [viseme, viseme.toLowerCase(), viseme.toUpperCase()];
-                    let applied = false;
+                    // Try different viseme naming conventions
+                    const targets = [viseme, viseme.toLowerCase(), viseme.toUpperCase()];
+                    // Fallback to basic vowels
+                    const fallbackMap = { 'aa': 'a', 'ih': 'i', 'ou': 'u', 'E': 'e', 'oh': 'o' };
+                    if (fallbackMap[viseme]) targets.push(fallbackMap[viseme]);
                     
-                    for (const v of variants) {
-                        if (v in exprMap) {
-                            vrm.expressionManager.setValue(v, 0.7);
-                            applied = true;
+                    for (const t of targets) {
+                        if (t in exprMap) {
+                            vrm.expressionManager.setValue(t, 0.7);
                             break;
-                        }
-                    }
-                    
-                    // If no exact match, try mapping to available expressions
-                    if (!applied) {
-                        // Map visemes to common blendshape names
-                        const fallbackMap = {
-                            'aa': 'a', 'ih': 'i', 'ou': 'u', 'E': 'e', 'oh': 'o',
-                            'PP': 'a', 'FF': 'i', 'TH': 'e', 'DD': 'e',
-                            'kk': 'o', 'CH': 'i', 'SS': 'i', 'nn': 'a', 'RR': 'o'
-                        };
-                        const fallback = fallbackMap[viseme];
-                        if (fallback && fallback in exprMap) {
-                            vrm.expressionManager.setValue(fallback, 0.5);
                         }
                     }
                 }
@@ -670,13 +641,11 @@
                 const vrm = vrmRef.current;
                 if (!vrm?.expressionManager) return;
                 
-                // Reset all
                 ['happy', 'angry', 'sad', 'relaxed', 'surprised', 'neutral'].forEach(e => {
-                    vrm.expressionManager.setValue(e, 0);
+                    if (e in vrm.expressionManager._expressionMap) vrm.expressionManager.setValue(e, 0);
                 });
                 
-                // Apply new
-                if (expression !== 'neutral') {
+                if (expression !== 'neutral' && expression in vrm.expressionManager._expressionMap) {
                     vrm.expressionManager.setValue(expression, 1);
                 }
                 
@@ -685,27 +654,15 @@
             
             const [usingFallbackTTS, setUsingFallbackTTS] = useState(false);
             
-            const handleSpeak = async () => {
-                const texts = [
-                    "What an incredible play!",
-                    "The offense is on fire today!",
-                    "That defensive stop was crucial!",
-                    "The crowd is going wild!",
-                    "This game is absolutely thrilling!"
-                ];
-                const text = texts[Math.floor(Math.random() * texts.length)];
-                
+            const handleSpeakManual = async () => {
+                const text = "Checking the voice system. Is Piper working?";
                 setIsSpeaking(true);
                 setUsingFallbackTTS(false);
-                
                 try {
                     await ttsRef.current.speak(text, (fallback) => {
                         if (fallback) setUsingFallbackTTS(true);
                     });
-                } catch (e) {
-                    console.error('Speak error:', e);
-                }
-                
+                } catch (e) { console.error(e); }
                 setIsSpeaking(false);
             };
             
@@ -742,10 +699,10 @@
                                 </div>
                                 <button 
                                     className="speak-button" 
-                                    onClick={handleSpeak}
+                                    onClick={handleSpeakManual}
                                     disabled={isSpeaking}
                                 >
-                                    {isSpeaking ? '🎙️ Speaking...' : '🎙️ Speak'}
+                                    🎙️ Test Voice
                                 </button>
                             </div>
                         </>
@@ -757,8 +714,11 @@
         function App() {
             const [isDualMode, setIsDualMode] = useState(true);
             const [loading, setLoading] = useState(true);
+            const [sessionId, setSessionId] = useState(null);
             
             useEffect(() => {
+                const params = new URLSearchParams(window.location.search);
+                setSessionId(params.get('session'));
                 const timer = setTimeout(() => setLoading(false), 2000);
                 return () => clearTimeout(timer);
             }, []);
