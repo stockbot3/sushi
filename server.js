@@ -59,9 +59,57 @@ app.post('/api/admin/login', async (req, res) => {
   res.status(401).json({ error: 'Invalid' });
 });
 
+// ─── SPORTS CONFIG ───
+const SPORTS_CONFIG = {
+  football: { name: 'Football', leagues: { nfl: { name: 'NFL', espnSlug: 'football/nfl' }, 'college-football': { name: 'College Football', espnSlug: 'football/college-football' } } },
+  basketball: { name: 'Basketball', leagues: { nba: { name: 'NBA', espnSlug: 'basketball/nba' }, ncaam: { name: 'NCAAM', espnSlug: 'basketball/mens-college-basketball' } } },
+  baseball: { name: 'Baseball', leagues: { mlb: { name: 'MLB', espnSlug: 'baseball/mlb' } } },
+  hockey: { name: 'Hockey', leagues: { nhl: { name: 'NHL', espnSlug: 'hockey/nhl' } } },
+  soccer: { name: 'Soccer', leagues: { epl: { name: 'Premier League', espnSlug: 'soccer/eng.1' }, mls: { name: 'MLS', espnSlug: 'soccer/usa.1' } } },
+};
+
+// ─── CACHE ───
+const fetchCache = {};
+async function fetchCached(key, url, ttl = 8000) {
+  if (fetchCache[key] && (Date.now() - fetchCache[key].ts) < ttl) return fetchCache[key].data;
+  const res = await fetch(url);
+  const data = await res.json();
+  fetchCache[key] = { data, ts: Date.now() };
+  return data;
+}
+
 // ─── API ROUTES ───
 app.get('/api/admin/verify', requireAdmin, (req, res) => res.json({ ok: true }));
 app.post('/api/admin/upload', requireAdmin, upload.single('file'), (req, res) => res.json({ url: `/uploads/${req.file.filename}` }));
+
+app.get('/api/admin/sports', requireAdmin, (req, res) => {
+  const out = {};
+  for (const [k, v] of Object.entries(SPORTS_CONFIG)) {
+    out[k] = { name: v.name, leagues: Object.entries(v.leagues).map(([lk, lv]) => ({ id: lk, name: lv.name })) };
+  }
+  res.json(out);
+});
+
+function parseScoreboard(data) {
+  return (data.events || []).map(e => {
+    const c = e.competitions[0], h = c.competitors.find(x => x.homeAway === 'home'), a = c.competitors.find(x => x.homeAway === 'away');
+    return {
+      id: e.id, name: e.name, shortName: e.shortName, date: e.date, status: c.status.type,
+      home: { id: h.team.id, abbreviation: h.team.abbreviation, score: h.score, logo: h.team.logo, color: h.team.color ? `#${h.team.color}` : null },
+      away: { id: a.team.id, abbreviation: a.team.abbreviation, score: a.score, logo: a.team.logo, color: a.team.color ? `#${a.team.color}` : null }
+    };
+  });
+}
+
+app.get('/api/admin/browse/:sport/:league', requireAdmin, async (req, res) => {
+  try {
+    const slug = SPORTS_CONFIG[req.params.sport].leagues[req.params.league].espnSlug;
+    const date = req.query.date || '';
+    const url = `https://site.api.espn.com/apis/site/v2/sports/${slug}/scoreboard${date ? `?dates=${date}` : ''}`;
+    const data = await fetchCached(`br_${slug}_${date}`, url, 30000);
+    res.json({ events: parseScoreboard(data) });
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
 
 const MODAL_PIPER_URL = 'https://mousears1090--sushi-piper-tts-tts.modal.run';
 const ttsCache = new Map();
@@ -117,6 +165,14 @@ app.get('/api/sessions', async (req, res) => {
   res.json(s.docs.map(d => d.data()));
 });
 
+app.get('/api/sessions/:id/game', async (req, res) => {
+  const d = await db.collection('sessions').doc(req.params.id).get();
+  if (!d.exists) return res.status(404).send();
+  const s = d.data();
+  const raw = await fetchCached(`sb_${s.espnSlug}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/scoreboard`);
+  res.json(parseScoreboard(raw).find(x => x.id === s.espnEventId));
+});
+
 // ─── COMMENTARY ENGINE ───
 const MODAL_MISTRAL_URL = 'https://mousears1090--claudeapps-mistral-mistralmodel-chat.modal.run';
 const sessionRuntimes = new Map();
@@ -145,7 +201,6 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
     if (rt.cache && (now - rt.ts) < 5000) return res.json(rt.cache);
 
-    // Dynamic Interval
     const interval = (s.settings?.preGameInterval || 45) * 1000;
     if (rt.cache && (now - rt.ts) < interval) return res.json(rt.cache);
 
@@ -168,15 +223,11 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
 // ─── STATIC & SLUGS ───
 
-// Serve Admin specifically
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
-// Custom Slug Handler (must be AFTER api routes)
 app.get('/:slug', async (req, res, next) => {
   const slug = req.params.slug.toLowerCase();
-  // Reserved words
   if (['api', 'admin', 'uploads', 'lib', 'voice', 'commentary', 'avatars', 'avatar.html', 'index.html'].includes(slug)) return next();
-  
   const snap = await db.collection('sessions').where('slug', '==', slug).limit(1).get();
   if (!snap.empty) return res.redirect(`/avatar.html?session=${snap.docs[0].id}`);
   next();

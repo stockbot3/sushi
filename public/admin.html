@@ -19,7 +19,7 @@
   <script src="https://unpkg.com/lucide-react@0.460.0/dist/umd/lucide-react.min.js"></script>
   <script type="text/babel">
     const { useState, useEffect, useCallback } = React;
-    const { Lock, Plus, Trash2, Edit2, Upload, X, Save, RefreshCw, Link } = LucideReact;
+    const { Lock, Plus, Trash2, Edit2, Upload, X, Save, RefreshCw, Link, ChevronRight, Calendar } = LucideReact;
 
     const api = async (p, o = {}) => {
       const t = localStorage.getItem('sushi_token');
@@ -30,7 +30,8 @@
 
     function App() {
       const [authed, setAuthed] = useState(false), [sessions, setSessions] = useState([]), [edit, setEdit] = useState(null);
-      const [loading, setLoading] = useState(false);
+      const [loading, setLoading] = useState(false), [wizardStep, setWizardStep] = useState(0);
+      const [sports, setSports] = useState(null), [games, setGames] = useState([]), [selectedDate, setSelectedDate] = useState(new Date().toISOString().slice(0,10));
 
       const fetchSessions = () => api('/api/admin/sessions').then(setSessions);
 
@@ -45,13 +46,25 @@
         if (d.token) { localStorage.setItem('sushi_token', d.token); setAuthed(true); fetchSessions(); }
       };
 
-      const saveSession = async (e) => {
-        e.preventDefault(); setLoading(true);
+      const startWizard = async () => {
+        const s = await api('/api/admin/sports');
+        setSports(s); setWizardStep(1);
+        setEdit({ gameName: '', slug: '', status: 'active', settings: { preGameInterval: 45 }, commentators: [{ id: 'A', name: 'Big Mike', voice: 'bryce' }, { id: 'B', name: 'Salty Steve', voice: 'amy' }] });
+      };
+
+      const browseGames = async (sport, league) => {
+        setLoading(true);
+        const d = await api(`/api/admin/browse/${sport}/${league}?date=${selectedDate.replace(/-/g,'')}`);
+        setGames(d.events || []); setWizardStep(3); setLoading(false);
+      };
+
+      const saveSession = async () => {
+        setLoading(true);
         const id = edit?.id;
         const method = id ? 'PATCH' : 'POST';
         const url = id ? `/api/admin/sessions/${id}` : '/api/admin/sessions';
         await api(url, { method, body: JSON.stringify(edit) });
-        setEdit(null); fetchSessions(); setLoading(false);
+        setEdit(null); setWizardStep(0); fetchSessions(); setLoading(false);
       };
 
       const uploadModel = async (idx, file) => {
@@ -75,54 +88,90 @@
         <div className="max-w-3xl mx-auto">
           <div className="flex justify-between items-center mb-8">
             <h1 className="text-2xl font-black text-gradient">SUSHI ADMIN</h1>
-            <button onClick={() => setEdit({ sport: 'football', league: 'nfl', gameName: '', slug: '', settings: { preGameInterval: 45 }, commentators: [{ id: 'A', name: 'Big Mike', voice: 'bryce' }, { id: 'B', name: 'Salty Steve', voice: 'amy' }] })} className="bg-yellow-400 text-black p-3 rounded-full"><Plus/></button>
+            <button onClick={startWizard} className="bg-yellow-400 text-black p-3 rounded-full"><Plus/></button>
           </div>
 
-          {edit && (
-            <div className="fixed inset-0 z-50 bg-black/90 p-4 overflow-y-auto">
+          {wizardStep > 0 && (
+            <div className="fixed inset-0 z-50 bg-black/95 p-4 overflow-y-auto">
               <div className="max-w-lg mx-auto glass p-6 rounded-2xl space-y-6">
                 <div className="flex justify-between font-black">
                   <h2>{edit.id ? 'EDIT SESSION' : 'NEW SESSION'}</h2>
-                  <button type="button" onClick={() => setEdit(null)}><X/></button>
+                  <button type="button" onClick={() => { setWizardStep(0); setEdit(null); }}><X/></button>
                 </div>
-                
-                <div className="space-y-4">
-                  <input value={edit.gameName} onChange={e => setEdit({ ...edit, gameName: e.target.value })} className="w-full bg-white/5 p-3 rounded-xl text-white" placeholder="Game Name (e.g. Knicks vs Lakers)" />
-                  <div className="flex items-center gap-2 bg-white/5 p-3 rounded-xl">
-                    <Link size={16} className="text-gray-500" />
-                    <span className="text-gray-500">/</span>
-                    <input value={edit.slug} onChange={e => setEdit({ ...edit, slug: e.target.value.toLowerCase() })} className="bg-transparent outline-none flex-1 text-white" placeholder="custom-slug" />
-                  </div>
-                  
-                  <div className="flex gap-2">
-                    <input value={edit.sport} onChange={e => setEdit({ ...edit, sport: e.target.value })} className="flex-1 bg-white/5 p-3 rounded-xl text-white" placeholder="sport (football/basketball)" />
-                    <input value={edit.espnEventId} onChange={e => setEdit({ ...edit, espnEventId: e.target.value })} className="flex-1 bg-white/5 p-3 rounded-xl text-white" placeholder="ESPN Event ID" />
-                  </div>
-                  
-                  <div>
-                    <label className="text-xs text-gray-500 font-bold uppercase">Pre-Game Interval (seconds)</label>
-                    <input type="number" value={edit.settings?.preGameInterval} onChange={e => setEdit({ ...edit, settings: { ...edit.settings, preGameInterval: parseInt(e.target.value) } })} className="w-full bg-white/5 p-3 rounded-xl text-white" />
-                  </div>
 
-                  {edit.commentators.map((c, i) => (
-                    <div key={i} className="p-4 bg-white/5 rounded-xl space-y-3">
-                      <div className="font-bold text-xs opacity-50">COMMENTATOR {c.id}</div>
-                      <input value={c.name} onChange={e => { const n = [...edit.commentators]; n[i].name = e.target.value; setEdit({ ...edit, commentators: n }); }} className="w-full bg-transparent border-b border-white/10 text-white" placeholder="Name" />
-                      <select value={c.voice} onChange={e => { const n = [...edit.commentators]; n[i].voice = e.target.value; setEdit({ ...edit, commentators: n }); }} className="w-full bg-black/50 p-2 rounded-lg text-sm text-white">
-                        <option value="amy">Female (Amy)</option>
-                        <option value="bryce">Male (Bryce)</option>
-                      </select>
-                      <div className="flex gap-2 items-center">
-                        <input value={c.avatarUrl} onChange={e => { const n = [...edit.commentators]; n[i].avatarUrl = e.target.value; setEdit({ ...edit, commentators: n }); }} className="flex-1 bg-white/5 p-2 rounded-lg text-xs text-white" placeholder="Model URL" />
-                        <label className="cursor-pointer p-2 glass rounded-lg"><Upload size={14}/><input type="file" className="hidden" onChange={e => uploadModel(i, e.target.files[0])} /></label>
+                {wizardStep === 1 && (
+                  <div className="grid grid-cols-1 gap-3">
+                    {Object.entries(sports).map(([k, s]) => (
+                      <div key={k} className="p-4 glass rounded-xl">
+                        <div className="text-xs font-black opacity-30 uppercase mb-2">{s.name}</div>
+                        <div className="flex flex-wrap gap-2">
+                          {s.leagues.map(l => (
+                            <button key={l.id} onClick={() => { setEdit({...edit, sport: k, league: l.id}); setWizardStep(2); }} className="px-4 py-2 bg-white/5 rounded-lg hover:bg-white/10 font-bold">{l.name}</button>
+                          ))}
+                        </div>
                       </div>
-                    </div>
-                  ))}
-                </div>
+                    ))}
+                  </div>
+                )}
 
-                <button onClick={saveSession} disabled={loading} className="w-full bg-green-500 text-black font-black p-4 rounded-xl flex items-center justify-center gap-2">
-                  {loading ? <RefreshCw className="animate-spin" /> : <Save />} {edit.id ? 'UPDATE' : 'CREATE'}
-                </button>
+                {wizardStep === 2 && (
+                  <div className="space-y-4">
+                    <div className="flex items-center gap-3 bg-white/5 p-4 rounded-xl">
+                      <Calendar className="text-yellow-400" />
+                      <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)} className="bg-transparent outline-none flex-1 font-bold" />
+                    </div>
+                    <button onClick={() => browseGames(edit.sport, edit.league)} disabled={loading} className="w-full bg-yellow-400 text-black font-black p-4 rounded-xl flex items-center justify-center gap-2">
+                      {loading ? <RefreshCw className="animate-spin" /> : <ChevronRight />} FIND GAMES
+                    </button>
+                    <button onClick={() => setWizardStep(1)} className="w-full text-xs opacity-50">BACK</button>
+                  </div>
+                )}
+
+                {wizardStep === 3 && (
+                  <div className="space-y-3">
+                    {games.length === 0 ? <div className="text-center py-8 opacity-50">No games found for this date.</div> : games.map(g => (
+                      <button key={g.id} onClick={() => { setEdit({...edit, espnEventId: g.id, gameName: g.name || g.shortName, espnSlug: sports[edit.sport].leagues.find(x => x.id === edit.league).espnSlug || ''}); setWizardStep(4); }} className="w-full p-4 glass rounded-xl text-left hover:border-yellow-400/50 transition-all">
+                        <div className="text-[10px] opacity-30 font-black mb-1">{g.status.detail}</div>
+                        <div className="font-bold">{g.away.abbreviation} @ {g.home.abbreviation}</div>
+                      </button>
+                    ))}
+                    <button onClick={() => setWizardStep(2)} className="w-full text-xs opacity-50">BACK</button>
+                  </div>
+                )}
+
+                {(wizardStep === 4 || edit.id) && (
+                  <div className="space-y-4">
+                    <input value={edit.gameName} onChange={e => setEdit({ ...edit, gameName: e.target.value })} className="w-full bg-white/5 p-3 rounded-xl text-white" placeholder="Game Name" />
+                    <div className="flex items-center gap-2 bg-white/5 p-3 rounded-xl">
+                      <Link size={16} className="text-gray-500" />
+                      <span className="text-gray-500">/</span>
+                      <input value={edit.slug} onChange={e => setEdit({ ...edit, slug: e.target.value.toLowerCase() })} className="bg-transparent outline-none flex-1 text-white" placeholder="custom-slug" />
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 font-bold uppercase">Pre-Game Interval (seconds)</label>
+                      <input type="number" value={edit.settings?.preGameInterval} onChange={e => setEdit({ ...edit, settings: { ...edit.settings, preGameInterval: parseInt(e.target.value) } })} className="w-full bg-white/5 p-3 rounded-xl text-white" />
+                    </div>
+
+                    {edit.commentators.map((c, i) => (
+                      <div key={i} className="p-4 bg-white/5 rounded-xl space-y-3">
+                        <div className="font-bold text-xs opacity-50">COMMENTATOR {c.id}</div>
+                        <input value={c.name} onChange={e => { const n = [...edit.commentators]; n[i].name = e.target.value; setEdit({ ...edit, commentators: n }); }} className="w-full bg-transparent border-b border-white/10 text-white" placeholder="Name" />
+                        <select value={c.voice} onChange={e => { const n = [...edit.commentators]; n[i].voice = e.target.value; setEdit({ ...edit, commentators: n }); }} className="w-full bg-black/50 p-2 rounded-lg text-sm text-white">
+                          <option value="amy">Female (Amy)</option>
+                          <option value="bryce">Male (Bryce)</option>
+                        </select>
+                        <div className="flex gap-2 items-center">
+                          <input value={c.avatarUrl} onChange={e => { const n = [...edit.commentators]; n[i].avatarUrl = e.target.value; setEdit({ ...edit, commentators: n }); }} className="flex-1 bg-white/5 p-2 rounded-lg text-xs text-white" placeholder="Model URL" />
+                          <label className="cursor-pointer p-2 glass rounded-lg"><Upload size={14}/><input type="file" className="hidden" onChange={e => uploadModel(i, e.target.files[0])} /></label>
+                        </div>
+                      </div>
+                    ))}
+
+                    <button onClick={saveSession} disabled={loading} className="w-full bg-green-500 text-black font-black p-4 rounded-xl flex items-center justify-center gap-2">
+                      {loading ? <RefreshCw className="animate-spin" /> : <Save />} {edit.id ? 'UPDATE' : 'CREATE'}
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
           )}
