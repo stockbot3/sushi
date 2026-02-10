@@ -4,9 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
     <title>Sushi - VRM Commentary Avatars</title>
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
-    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     <style>
         * {
             margin: 0;
@@ -258,13 +255,6 @@
             background: linear-gradient(90deg, #ff6b6b, #feca57);
             border-radius: 2px;
             transition: width 0.3s;
-            animation: progress 2s ease-in-out infinite;
-        }
-        
-        @keyframes progress {
-            0% { width: 0%; }
-            50% { width: 70%; }
-            100% { width: 100%; }
         }
         
         .viseme-indicator {
@@ -279,10 +269,29 @@
             color: #feca57;
             opacity: 0;
             transition: opacity 0.2s;
+            pointer-events: none;
         }
         
         .viseme-indicator.active {
             opacity: 1;
+        }
+        
+        .error-message {
+            position: fixed;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            background: rgba(255, 0, 0, 0.2);
+            border: 1px solid rgba(255, 0, 0, 0.5);
+            padding: 20px;
+            border-radius: 12px;
+            text-align: center;
+            max-width: 400px;
+        }
+        
+        .error-message h3 {
+            color: #ff6b6b;
+            margin-bottom: 10px;
         }
         
         /* Mobile Portrait */
@@ -320,7 +329,12 @@
 <body>
     <div id="root"></div>
     
-    <!-- Three.js and VRM via Import Map -->
+    <!-- React -->
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    
+    <!-- Three.js and VRM - Load as regular scripts that populate window object -->
     <script type="importmap">
     {
         "imports": {
@@ -329,6 +343,24 @@
             "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js"
         }
     }
+    </script>
+    
+    <script type="module">
+        // Import modules and attach to window for React to use
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+        
+        window.THREE = THREE;
+        window.GLTFLoader = GLTFLoader;
+        window.VRMLoaderPlugin = VRMLoaderPlugin;
+        window.VRMUtils = VRMUtils;
+        
+        // Signal that modules are loaded
+        window.modulesLoaded = true;
+        
+        // Dispatch event to notify React app
+        window.dispatchEvent(new Event('modulesLoaded'));
     </script>
     
     <script type="text/babel">
@@ -351,7 +383,6 @@
                 this.isSpeaking = true;
                 
                 return new Promise((resolve) => {
-                    // Cancel any ongoing speech
                     this.synthesis.cancel();
                     
                     const utterance = new SpeechSynthesisUtterance(text);
@@ -359,7 +390,6 @@
                     utterance.pitch = 1;
                     utterance.volume = 1;
                     
-                    // Get voices and select a good one
                     const voices = this.synthesis.getVoices();
                     const preferredVoice = voices.find(v => 
                         v.name.includes('Samantha') ||
@@ -372,7 +402,6 @@
                         utterance.voice = preferredVoice;
                     }
                     
-                    // Track words for viseme generation
                     const words = text.split(/\s+/);
                     let wordIndex = 0;
                     
@@ -417,7 +446,6 @@
                     'w': 'ou', 'y': 'ih'
                 };
                 
-                // Check for digraphs first
                 const firstTwo = word.substring(0, 2).toLowerCase();
                 if (consonants[firstTwo]) return consonants[firstTwo];
                 
@@ -433,7 +461,7 @@
         }
         
         // VRM Avatar Viewer Component
-        function VRMAvatarViewer({ side, isDualMode, modelUrl, avatarName, speakingText }) {
+        function VRMAvatarViewer({ side, isDualMode, modelUrl, avatarName }) {
             const canvasRef = useRef(null);
             const vrmRef = useRef(null);
             const sceneRef = useRef(null);
@@ -443,19 +471,21 @@
             const [isLoaded, setIsLoaded] = useState(false);
             const [currentExpression, setCurrentExpression] = useState('neutral');
             const [currentViseme, setCurrentViseme] = useState('sil');
+            const [error, setError] = useState(null);
             const visemeTimeoutRef = useRef(null);
+            const animationIdRef = useRef(null);
             
-            // Initialize Three.js and VRM
             useEffect(() => {
                 let isMounted = true;
-                let animationId;
                 
-                const init = async () => {
+                const init = () => {
                     try {
-                        // Dynamic imports
-                        const THREE = await import('three');
-                        const { GLTFLoader } = await import('three/addons/loaders/GLTFLoader.js');
-                        const { VRMLoaderPlugin, VRMUtils } = await import('@pixiv/three-vrm');
+                        if (!window.THREE || !window.GLTFLoader || !window.VRMLoaderPlugin) {
+                            setError('Three.js modules not loaded yet');
+                            return;
+                        }
+                        
+                        const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = window;
                         
                         if (!canvasRef.current || !isMounted) return;
                         
@@ -518,21 +548,17 @@
                                 const vrm = gltf.userData.vrm;
                                 vrmRef.current = vrm;
                                 
-                                // Setup VRM
                                 VRMUtils.rotateVRM0(vrm);
                                 scene.add(vrm.scene);
                                 
-                                // Configure VRM
                                 if (vrm.lookAt) {
                                     vrm.lookAt.target = camera;
                                 }
                                 
-                                // Setup TTS callback
                                 ttsRef.current.onViseme = (viseme, duration) => {
                                     setCurrentViseme(viseme);
                                     applyViseme(viseme);
                                     
-                                    // Reset viseme after duration
                                     if (visemeTimeoutRef.current) {
                                         clearTimeout(visemeTimeoutRef.current);
                                     }
@@ -547,8 +573,9 @@
                                 setIsLoaded(true);
                             },
                             undefined,
-                            (error) => {
-                                console.error('Error loading VRM:', error);
+                            (loadError) => {
+                                console.error('Error loading VRM:', loadError);
+                                setError('Failed to load 3D model: ' + loadError.message);
                             }
                         );
                         
@@ -556,7 +583,7 @@
                         const clock = new THREE.Clock();
                         const animate = () => {
                             if (!isMounted) return;
-                            animationId = requestAnimationFrame(animate);
+                            animationIdRef.current = requestAnimationFrame(animate);
                             
                             const delta = clock.getDelta();
                             
@@ -583,33 +610,37 @@
                             window.removeEventListener('resize', handleResize);
                         };
                         
-                    } catch (error) {
-                        console.error('Init error:', error);
+                    } catch (err) {
+                        console.error('Init error:', err);
+                        setError(err.message);
                     }
                 };
                 
-                init();
+                // Wait for modules to be loaded
+                if (window.modulesLoaded) {
+                    init();
+                } else {
+                    window.addEventListener('modulesLoaded', init);
+                    return () => window.removeEventListener('modulesLoaded', init);
+                }
                 
                 return () => {
                     isMounted = false;
-                    if (animationId) cancelAnimationFrame(animationId);
+                    if (animationIdRef.current) cancelAnimationFrame(animationIdRef.current);
                     if (visemeTimeoutRef.current) clearTimeout(visemeTimeoutRef.current);
                     if (rendererRef.current) rendererRef.current.dispose();
                 };
             }, [modelUrl, side]);
             
-            // Apply viseme to VRM
             const applyViseme = useCallback((viseme) => {
                 const vrm = vrmRef.current;
                 if (!vrm || !vrm.expressionManager) return;
                 
-                // Reset all visemes
                 const visemes = ['aa', 'ih', 'ou', 'E', 'oh', 'PP', 'FF', 'TH', 'DD', 'kk', 'CH', 'SS', 'nn', 'RR'];
                 visemes.forEach(v => {
                     vrm.expressionManager.setValue(v, 0);
                 });
                 
-                // Apply current viseme
                 if (viseme !== 'sil' && visemes.includes(viseme)) {
                     vrm.expressionManager.setValue(viseme, 0.7);
                 }
@@ -617,18 +648,15 @@
                 vrm.expressionManager.update();
             }, []);
             
-            // Set expression
             const setExpression = useCallback((expression) => {
                 const vrm = vrmRef.current;
                 if (!vrm || !vrm.expressionManager) return;
                 
-                // Reset all expressions
                 const expressions = ['happy', 'angry', 'sad', 'relaxed', 'neutral', 'surprised'];
                 expressions.forEach(exp => {
                     vrm.expressionManager.setValue(exp, 0);
                 });
                 
-                // Set new expression
                 if (expression !== 'neutral') {
                     vrm.expressionManager.setValue(expression, 0.8);
                 }
@@ -636,13 +664,6 @@
                 vrm.expressionManager.update();
                 setCurrentExpression(expression);
             }, []);
-            
-            // Handle speaking
-            useEffect(() => {
-                if (speakingText && ttsRef.current) {
-                    ttsRef.current.speak(speakingText);
-                }
-            }, [speakingText]);
             
             const handleSpeak = () => {
                 const commentaries = [
@@ -655,6 +676,17 @@
                 const text = commentaries[Math.floor(Math.random() * commentaries.length)];
                 ttsRef.current.speak(text);
             };
+            
+            if (error) {
+                return (
+                    <div className="vrm-canvas-container">
+                        <div className="error-message">
+                            <h3>Error</h3>
+                            <p>{error}</p>
+                        </div>
+                    </div>
+                );
+            }
             
             return (
                 <div className={`vrm-canvas-container ${isDualMode ? 'dual' : ''}`}>
@@ -703,22 +735,35 @@
             const [isDualMode, setIsDualMode] = useState(true);
             const [isLoading, setIsLoading] = useState(true);
             const [loadingProgress, setLoadingProgress] = useState(0);
+            const [modulesReady, setModulesReady] = useState(false);
             
             useEffect(() => {
+                // Check if modules are loaded
+                if (window.modulesLoaded) {
+                    setModulesReady(true);
+                } else {
+                    window.addEventListener('modulesLoaded', () => setModulesReady(true));
+                }
+                
                 // Simulate loading progress
                 const interval = setInterval(() => {
                     setLoadingProgress(prev => {
                         if (prev >= 100) {
                             clearInterval(interval);
-                            setTimeout(() => setIsLoading(false), 500);
                             return 100;
                         }
-                        return prev + Math.random() * 15;
+                        return prev + Math.random() * 20;
                     });
-                }, 300);
+                }, 200);
                 
                 return () => clearInterval(interval);
             }, []);
+            
+            useEffect(() => {
+                if (modulesReady && loadingProgress >= 100) {
+                    setTimeout(() => setIsLoading(false), 300);
+                }
+            }, [modulesReady, loadingProgress]);
             
             return (
                 <div className="vrm-container">
@@ -777,7 +822,6 @@
             );
         }
         
-        // Mount React app
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
