@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Sushi - VRM Live</title>
+    <title>Sushi - VRM Animation Fix</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -101,12 +101,14 @@
             async init() {
                 if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
                 if (this.ctx.state === 'suspended') await this.ctx.resume();
-                // iOS Unlock
+                
+                // FORCE AUDIO UNLOCK FOR iOS
                 const b = this.ctx.createBuffer(1, 1, 22050);
                 const s = this.ctx.createBufferSource(); s.buffer = b;
                 s.connect(this.ctx.destination); s.start(0);
-                // Unlock Speech
-                const u = new SpeechSynthesisUtterance("");
+                
+                // FORCE SPEECH UNLOCK
+                const u = new SpeechSynthesisUtterance(" ");
                 window.speechSynthesis.speak(u);
             }
             async speak(text, side, voiceId) {
@@ -120,7 +122,7 @@
                     const data = await res.json();
                     if (!data.audio) throw new Error();
                     
-                    const bin = atob(data.audio);
+                    const bin = atob(data.audio.replace(/\s/g, ''));
                     const buf = new Uint8Array(bin.length);
                     for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
                     
@@ -144,7 +146,7 @@
                         src.start(0); loop();
                     });
                 } catch (e) {
-                    console.warn("Fallback", e);
+                    console.warn("TTS Failed, using system voice", e);
                     return new Promise(r => {
                         const u = new SpeechSynthesisUtterance(text);
                         u.onboundary = (ev) => {
@@ -162,7 +164,7 @@
         function Avatar({ side, modelUrl, activeSpeaker }) {
             const canvasRef = useRef(null);
             const vrmRef = useRef(null);
-            const sceneRef = useRef(null);
+            const fallbackBonesRef = useRef({});
             const speakerRef = useRef(activeSpeaker);
             const [loaded, setLoaded] = useState(false);
 
@@ -172,9 +174,9 @@
                 let mounted = true;
                 const init = () => {
                     const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = window;
-                    const scene = new THREE.Scene(); sceneRef.current = scene;
+                    const scene = new THREE.Scene();
                     const cam = new THREE.PerspectiveCamera(35, canvasRef.current.clientWidth / canvasRef.current.clientHeight, 0.1, 1000);
-                    cam.position.set(0, 1.4, 3.5); cam.lookAt(0, 1.3, 0);
+                    cam.position.set(0, 1.4, 3.8); cam.lookAt(0, 1.3, 0);
                     const ren = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
                     ren.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
                     ren.setPixelRatio(window.devicePixelRatio);
@@ -188,13 +190,23 @@
                         const vrm = gltf.userData.vrm;
                         if (vrm) {
                             vrmRef.current = vrm; VRMUtils.rotateVRM0(vrm); scene.add(vrm.scene);
-                            if (vrm.humanoid) {
-                                ['leftUpperArm','rightUpperArm'].forEach(b => {
-                                    const n = vrm.humanoid.getNormalizedBoneNode(b);
-                                    if (n) n.rotation.z = b.includes('left') ? -1.4 : 1.4;
-                                });
-                            }
-                        } else { scene.add(gltf.scene); }
+                        } else {
+                            // Non-VRM (Standard GLTF like test.glb)
+                            scene.add(gltf.scene);
+                            const bones = {};
+                            gltf.scene.traverse(obj => {
+                                if (obj.isBone || obj.type === 'Group' || obj.type === 'Object3D') {
+                                    const n = obj.name.toLowerCase();
+                                    if (n.includes('leftupperarm') || n.includes('leftarm')) bones.lua = obj;
+                                    if (n.includes('rightupperarm') || n.includes('rightarm')) bones.rua = obj;
+                                    if (n.includes('leftlowerarm') || n.includes('leftforearm')) bones.lla = obj;
+                                    if (n.includes('rightlowerarm') || n.includes('rightforearm')) bones.rla = obj;
+                                    if (n.includes('spine')) bones.spine = obj;
+                                    if (n.includes('head')) bones.head = obj;
+                                }
+                            });
+                            fallbackBonesRef.current = bones;
+                        }
                         setLoaded(true);
                     });
 
@@ -202,38 +214,73 @@
                     const animate = () => {
                         if (!mounted) return; requestAnimationFrame(animate);
                         const t = clock.getElapsedTime(); const d = clock.getDelta();
+                        
+                        let h = null;
+                        let lua, rua, lla, rla, spine, head;
+
                         if (vrmRef.current) {
                             vrmRef.current.update(d);
-                            const h = vrmRef.current.humanoid;
+                            h = vrmRef.current.humanoid;
                             if (h) {
-                                const spine = h.getNormalizedBoneNode('spine'), head = h.getNormalizedBoneNode('head');
-                                const lua = h.getNormalizedBoneNode('leftUpperArm'), rua = h.getNormalizedBoneNode('rightUpperArm');
-                                // Natural noise-like idle
-                                if (spine) {
-                                    spine.position.y = Math.sin(t * 1.1) * 0.01;
-                                    spine.rotation.x = Math.sin(t * 0.5) * 0.02;
-                                    spine.rotation.z = Math.cos(t * 0.3) * 0.01;
-                                }
+                                lua = h.getNormalizedBoneNode('leftUpperArm');
+                                rua = h.getNormalizedBoneNode('rightUpperArm');
+                                lla = h.getNormalizedBoneNode('leftLowerArm');
+                                rla = h.getNormalizedBoneNode('rightLowerArm');
+                                spine = h.getNormalizedBoneNode('spine');
+                                head = h.getNormalizedBoneNode('head');
+                            }
+                        } else {
+                            const fb = fallbackBonesRef.current;
+                            lua = fb.lua; rua = fb.rua; lla = fb.lla; rla = fb.rla; spine = fb.spine; head = fb.head;
+                        }
+
+                        // Apply natural pose and animation
+                        if (lua && rua) {
+                            if (speakerRef.current === side) {
+                                // SPEAKING: Bend elbows and move arms naturally
+                                const targetZ = side === 'left' ? -1.1 : 1.1;
+                                lua.rotation.z = THREE.MathUtils.lerp(lua.rotation.z, targetZ + Math.sin(t * 3) * 0.1, 0.1);
+                                rua.rotation.z = THREE.MathUtils.lerp(rua.rotation.z, -targetZ + Math.cos(t * 3) * 0.1, 0.1);
+                                
+                                lua.rotation.x = -0.4 + Math.sin(t * 5) * 0.2;
+                                rua.rotation.x = -0.4 + Math.cos(t * 5) * 0.2;
+
+                                // BEND ELBOWS
+                                if (lla) lla.rotation.x = -0.8 + Math.sin(t * 8) * 0.3;
+                                if (rla) rla.rotation.x = -0.8 + Math.cos(t * 8) * 0.3;
+                                
                                 if (head) {
-                                    head.rotation.y = Math.sin(t * 0.4) * 0.1;
-                                    head.rotation.x = Math.cos(t * 0.7) * 0.05;
+                                    head.rotation.x = Math.sin(t * 15) * 0.05; // Emphasis bob
+                                    head.rotation.y += Math.sin(t * 2) * 0.02;
                                 }
-                                // Speak gestures
-                                if (speakerRef.current === side) {
-                                    if (lua) lua.rotation.z = -1.2 + Math.sin(t * 4) * 0.1;
-                                    if (rua) rua.rotation.z = 1.2 + Math.cos(t * 4) * 0.1;
-                                    if (head) head.rotation.x += Math.sin(t * 15) * 0.05;
-                                    if (spine) spine.rotation.x = 0.15;
-                                } else {
-                                    if (lua) lua.rotation.z = THREE.MathUtils.lerp(lua.rotation.z, -1.45, 0.1);
-                                    if (rua) rua.rotation.z = THREE.MathUtils.lerp(rua.rotation.z, 1.45, 0.1);
-                                    if (head) head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, side==='left'?0.4:-0.4, 0.05);
-                                    if (spine) spine.rotation.x = THREE.MathUtils.lerp(spine.rotation.x, 0, 0.1);
+                                if (spine) spine.rotation.x = 0.1; // Lean in
+                            } else {
+                                // IDLE / LISTENING: Relaxed A-pose
+                                const relaxZ = side === 'left' ? -1.4 : 1.4;
+                                lua.rotation.z = THREE.MathUtils.lerp(lua.rotation.z, relaxZ, 0.05);
+                                rua.rotation.z = THREE.MathUtils.lerp(rua.rotation.z, -relaxZ, 0.05);
+                                lua.rotation.x = THREE.MathUtils.lerp(lua.rotation.x, 0, 0.05);
+                                rua.rotation.x = THREE.MathUtils.lerp(rua.rotation.x, 0, 0.05);
+                                
+                                // ELBOWS RELAXED
+                                if (lla) lla.rotation.x = THREE.MathUtils.lerp(lla.rotation.x, -0.2, 0.05);
+                                if (rla) rla.rotation.x = THREE.MathUtils.lerp(rla.rotation.x, -0.2, 0.05);
+
+                                if (head) {
+                                    const lookAtPartner = side === 'left' ? 0.4 : -0.4;
+                                    head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, lookAtPartner + Math.sin(t * 0.5) * 0.05, 0.05);
+                                }
+                                if (spine) {
+                                    spine.rotation.x = THREE.MathUtils.lerp(spine.rotation.x, 0, 0.05);
+                                    spine.position.y = Math.sin(t * 1.2) * 0.01; // Breathe
                                 }
                             }
-                            const m = vrmRef.current.expressionManager;
-                            if (m) m.setValue('blink', (t % 4 < 0.12) ? 1 : 0);
                         }
+
+                        if (vrmRef.current?.expressionManager) {
+                            vrmRef.current.expressionManager.setValue('blink', (t % 5 < 0.15) ? 1 : 0);
+                        }
+                        
                         ren.render(scene, cam);
                     };
                     animate();
@@ -252,18 +299,14 @@
                             let t = data.v;
                             if (!(t in map)) { const f = { 'aa':'a','ih':'i','ou':'u','E':'e','oh':'o' }; t = f[data.v] || data.v[0]; }
                             if (!(t in map)) t = t.toUpperCase();
-                            if (t in map) m.setValue(t, data.vol * 2);
+                            if (t in map) m.setValue(t, data.vol * 2.5);
                         }
                         m.update();
                     }
                 });
             }, [side]);
 
-            return (
-                <div className="vrm-canvas-container">
-                    <canvas ref={canvasRef} className="vrm-canvas" />
-                </div>
-            );
+            return <div className="vrm-canvas-container"><canvas ref={canvasRef} className="vrm-canvas" /></div>;
         }
 
         function App() {
@@ -283,7 +326,7 @@
                     setActiveSpeaker(side);
                     await voice.current.speak(t.text, side, vid);
                     setActiveSpeaker(null); setSub({ name: "", text: "" });
-                    await new Promise(r => setTimeout(r, 800));
+                    await new Promise(r => setTimeout(r, 1000));
                 }
             };
 
@@ -305,10 +348,10 @@
                         }
                     } catch (e) {}
                 };
-                poll(); setInterval(poll, 10000);
+                poll(); const itv = setInterval(poll, 10000); return () => clearInterval(itv);
             }, [started]);
 
-            if (!started) return <div className="start-overlay" onClick={async () => { await voice.current.init(); setStarted(true); }}><div className="start-btn">START STREAM</div></div>;
+            if (!started) return <div className="start-overlay" onClick={async () => { await voice.current.init(); setStarted(true); }}><div className="start-btn">START CINEMATIC STREAM</div></div>;
 
             return (
                 <div id="root">
