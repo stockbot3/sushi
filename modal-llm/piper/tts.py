@@ -11,7 +11,7 @@ import base64
 image = (
     modal.Image.debian_slim()
     .apt_install("git", "build-essential", "cmake", "libespeak-ng-dev")
-    .pip_install("piper-tts", "onnxruntime")
+    .pip_install("piper-tts", "onnxruntime", "fastapi[standard]")
 )
 
 # Download voice model at build time

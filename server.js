@@ -1393,7 +1393,7 @@ app.get('/api/status', (req, res) => {
 });
 
 // ─── PIPER TTS via MODAL ───
-const MODAL_PIPER_URL = process.env.MODAL_PIPER_URL;
+const MODAL_PIPER_URL = process.env.MODAL_PIPER_URL || 'https://mousears1090--sushi-piper-tts-tts.modal.run';
 
 app.post('/api/tts', async (req, res) => {
   try {
