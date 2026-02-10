@@ -1480,32 +1480,41 @@ app.get('/api/status', (req, res) => {
   });
 });
 
-// ─── PIPER TTS via MODAL ───
-const MODAL_PIPER_URL = process.env.MODAL_PIPER_URL || 'https://mousears1090--sushi-piper-tts-tts.modal.run';
+// ─── ELEVENLABS TTS ───
+const ELEVENLABS_API_KEY = 'sk_a3c8531fdcdb20889cfc4b06b86edde029d8f73d0789be50';
 
 app.post('/api/tts', async (req, res) => {
   try {
     const text = req.body.text || req.query.text;
+    const voiceId = req.body.voiceId || '21m00Tcm4TlvDq8ikWAM'; // Default to Rachel
+    
     if (!text) return res.status(400).json({ error: 'text required' });
     
-    // Call Modal Piper TTS
-    const response = await fetch(MODAL_PIPER_URL, {
+    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId}`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text }),
+      headers: {
+        'xi-api-key': ELEVENLABS_API_KEY,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        text,
+        model_id: "eleven_monolingual_v1",
+        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
+      }),
     });
     
     if (!response.ok) {
-      throw new Error(`Modal Piper returned ${response.status}`);
+      const errText = await response.text();
+      throw new Error(`ElevenLabs API returned ${response.status}: ${errText}`);
     }
     
-    const data = await response.json();
+    const arrayBuffer = await response.arrayBuffer();
+    const audioBase64 = Buffer.from(arrayBuffer).toString('base64');
     
-    // Return base64 audio
     res.json({
-      audio: data.audio,
-      format: data.format || 'wav',
-      sample_rate: data.sample_rate || 22050
+      audio: audioBase64,
+      format: 'mp3', // ElevenLabs defaults to mp3
+      sample_rate: 44100
     });
   } catch (err) {
     console.error('TTS error:', err.message);
