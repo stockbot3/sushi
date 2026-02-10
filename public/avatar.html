@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Sushi - VRM Commentary Avatars</title>
+    <title>Sushi - VRM Stream</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -13,7 +13,7 @@
             overflow: hidden;
             height: 100vh;
         }
-        #root { width: 100%; height: 100%; }
+        #root { width: 100%; height: 100%; position: relative; }
         
         /* Stream UI Overlays */
         .stream-hud {
@@ -68,9 +68,7 @@
             padding: 16px 24px; border-radius: 16px;
             border: 1px solid rgba(255,255,255,0.1);
             text-align: center; z-index: 200;
-            animation: slideUp 0.4s ease-out;
         }
-        @keyframes slideUp { from { transform: translate(-50%, 20px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
         .subtitle-name { font-size: 11px; font-weight: 800; color: #FFB81C; text-transform: uppercase; margin-bottom: 4px; }
         .subtitle-text { font-size: 16px; line-height: 1.5; color: #fff; }
 
@@ -81,6 +79,19 @@
         }
         .spinner { width: 50px; height: 50px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #FFB81C; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        
+        .start-overlay {
+            position: fixed; inset: 0; z-index: 500;
+            background: rgba(0,0,0,0.8);
+            display: flex; align-items: center; justify-content: center;
+            cursor: pointer;
+        }
+        .start-btn {
+            padding: 20px 40px; border-radius: 40px;
+            background: linear-gradient(135deg, #FFB81C, #FF6B35);
+            color: #000; font-weight: 900; font-size: 20px;
+            box-shadow: 0 10px 30px rgba(255,184,28,0.3);
+        }
     </style>
 </head>
 <body>
@@ -118,14 +129,19 @@
         
         const VRM_URL = 'https://raw.githubusercontent.com/pixiv/three-vrm/release/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
 
-        // Robust TTS Service
+        // Global viseme distributor
+        const visemeEmitter = {
+            listeners: [],
+            subscribe(fn) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter(l => l !== fn); }; },
+            emit(side, viseme) { this.listeners.forEach(l => l(side, viseme)); }
+        };
+
         class TTSService {
             constructor() {
                 this.audioContext = null;
-                this.onViseme = null;
             }
 
-            async speak(text) {
+            async speak(text, side) {
                 if (!this.audioContext) this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 if (this.audioContext.state === 'suspended') await this.audioContext.resume();
 
@@ -138,86 +154,75 @@
                     
                     if (!res.ok) throw new Error('TTS API failed');
                     const data = await res.json();
-                    
-                    if (!data.audio) throw new Error('No audio data received');
+                    if (!data.audio) throw new Error('No audio data');
 
-                    // Robust base64 decoding
-                    const b64Data = data.audio.replace(/\s/g, '');
-                    const audioBytes = atob(b64Data);
-                    const arrayBuffer = new ArrayBuffer(audioBytes.length);
-                    const view = new Uint8Array(arrayBuffer);
-                    for (let i = 0; i < audioBytes.length; i++) view[i] = audioBytes.charCodeAt(i);
+                    const b64 = data.audio.replace(/^data:audio\/\w+;base64,/, '').replace(/\s/g, '');
+                    const bin = atob(b64);
+                    const buf = new Uint8Array(bin.length);
+                    for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
 
-                    const audioData = await this.audioContext.decodeAudioData(arrayBuffer);
+                    const audioBuffer = await this.audioContext.decodeAudioData(buf.buffer);
                     const source = this.audioContext.createBufferSource();
-                    source.buffer = audioData;
+                    source.buffer = audioBuffer;
 
                     const analyser = this.audioContext.createAnalyser();
                     analyser.fftSize = 256;
                     source.connect(analyser);
                     analyser.connect(this.audioContext.destination);
 
-                    // Viseme loop
                     const dataArray = new Uint8Array(analyser.frequencyBinCount);
-                    const startTime = Date.now();
-                    const duration = audioData.duration * 1000;
+                    const duration = audioBuffer.duration * 1000;
+                    const start = Date.now();
 
                     return new Promise(resolve => {
-                        const checkViseme = () => {
-                            if (Date.now() - startTime > duration) {
-                                if (this.onViseme) this.onViseme('sil');
+                        const check = () => {
+                            if (Date.now() - start > duration) {
+                                visemeEmitter.emit(side, 'sil');
                                 return;
                             }
                             analyser.getByteFrequencyData(dataArray);
-                            let sum = 0;
-                            for(let i=0; i<dataArray.length; i++) sum += dataArray[i];
-                            const vol = sum / dataArray.length;
+                            let avg = 0;
+                            for(let i=0; i<dataArray.length; i++) avg += dataArray[i];
+                            avg /= dataArray.length;
                             
-                            if (vol > 20 && this.onViseme) {
-                                const visemes = ['aa', 'ih', 'ou', 'E', 'oh'];
-                                this.onViseme(visemes[Math.floor(Math.random() * visemes.length)]);
-                            } else if (this.onViseme) {
-                                this.onViseme('sil');
+                            if (avg > 25) {
+                                const v = ['aa', 'ih', 'ou', 'E', 'oh'][Math.floor(Math.random() * 5)];
+                                visemeEmitter.emit(side, v);
+                            } else {
+                                visemeEmitter.emit(side, 'sil');
                             }
-                            requestAnimationFrame(checkViseme);
+                            requestAnimationFrame(check);
                         };
-                        
-                        source.onended = () => {
-                            if (this.onViseme) this.onViseme('sil');
-                            resolve();
-                        };
-                        
+                        source.onended = () => { visemeEmitter.emit(side, 'sil'); resolve(); };
                         source.start(0);
-                        checkViseme();
+                        check();
                     });
 
                 } catch (err) {
-                    console.warn('Modal TTS failed, using WebSpeech fallback:', err);
-                    return this.speakFallback(text);
+                    console.error('TTS error, falling back:', err);
+                    return this.speakFallback(text, side);
                 }
             }
 
-            speakFallback(text) {
+            speakFallback(text, side) {
                 return new Promise(resolve => {
-                    const synth = window.speechSynthesis;
                     const utter = new SpeechSynthesisUtterance(text);
                     utter.onboundary = (e) => {
-                        if (e.name === 'word' && this.onViseme) {
-                            const visemes = ['aa', 'ih', 'ou', 'E', 'oh'];
-                            this.onViseme(visemes[Math.floor(Math.random() * visemes.length)]);
-                            setTimeout(() => this.onViseme('sil'), 150);
+                        if (e.name === 'word') {
+                            const v = ['aa', 'ih', 'ou', 'E', 'oh'][Math.floor(Math.random() * 5)];
+                            visemeEmitter.emit(side, v);
+                            setTimeout(() => visemeEmitter.emit(side, 'sil'), 100);
                         }
                     };
-                    utter.onend = resolve;
-                    synth.speak(utter);
+                    utter.onend = () => { visemeEmitter.emit(side, 'sil'); resolve(); };
+                    window.speechSynthesis.speak(utter);
                 });
             }
         }
 
-        function Avatar({ side, avatarName, activeSpeaker, ttsInstance }) {
+        function Avatar({ side, avatarName, activeSpeaker }) {
             const canvasRef = useRef(null);
             const vrmRef = useRef(null);
-            const sceneRef = useRef(null);
             const [loaded, setLoaded] = useState(false);
 
             useEffect(() => {
@@ -227,11 +232,9 @@
                     const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = window;
                     
                     const scene = new THREE.Scene();
-                    sceneRef.current = scene;
-                    
                     const camera = new THREE.PerspectiveCamera(35, canvasRef.current.clientWidth / canvasRef.current.clientHeight, 0.1, 1000);
-                    camera.position.set(0, 1.3, 2.5);
-                    camera.lookAt(0, 1.2, 0);
+                    camera.position.set(0, 1.35, 2.5);
+                    camera.lookAt(0, 1.25, 0);
                     
                     const renderer = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
                     renderer.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
@@ -251,12 +254,13 @@
                         VRMUtils.rotateVRM0(vrm);
                         scene.add(vrm.scene);
                         
-                        // Relax arms for natural A-pose (Fixing anatomical position)
+                        // FIX ARM POSE
                         if (vrm.humanoid) {
-                            const lArm = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
-                            const rArm = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
-                            if (lArm) lArm.rotation.z = -1.3; 
-                            if (rArm) rArm.rotation.z = 1.3;
+                            const bones = ['leftUpperArm', 'rightUpperArm', 'LeftUpperArm', 'RightUpperArm'];
+                            bones.forEach(b => {
+                                const node = vrm.humanoid.getNormalizedBoneNode(b);
+                                if (node) node.rotation.z = b.toLowerCase().includes('left') ? -1.45 : 1.45;
+                            });
                             vrm.humanoid.update();
                         }
                         setLoaded(true);
@@ -266,10 +270,8 @@
                     const animate = () => {
                         if (!mounted) return;
                         requestAnimationFrame(animate);
-                        const delta = clock.getDelta();
                         if (vrmRef.current) {
-                            vrmRef.current.update(delta);
-                            // Simple breathing
+                            vrmRef.current.update(clock.getDelta());
                             if (vrmRef.current.humanoid) {
                                 const spine = vrmRef.current.humanoid.getNormalizedBoneNode('spine');
                                 if (spine) spine.position.y = Math.sin(clock.elapsedTime * 1.5) * 0.005;
@@ -292,23 +294,25 @@
                 return () => { mounted = false; };
             }, []);
 
-            // Lip sync connection
             useEffect(() => {
-                if (activeSpeaker === side && ttsInstance) {
-                    ttsInstance.onViseme = (viseme) => {
-                        if (!vrmRef.current?.expressionManager) return;
-                        const map = vrmRef.current.expressionManager._expressionMap;
-                        ['aa', 'ih', 'ou', 'E', 'oh', 'a', 'i', 'u', 'e', 'o'].forEach(v => {
-                            if (v in map) vrmRef.current.expressionManager.setValue(v, 0);
-                        });
-                        if (viseme !== 'sil') {
-                            const target = viseme in map ? viseme : (viseme[0] in map ? viseme[0] : null);
-                            if (target) vrmRef.current.expressionManager.setValue(target, 0.7);
+                return visemeEmitter.subscribe((targetSide, viseme) => {
+                    if (targetSide !== side || !vrmRef.current?.expressionManager) return;
+                    const map = vrmRef.current.expressionManager._expressionMap;
+                    ['aa', 'ih', 'ou', 'E', 'oh', 'a', 'i', 'u', 'e', 'o'].forEach(v => {
+                        if (v in map) vrmRef.current.expressionManager.setValue(v, 0);
+                    });
+                    if (viseme !== 'sil') {
+                        let t = viseme;
+                        if (!(t in map)) {
+                            const f = { 'aa': 'a', 'ih': 'i', 'ou': 'u', 'E': 'e', 'oh': 'o' };
+                            t = f[viseme] || viseme[0].toLowerCase();
                         }
-                        vrmRef.current.expressionManager.update();
-                    };
-                }
-            }, [activeSpeaker, side, ttsInstance]);
+                        if (!(t in map)) t = t.toUpperCase();
+                        if (t in map) vrmRef.current.expressionManager.setValue(t, 0.8);
+                    }
+                    vrmRef.current.expressionManager.update();
+                });
+            }, [side]);
 
             return (
                 <div className="vrm-canvas-container">
@@ -328,43 +332,38 @@
             const [currentText, setCurrentText] = useState("");
             const [currentSpeakerName, setCurrentSpeakerName] = useState("");
             const [loading, setLoading] = useState(true);
+            const [started, setStarted] = useState(false);
             const [lastSeq, setLastSeq] = useState(-1);
             
             const ttsRef = useRef(new TTSService());
             const queueRef = useRef([]);
-            const isSpeakingRef = useRef(false);
+            const isProcessingRef = useRef(false);
 
             useEffect(() => {
                 const params = new URLSearchParams(window.location.search);
                 setSessionId(params.get('session'));
-                setTimeout(() => setLoading(false), 2000);
+                setTimeout(() => setLoading(false), 1500);
             }, []);
 
-            const processQueue = async () => {
-                if (isSpeakingRef.current || queueRef.current.length === 0) return;
-                isSpeakingRef.current = true;
-                
+            const runQueue = async () => {
+                if (isProcessingRef.current || queueRef.current.length === 0) return;
+                isProcessingRef.current = true;
                 while (queueRef.current.length > 0) {
                     const turn = queueRef.current.shift();
                     const side = turn.speaker === 'A' ? 'left' : 'right';
-                    
                     setActiveSpeaker(side);
                     setCurrentSpeakerName(turn.name);
                     setCurrentText(turn.text);
-                    
-                    await ttsRef.current.speak(turn.text);
-                    
+                    await ttsRef.current.speak(turn.text, side);
                     setActiveSpeaker(null);
                     setCurrentText("");
-                    await new Promise(r => setTimeout(r, 500)); // Gap between turns
+                    await new Promise(r => setTimeout(r, 800));
                 }
-                
-                isSpeakingRef.current = false;
+                isProcessingRef.current = false;
             };
 
-            // Poll Game & Commentary
             useEffect(() => {
-                if (!sessionId) return;
+                if (!sessionId || !started) return;
                 const poll = async () => {
                     try {
                         const [gRes, cRes] = await Promise.all([
@@ -372,14 +371,13 @@
                             fetch(`/api/sessions/${sessionId}/commentary/latest`).then(r => r.json())
                         ]);
                         setGame(gRes);
-                        
                         if (cRes.turns?.length > 0) {
                             const seq = cRes.play?.seq || cRes.timestamp;
                             if (seq !== lastSeq) {
                                 setLastSeq(seq);
                                 setCommentary(cRes);
                                 queueRef.current = [...cRes.turns];
-                                processQueue();
+                                runQueue();
                             }
                         }
                     } catch (e) { console.error(e); }
@@ -387,16 +385,20 @@
                 poll();
                 const itv = setInterval(poll, 8000);
                 return () => clearInterval(itv);
-            }, [sessionId, lastSeq]);
+            }, [sessionId, started, lastSeq]);
 
             if (loading) return <div className="loading-screen"><div className="spinner" /></div>;
+            if (!started) return (
+                <div className="start-overlay" onClick={() => setStarted(true)}>
+                    <div className="start-btn">TAP TO ENTER LIVE STREAM</div>
+                </div>
+            );
 
             const awayColor = game?.away?.color || '#ff6b35';
             const homeColor = game?.home?.color || '#4a90d9';
 
             return (
-                <div className="relative w-full h-full">
-                    {/* HUD */}
+                <div className="relative w-full h-full overflow-hidden">
                     <div className="stream-hud">
                         <div className="hud-top">
                             <div className="hud-scores">
@@ -410,25 +412,23 @@
                                     <span className="hud-abbr" style={{ color: homeColor }}>{game?.home?.abbreviation || 'HME'}</span>
                                 </div>
                             </div>
-                            <div className="text-xs font-bold text-gray-500">
+                            <div className="text-xs font-bold text-gray-500 uppercase tracking-tighter">
                                 {game?.status?.detail || 'LIVE'}
                             </div>
                         </div>
                         {commentary?.play && (
                             <div className="play-ticker">
-                                <span className="ticker-label">Latest Play</span>
+                                <span className="ticker-label">LIVE PLAY</span>
                                 <span className="ticker-desc">{commentary.play.description}</span>
                             </div>
                         )}
                     </div>
 
-                    {/* Avatars */}
                     <div className="vrm-stage">
-                        <Avatar side="left" avatarName={commentary?.commentators?.a?.name || "Sakura"} activeSpeaker={activeSpeaker} ttsInstance={ttsRef.current} />
-                        <Avatar side="right" avatarName={commentary?.commentators?.b?.name || "Yuki"} activeSpeaker={activeSpeaker} ttsInstance={ttsRef.current} />
+                        <Avatar side="left" avatarName={commentary?.commentators?.a?.name || "Sakura"} activeSpeaker={activeSpeaker} />
+                        <Avatar side="right" avatarName={commentary?.commentators?.b?.name || "Yuki"} activeSpeaker={activeSpeaker} />
                     </div>
 
-                    {/* Subtitles */}
                     {activeSpeaker && (
                         <div className="subtitle-box">
                             <div className="subtitle-name">{currentSpeakerName}</div>
@@ -439,54 +439,6 @@
             );
         }
 
-        const root = ReactDOM.createRoot(document.getElementById('root'));
-        root.render(<App />);
-    </script>
-</body>
-</html>
-
-            
-            return (
-                <div className="vrm-container">
-                    {loading && (
-                        <div className="loading-overlay">
-                            <div className="loading-content">
-                                <div className="loading-spinner"></div>
-                                <div className="loading-text">Loading VRM Avatars...</div>
-                                <div className="loading-subtext">Three.js + @pixiv/three-vrm</div>
-                            </div>
-                        </div>
-                    )}
-                    
-                    <div className="vrm-header">
-                        <h1>🍣 Sushi VRM Commentary</h1>
-                        <div>
-                            <button 
-                                className={!isDualMode ? 'active' : ''}
-                                onClick={() => setIsDualMode(false)}
-                            >
-                                Single
-                            </button>
-                            <button 
-                                className={isDualMode ? 'active' : ''}
-                                onClick={() => setIsDualMode(true)}
-                                style={{ marginLeft: '8px' }}
-                            >
-                                Dual
-                            </button>
-                        </div>
-                    </div>
-                    
-                    <div className={`vrm-stage ${isDualMode ? 'dual-mode' : ''}`}>
-                        <VRMAvatarViewer side="left" isDualMode={isDualMode} avatarName="Sakura" />
-                        {isDualMode && (
-                            <VRMAvatarViewer side="right" isDualMode={isDualMode} avatarName="Yuki" />
-                        )}
-                    </div>
-                </div>
-            );
-        }
-        
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
