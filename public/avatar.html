@@ -41,6 +41,22 @@
         .vrm-canvas-container { flex: 1; position: relative; }
         .vrm-canvas { width: 100%; height: 100%; display: block; }
 
+        .avatar-label {
+            position: absolute; bottom: 150px; left: 50%; transform: translateX(-50%);
+            padding: 10px 24px; border-radius: 30px;
+            background: rgba(0,0,0,0.8); backdrop-filter: blur(15px);
+            border: 1px solid rgba(255,255,255,0.2);
+            font-size: 14px; font-weight: 900; color: #feca57;
+            white-space: nowrap; transition: all 0.5s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+            letter-spacing: 1px; text-transform: uppercase;
+        }
+        .avatar-label.speaking {
+            background: rgba(255,107,53,0.5); border-color: #ff6b35;
+            transform: translateX(-50%) scale(1.2) translateY(-10px);
+            box-shadow: 0 15px 40px rgba(255,107,53,0.4);
+            color: #fff;
+        }
+
         .subtitle-box {
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             width: 90%; max-width: 800px;
@@ -100,7 +116,7 @@
     </script>
     
     <script type="text/babel">
-        const { useState, useEffect, useRef } = React;
+        const { useState, useEffect, useRef, useCallback } = React;
         const SAKURA_URL = 'https://raw.githubusercontent.com/pixiv/three-vrm/release/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
         const YUKI_URL = '/Avatar.vrm';
 
@@ -132,15 +148,19 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ text, voiceId })
                     });
+                    if (!res.ok) throw new Error('API Error');
                     const data = await res.json();
-                    if (!data.audio) throw new Error();
+                    if (!data.audio) throw new Error('Empty Audio');
+
                     const bin = atob(data.audio.replace(/\s/g, ''));
                     const buf = new Uint8Array(bin.length);
                     for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
+
                     const ad = await this.ctx.decodeAudioData(buf.buffer);
                     const src = this.ctx.createBufferSource(); src.buffer = ad;
                     const ana = this.ctx.createAnalyser(); ana.fftSize = 256;
                     src.connect(ana); ana.connect(this.ctx.destination);
+
                     const dat = new Uint8Array(ana.frequencyBinCount);
                     const dur = ad.duration * 1000; const start = Date.now();
                     return new Promise(resolve => {
@@ -149,22 +169,25 @@
                             ana.getByteFrequencyData(dat);
                             let avg = 0; for(let i=0; i<dat.length; i++) avg += dat[i];
                             avg /= dat.length;
-                            events.emit(side, 'vis', { v: avg > 25 ? ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)] : 'sil', vol: avg/255 });
+                            events.emit(side, 'vis', { v: avg > 20 ? ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)] : 'sil', vol: avg/255 });
                             requestAnimationFrame(loop);
                         };
                         src.onended = () => { events.emit(side, 'vis', { v: 'sil', vol: 0 }); resolve(); };
-                        src.start(0); loop();
+                        src.start(0);
+                        loop();
                     });
                 } catch (e) {
-                    return new Promise(r => {
-                        const u = new SpeechSynthesisUtterance(text);
-                        u.onboundary = (ev) => {
+                    console.warn("TTS Error:", e);
+                    return new Promise(resolve => {
+                        const utter = new SpeechSynthesisUtterance(text);
+                        utter.onboundary = (ev) => {
                             if (ev.name === 'word') {
-                                events.emit(side, 'vis', { v: 'aa', vol: 0.5 });
+                                events.emit(side, 'vis', { v: ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)], volume: 0.5 });
                                 setTimeout(() => events.emit(side, 'vis', { v: 'sil', vol: 0 }), 100);
                             }
                         };
-                        u.onend = r; window.speechSynthesis.speak(u);
+                        utter.onend = resolve;
+                        window.speechSynthesis.speak(utter);
                     });
                 }
             }
@@ -186,7 +209,9 @@
                     scene.add(new THREE.AmbientLight(0xffffff, 0.6));
                     const l = new THREE.DirectionalLight(0xffffff, 1.2); l.position.set(1, 2, 3); scene.add(l);
 
-                    new GLTFLoader().register(p => new VRMLoaderPlugin(p)).load(modelUrl, gltf => {
+                    const loader = new GLTFLoader();
+                    loader.register(p => new VRMLoaderPlugin(p));
+                    loader.load(modelUrl, gltf => {
                         if (!mounted) return;
                         const vrm = gltf.userData.vrm;
                         if (vrm) {
@@ -214,7 +239,6 @@
                                 const lla = h.getNormalizedBoneNode('leftLowerArm'), rla = h.getNormalizedBoneNode('rightLowerArm');
                                 const isSpeaking = speakerRef.current === side;
                                 
-                                // Organic Idle
                                 const sway = noise(time * 0.2) * 0.02;
                                 if (spine) {
                                     spine.rotation.x = damp(spine.rotation.x, isSpeaking ? 0.1 : sway, 2, dt);
@@ -226,7 +250,6 @@
                                     head.rotation.x = damp(head.rotation.x, isSpeaking ? Math.sin(time * 10) * 0.05 : 0, 5, dt);
                                 }
 
-                                // Arms
                                 let lz = -1.4, rz = 1.4, lx = 0, rx = 0, llx = -0.1, rlx = -0.1;
                                 if (isSpeaking) {
                                     const g = noise(time * 1.5);
@@ -294,7 +317,7 @@
                         }
                     } catch (e) {}
                 };
-                poll(); const itv = setInterval(poll, 8000); return () => clearInterval(itv);
+                poll(); const itv = setInterval(poll, 10000); return () => clearInterval(itv);
             }, [started]);
 
             const runQueue = async () => {
