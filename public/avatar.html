@@ -460,6 +460,13 @@
             }
         }
         
+        // CDN-hosted VRM models that actually work
+        const VRM_MODELS = {
+            // Using three-vrm example models from GitHub Pages
+            sakura: 'https://pixiv.github.io/three-vrm/packages/three-vrm/examples/models/three-vrm-girl.vrm',
+            yuki: 'https://pixiv.github.io/three-vrm/packages/three-vrm/examples/models/three-vrm-girl.vrm'
+        };
+        
         // VRM Avatar Viewer Component
         function VRMAvatarViewer({ side, isDualMode, modelUrl, avatarName }) {
             const canvasRef = useRef(null);
@@ -572,10 +579,12 @@
                                 
                                 setIsLoaded(true);
                             },
-                            undefined,
+                            (progress) => {
+                                console.log(`Loading ${avatarName}:`, Math.round((progress.loaded / progress.total) * 100) + '%');
+                            },
                             (loadError) => {
                                 console.error('Error loading VRM:', loadError);
-                                setError('Failed to load 3D model: ' + loadError.message);
+                                setError('Failed to load 3D model. Please check console.');
                             }
                         );
                         
@@ -630,7 +639,7 @@
                     if (visemeTimeoutRef.current) clearTimeout(visemeTimeoutRef.current);
                     if (rendererRef.current) rendererRef.current.dispose();
                 };
-            }, [modelUrl, side]);
+            }, [modelUrl, side, avatarName]);
             
             const applyViseme = useCallback((viseme) => {
                 const vrm = vrmRef.current;
@@ -679,7 +688,7 @@
             
             if (error) {
                 return (
-                    <div className="vrm-canvas-container">
+                    <div className={`vrm-canvas-container ${isDualMode ? 'dual' : ''}`}>
                         <div className="error-message">
                             <h3>Error</h3>
                             <p>{error}</p>
@@ -806,14 +815,14 @@
                         <VRMAvatarViewer 
                             side="left"
                             isDualMode={isDualMode}
-                            modelUrl="/vrm-models/alicia.vrm"
+                            modelUrl={VRM_MODELS.sakura}
                             avatarName="Sakura"
                         />
                         {isDualMode && (
                             <VRMAvatarViewer 
                                 side="right"
                                 isDualMode={isDualMode}
-                                modelUrl="/vrm-models/avatar2.vrm"
+                                modelUrl={VRM_MODELS.yuki}
                                 avatarName="Yuki"
                             />
                         )}
