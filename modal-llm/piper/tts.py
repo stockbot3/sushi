@@ -69,24 +69,27 @@ def tts(request: dict):
         # Initialize Piper voice
         voice = PiperVoice.load(model_path, config_path=config_path)
         
-        # Generate audio frames
+        # Generate audio frames into a WAV container
         wav_buffer = io.BytesIO()
         with wave.open(wav_buffer, 'wb') as wav_file:
             wav_file.setnchannels(1)  # Mono
             wav_file.setsampwidth(2)  # 16-bit
             wav_file.setframerate(voice.config.sample_rate)
             
-            # Synthesize and write frames
+            # Synthesize and write PCM frames
             for audio_bytes in voice.synthesize_stream(text):
                 wav_file.writeframes(audio_bytes)
         
-        # Encode as base64
-        wav_buffer.seek(0)
-        audio_data = wav_buffer.read()
+        # GET VALUE AFTER CLOSE
+        audio_data = wav_buffer.getvalue()
+        
+        if not audio_data or len(audio_data) < 100:
+            print(f"Warning: synthesized very small buffer ({len(audio_data)} bytes)")
+            
         audio_base64 = base64.b64encode(audio_data).decode('utf-8')
         
         elapsed = time.time() - start_time
-        print(f"Synthesized {len(audio_data)} bytes in {elapsed:.2f}s")
+        print(f"Synthesized {len(audio_data)} bytes in {elapsed:.2f}s for text: {text[:30]}...")
         
         return {
             "audio": audio_base64,
@@ -96,7 +99,8 @@ def tts(request: dict):
             "elapsed": elapsed
         }
     except Exception as e:
-        print(f"Piper error: {str(e)}")
+        import traceback
+        traceback.print_exc()
         return {"error": str(e)}, 500
 
 

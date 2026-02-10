@@ -233,8 +233,8 @@
         function Avatar({ side, avatarName, activeSpeaker }) {
             const canvasRef = useRef(null);
             const vrmRef = useRef(null);
-            const loadedRef = useRef(false);
-            const [isLoaded, setIsLoaded] = useState(false);
+            const isLoadedRef = useRef(false);
+            const [loaded, setLoaded] = useState(false);
             
             const blinkTimerRef = useRef(0);
             const nextBlinkRef = useRef(2 + Math.random() * 3);
@@ -250,7 +250,7 @@
                     
                     const scene = new THREE.Scene();
                     const camera = new THREE.PerspectiveCamera(35, canvasRef.current.clientWidth / canvasRef.current.clientHeight, 0.1, 1000);
-                    camera.position.set(0, 1.4, 2.8);
+                    camera.position.set(0, 1.4, 3.0); 
                     camera.lookAt(0, 1.3, 0);
                     
                     const renderer = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
@@ -271,7 +271,6 @@
                         VRMUtils.rotateVRM0(vrm);
                         scene.add(vrm.scene);
                         
-                        // Initial A-Pose
                         if (vrm.humanoid) {
                             const bones = ['leftUpperArm', 'rightUpperArm', 'LeftUpperArm', 'RightUpperArm'];
                             bones.forEach(b => {
@@ -280,8 +279,8 @@
                             });
                             vrm.humanoid.update();
                         }
-                        loadedRef.current = true;
-                        setIsLoaded(true);
+                        isLoadedRef.current = true;
+                        setLoaded(true);
                     });
 
                     const clock = new THREE.Clock();
@@ -291,7 +290,7 @@
                         const delta = clock.getDelta();
                         const time = clock.elapsedTime;
 
-                        if (vrmRef.current && loadedRef.current) {
+                        if (vrmRef.current && isLoadedRef.current) {
                             vrmRef.current.update(delta);
                             
                             if (vrmRef.current.humanoid) {
@@ -303,51 +302,45 @@
                                 const lLowerArm = humanoid.getNormalizedBoneNode('leftLowerArm');
                                 const rLowerArm = humanoid.getNormalizedBoneNode('rightLowerArm');
 
-                                // ─── IDLE MOTION ───
                                 if (spine) {
-                                    spine.position.y = Math.sin(time * 1.2) * 0.008;
-                                    spine.rotation.z = Math.sin(time * 0.6) * 0.015;
+                                    spine.position.y = Math.sin(time * 1.3) * 0.01;
+                                    spine.rotation.z = Math.sin(time * 0.5) * 0.02;
+                                    spine.rotation.x = Math.sin(time * 0.7) * 0.02; 
                                 }
                                 if (head) {
-                                    head.rotation.y = Math.sin(time * 0.45) * 0.1;
-                                    head.rotation.x = Math.cos(time * 0.8) * 0.05;
+                                    head.rotation.y = Math.sin(time * 0.4) * 0.12;
+                                    head.rotation.x = Math.cos(time * 0.6) * 0.06;
                                 }
 
-                                // ─── DYNAMIC GESTURES ───
                                 if (activeSpeakerRef.current === side) {
-                                    // Talking: Wide gestures
                                     if (lUpperArm && rUpperArm) {
-                                        lUpperArm.rotation.z = THREE.MathUtils.lerp(lUpperArm.rotation.z, -1.1 + Math.sin(time * 4.5) * 0.2, 0.15);
-                                        rUpperArm.rotation.z = THREE.MathUtils.lerp(rUpperArm.rotation.z, 1.1 + Math.cos(time * 4.2) * 0.2, 0.15);
-                                        
-                                        lUpperArm.rotation.x = THREE.MathUtils.lerp(lUpperArm.rotation.x, -0.4 + Math.sin(time * 3.2) * 0.35, 0.15);
-                                        rUpperArm.rotation.x = THREE.MathUtils.lerp(rUpperArm.rotation.x, -0.4 + Math.cos(time * 3.8) * 0.35, 0.15);
-                                        
-                                        if (lLowerArm) lLowerArm.rotation.x = THREE.MathUtils.lerp(lLowerArm.rotation.x, -0.7 + Math.sin(time * 5.5) * 0.4, 0.15);
-                                        if (rLowerArm) rLowerArm.rotation.x = THREE.MathUtils.lerp(rLowerArm.rotation.x, -0.7 + Math.cos(time * 5.1) * 0.4, 0.15);
+                                        lUpperArm.rotation.z = THREE.MathUtils.lerp(lUpperArm.rotation.z, -1.1 + Math.sin(time * 4.5) * 0.3, 0.1);
+                                        rUpperArm.rotation.z = THREE.MathUtils.lerp(rUpperArm.rotation.z, 1.1 + Math.cos(time * 4.2) * 0.3, 0.1);
+                                        lUpperArm.rotation.x = THREE.MathUtils.lerp(lUpperArm.rotation.x, -0.5 + Math.sin(time * 3.2) * 0.5, 0.1);
+                                        rUpperArm.rotation.x = THREE.MathUtils.lerp(rUpperArm.rotation.x, -0.5 + Math.cos(time * 3.8) * 0.5, 0.1);
+                                        if (lLowerArm) lLowerArm.rotation.x = THREE.MathUtils.lerp(lLowerArm.rotation.x, -0.8 + Math.sin(time * 5.5) * 0.6, 0.1);
+                                        if (rLowerArm) rLowerArm.rotation.x = THREE.MathUtils.lerp(rLowerArm.rotation.x, -0.8 + Math.cos(time * 5.1) * 0.6, 0.1);
                                     }
-                                    // Head bobbing while talking
                                     if (head) {
-                                        head.rotation.x += Math.sin(time * 14) * 0.05;
-                                        head.rotation.z = Math.sin(time * 7) * 0.05;
+                                        head.rotation.x += Math.sin(time * 15) * 0.06;
+                                        head.rotation.y += Math.cos(time * 10) * 0.06;
                                     }
+                                    if (spine) spine.rotation.x = THREE.MathUtils.lerp(spine.rotation.x, 0.15, 0.1);
                                 } else {
-                                    // Listening: Look at other speaker
-                                    if (lUpperArm) lUpperArm.rotation.z = THREE.MathUtils.lerp(lUpperArm.rotation.z, -1.45, 0.08);
-                                    if (rUpperArm) rUpperArm.rotation.z = THREE.MathUtils.lerp(rUpperArm.rotation.z, 1.45, 0.08);
-                                    if (lUpperArm) lUpperArm.rotation.x = THREE.MathUtils.lerp(lUpperArm.rotation.x, 0, 0.08);
-                                    if (rUpperArm) rUpperArm.rotation.x = THREE.MathUtils.lerp(rUpperArm.rotation.x, 0, 0.08);
-                                    if (lLowerArm) lLowerArm.rotation.x = THREE.MathUtils.lerp(lLowerArm.rotation.x, -0.15, 0.08);
-                                    if (rLowerArm) rLowerArm.rotation.x = THREE.MathUtils.lerp(rLowerArm.rotation.x, -0.15, 0.08);
-                                    
+                                    if (lUpperArm) lUpperArm.rotation.z = THREE.MathUtils.lerp(lUpperArm.rotation.z, -1.45, 0.05);
+                                    if (rUpperArm) rUpperArm.rotation.z = THREE.MathUtils.lerp(rUpperArm.rotation.z, 1.45, 0.05);
+                                    if (lUpperArm) lUpperArm.rotation.x = THREE.MathUtils.lerp(lUpperArm.rotation.x, 0, 0.05);
+                                    if (rUpperArm) rUpperArm.rotation.x = THREE.MathUtils.lerp(rUpperArm.rotation.x, 0, 0.05);
+                                    if (lLowerArm) lLowerArm.rotation.x = THREE.MathUtils.lerp(lLowerArm.rotation.x, -0.15, 0.05);
+                                    if (rLowerArm) rLowerArm.rotation.x = THREE.MathUtils.lerp(rLowerArm.rotation.x, -0.15, 0.05);
                                     if (head) {
-                                        const targetY = side === 'left' ? 0.4 : -0.4;
-                                        head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, targetY, 0.06);
+                                        const partnerY = side === 'left' ? 0.45 : -0.45;
+                                        head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, partnerY, 0.05);
                                     }
+                                    if (spine) spine.rotation.x = THREE.MathUtils.lerp(spine.rotation.x, 0, 0.05);
                                 }
                             }
 
-                            // ─── NATURAL BLINKING ───
                             const manager = vrmRef.current.expressionManager;
                             if (manager) {
                                 blinkTimerRef.current += delta;
