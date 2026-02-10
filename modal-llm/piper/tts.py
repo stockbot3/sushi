@@ -62,21 +62,22 @@ def tts(request: dict):
     print(f"Synthesizing: {text[:50]}...")
     
     try:
+        from piper.voice import PiperVoice
         model_path = "/root/voices/en_US-amy-medium.onnx"
+        config_path = "/root/voices/en_US-amy-medium.onnx.json"
         
-        # Initialize Piper voice (could be cached globally in container)
-        voice = piper.Voice(model_path)
+        # Initialize Piper voice
+        voice = PiperVoice.load(model_path, config_path=config_path)
         
         # Generate audio
-        audio_data = voice.synthesize(text)
-        
-        # Convert to WAV bytes
         wav_buffer = io.BytesIO()
         with wave.open(wav_buffer, 'wb') as wav_file:
             wav_file.setnchannels(1)  # Mono
             wav_file.setsampwidth(2)  # 16-bit
-            wav_file.setframerate(22050)  # Sample rate
-            wav_file.writeframes(audio_data.tobytes())
+            wav_file.setframerate(voice.config.sample_rate)
+            
+            # Synthesize returns a generator of audio bytes
+            voice.synthesize(text, wav_file)
         
         # Encode as base64
         wav_buffer.seek(0)
@@ -88,7 +89,7 @@ def tts(request: dict):
         return {
             "audio": audio_base64,
             "format": "wav",
-            "sample_rate": 22050,
+            "sample_rate": voice.config.sample_rate,
             "elapsed": elapsed
         }
     except Exception as e:

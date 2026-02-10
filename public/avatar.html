@@ -285,36 +285,72 @@
                             vrmRef.current.update(delta);
                             
                             if (vrmRef.current.humanoid) {
-                                // Idle: subtle head sway & breathing
+                                // ─── IDLE ANIMATIONS ───
                                 const spine = vrmRef.current.humanoid.getNormalizedBoneNode('spine');
                                 const head = vrmRef.current.humanoid.getNormalizedBoneNode('head');
-                                if (spine) spine.position.y = Math.sin(time * 1.5) * 0.005;
+                                const lUpperArm = vrmRef.current.humanoid.getNormalizedBoneNode('leftUpperArm');
+                                const rUpperArm = vrmRef.current.humanoid.getNormalizedBoneNode('rightUpperArm');
+                                const lLowerArm = vrmRef.current.humanoid.getNormalizedBoneNode('leftLowerArm');
+                                const rLowerArm = vrmRef.current.humanoid.getNormalizedBoneNode('rightLowerArm');
+
+                                // Gentle breathing & sway
+                                if (spine) {
+                                    spine.position.y = Math.sin(time * 1.2) * 0.006;
+                                    spine.rotation.z = Math.sin(time * 0.5) * 0.01;
+                                }
+                                
                                 if (head) {
-                                    head.rotation.y = Math.sin(time * 0.5) * 0.05;
-                                    head.rotation.x = Math.cos(time * 0.8) * 0.03;
+                                    head.rotation.y = Math.sin(time * 0.4) * 0.08;
+                                    head.rotation.x = Math.cos(time * 0.7) * 0.04;
                                 }
 
-                                // Speaking motion: move arms slightly
+                                // ─── SPEAKING GESTURES ───
                                 if (activeSpeaker === side) {
-                                    const lArm = vrmRef.current.humanoid.getNormalizedBoneNode('leftUpperArm');
-                                    const rArm = vrmRef.current.humanoid.getNormalizedBoneNode('rightUpperArm');
-                                    if (lArm) lArm.rotation.x = -0.2 + Math.sin(time * 10) * 0.1;
-                                    if (rArm) rArm.rotation.x = -0.2 + Math.cos(time * 10) * 0.1;
+                                    // Animated arms when talking
+                                    if (lUpperArm && rUpperArm) {
+                                        // Base A-pose + dynamic motion
+                                        lUpperArm.rotation.z = -1.3 + Math.sin(time * 4) * 0.1;
+                                        rUpperArm.rotation.z = 1.3 + Math.cos(time * 4) * 0.1;
+                                        
+                                        // Gesturing forward
+                                        lUpperArm.rotation.x = -0.2 + Math.sin(time * 3) * 0.15;
+                                        rUpperArm.rotation.x = -0.2 + Math.cos(time * 3.5) * 0.15;
+                                        
+                                        if (lLowerArm) lLowerArm.rotation.x = -0.4 + Math.sin(time * 5) * 0.2;
+                                        if (rLowerArm) rLowerArm.rotation.x = -0.4 + Math.cos(time * 5.2) * 0.2;
+                                    }
+                                    
+                                    // Head "bobbing" while talking
+                                    if (head) {
+                                        head.rotation.x += Math.sin(time * 12) * 0.03;
+                                    }
                                 } else {
-                                    // Reset arm X rotation
-                                    const lArm = vrmRef.current.humanoid.getNormalizedBoneNode('leftUpperArm');
-                                    const rArm = vrmRef.current.humanoid.getNormalizedBoneNode('rightUpperArm');
-                                    if (lArm) lArm.rotation.x = 0;
-                                    if (rArm) rArm.rotation.x = 0;
+                                    // Calm A-pose when listening
+                                    if (lUpperArm) {
+                                        lUpperArm.rotation.z = -1.45;
+                                        lUpperArm.rotation.x = 0;
+                                    }
+                                    if (rUpperArm) {
+                                        rUpperArm.rotation.z = 1.45;
+                                        rUpperArm.rotation.x = 0;
+                                    }
+                                    if (lLowerArm) lLowerArm.rotation.x = -0.1;
+                                    if (rLowerArm) rLowerArm.rotation.x = -0.1;
+                                    
+                                    // Look slightly toward the other speaker
+                                    if (head) {
+                                        const targetY = side === 'left' ? 0.3 : -0.3;
+                                        head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, targetY, 0.05);
+                                    }
                                 }
                             }
 
-                            // Blinking
+                            // ─── BLINKING ───
                             if (vrmRef.current.expressionManager) {
                                 blinkTimerRef.current += delta;
                                 if (blinkTimerRef.current > nextBlinkRef.current) {
                                     vrmRef.current.expressionManager.setValue('blink', 1);
-                                    if (blinkTimerRef.current > nextBlinkRef.current + 0.15) {
+                                    if (blinkTimerRef.current > nextBlinkRef.current + 0.12) {
                                         vrmRef.current.expressionManager.setValue('blink', 0);
                                         blinkTimerRef.current = 0;
                                         nextBlinkRef.current = 2 + Math.random() * 4;
@@ -345,6 +381,20 @@
                     const manager = vrmRef.current.expressionManager;
                     const map = manager._expressionMap;
                     
+                    // ─── HANDLE EMOTIONS ───
+                    if (viseme.startsWith('emotion:')) {
+                        const emotion = viseme.split(':')[1];
+                        ['happy', 'angry', 'sad', 'relaxed', 'surprised', 'neutral'].forEach(e => {
+                            if (e in map) manager.setValue(e, 0);
+                        });
+                        if (emotion !== 'neutral' && emotion in map) {
+                            manager.setValue(emotion, 1);
+                        }
+                        manager.update();
+                        return;
+                    }
+
+                    // ─── HANDLE VISEMES ───
                     ['aa', 'ih', 'ou', 'E', 'oh', 'a', 'i', 'u', 'e', 'o'].forEach(v => {
                         if (v in map) manager.setValue(v, 0);
                     });
@@ -404,11 +454,23 @@
                     setActiveSpeaker(side);
                     setCurrentSpeakerName(turn.name);
                     setCurrentText(turn.text);
+
+                    // ─── EMOTION DETECTION ───
+                    const text = turn.text.toLowerCase();
+                    let emotion = 'neutral';
+                    if (text.includes('!') || text.includes('amazing') || text.includes('wow') || text.includes('incredible')) emotion = 'happy';
+                    if (text.includes('turrible') || text.includes('terrible') || text.includes('bad') || text.includes('no way')) emotion = 'angry';
+                    if (text.includes('sad') || text.includes('shame') || text.includes('unfortunate')) emotion = 'sad';
+                    if (text.includes('?') || text.includes('what') || text.includes('how')) emotion = 'surprised';
+                    
+                    // Emit emotion change (using visemeEmitter for simplicity)
+                    visemeEmitter.emit(side, 'emotion:' + emotion, 1);
                     
                     await ttsRef.current.speak(turn.text, side);
                     
                     setActiveSpeaker(null);
                     setCurrentText("");
+                    visemeEmitter.emit(side, 'emotion:neutral', 1);
                     await new Promise(r => setTimeout(r, 800));
                 }
                 isProcessingRef.current = false;
