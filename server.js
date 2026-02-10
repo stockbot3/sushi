@@ -943,7 +943,7 @@ function buildCommentaryPayload(game, summary, session) {
     offenseTeam: isAwayOffense ? awayAbbr : homeAbbr,
     defenseTeam: isAwayOffense ? homeAbbr : awayAbbr,
     event: {
-      seq: latestPlays.length + (drives.length * 100),
+      seq: latestPlays.length + ((sport === 'football' && summary.drives?.previous) ? summary.drives.previous.length * 100 : 0),
       quarter: latestPlay.period || game.status?.period || 1,
       clock: latestPlay.clock || game.status?.clock || '',
       down: latestPlay.down || null,
