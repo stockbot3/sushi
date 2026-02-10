@@ -4,9 +4,27 @@ const path = require('path');
 const crypto = require('crypto');
 const bcrypt = require('bcryptjs');
 const admin = require('firebase-admin');
+const multer = require('multer');
+const fs = require('fs');
 
 const app = express();
 const PORT = process.env.PORT || 3007;
+
+// Ensure upload dir exists
+const uploadDir = path.join(__dirname, 'public', 'uploads');
+if (!fs.existsSync(uploadDir)) {
+  fs.mkdirSync(uploadDir, { recursive: true });
+}
+
+// Multer config
+const storage = multer.diskStorage({
+  destination: (req, file, cb) => cb(null, uploadDir),
+  filename: (req, file, cb) => {
+    const ext = path.extname(file.originalname);
+    cb(null, `${Date.now()}-${Math.round(Math.random() * 1E9)}${ext}`);
+  }
+});
+const upload = multer({ storage });
 
 // ─── FIREBASE INIT ───
 let firebaseConfig = { projectId: 'akan-2ed41' };
@@ -150,6 +168,13 @@ app.post('/api/admin/change-password', requireAdmin, async (req, res) => {
   }
 });
 
+// Upload endpoint
+app.post('/api/admin/upload', requireAdmin, upload.single('file'), (req, res) => {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+  const url = `/uploads/${req.file.filename}`;
+  res.json({ url });
+});
+
 // Verify token
 app.get('/api/admin/verify', requireAdmin, (req, res) => {
   res.json({ ok: true });
@@ -210,6 +235,7 @@ function espnNews(espnSlug) {
 
 // ─── CACHE ───
 const cache = {};
+const ttsCache = new Map(); // GLOBAL TTS CACHE
 const CACHE_TTL = {
   scoreboard: 8 * 1000,
   summary: 8 * 1000,
@@ -233,6 +259,50 @@ async function fetchCached(key, url, ttl) {
     throw err;
   }
 }
+
+// ─── PIPER TTS via MODAL ───
+const MODAL_PIPER_URL = process.env.MODAL_PIPER_URL || 'https://mousears1090--sushi-piper-tts-tts.modal.run';
+
+app.post('/api/tts', async (req, res) => {
+  try {
+    const text = req.body.text || req.query.text;
+    if (!text) return res.status(400).json({ error: 'text required' });
+    
+    // Check TTS Cache
+    const cacheKey = text.trim().toLowerCase();
+    if (ttsCache.has(cacheKey)) {
+      return res.json(ttsCache.get(cacheKey));
+    }
+
+    // Call Modal Piper TTS
+    const response = await fetch(MODAL_PIPER_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text }),
+    });
+    
+    if (!response.ok) {
+      const errText = await response.text();
+      throw new Error(`Modal Piper returned ${response.status}: ${errText}`);
+    }
+    
+    const data = await response.json();
+    const result = {
+      audio: data.audio,
+      format: data.format || 'wav',
+      sample_rate: data.sample_rate || 22050
+    };
+
+    // Cache result
+    if (ttsCache.size > 200) ttsCache.delete(ttsCache.keys().next().value);
+    ttsCache.set(cacheKey, result);
+
+    res.json(result);
+  } catch (err) {
+    console.error('TTS error:', err.message);
+    res.status(502).json({ error: 'TTS service unavailable', message: err.message });
+  }
+});
 
 // ─── PERSONALITY PRESETS ───
 const PERSONALITY_PRESETS = {
@@ -363,7 +433,6 @@ function parseScoreboard(data) {
 }
 
 function parseSummary(data) {
-  const header = data.header || {};
   const boxscore = data.boxscore || {};
   const drives = data.drives || {};
   const scoringPlays = data.scoringPlays || [];
@@ -411,7 +480,6 @@ function parseSummary(data) {
     })),
   }));
   
-  // Extract plays for basketball and other sports
   let plays = [];
   if (data.plays) {
     plays = data.plays.map(p => ({
@@ -503,7 +571,6 @@ function parseRoster(data) {
   return { coach: data.coach?.[0]?.firstName + ' ' + data.coach?.[0]?.lastName, roster };
 }
 
-// Extract key players per position for prompt injection
 function extractKeyPlayers(rosterData, sport) {
   const { coach, roster } = rosterData;
   const keyPositions = {
@@ -513,31 +580,24 @@ function extractKeyPlayers(rosterData, sport) {
     hockey: ['C', 'LW', 'RW', 'D', 'G'],
     soccer: ['GK', 'CB', 'CM', 'ST', 'LW'],
   };
-
   const positions = keyPositions[sport] || keyPositions.football;
   const byPosition = {};
-
   for (const p of roster) {
     const pos = p.position || 'Unknown';
     if (!byPosition[pos]) byPosition[pos] = [];
     byPosition[pos].push(p);
   }
-
   const lines = [];
   for (const pos of positions) {
     const players = byPosition[pos] || [];
     const top3 = players.slice(0, 3);
-    if (top3.length > 0) {
-      lines.push(`  ${pos}: ${top3.map(p => `#${p.jersey} ${p.name}`).join(', ')}`);
-    }
+    if (top3.length > 0) lines.push(`  ${pos}: ${top3.map(p => `#${p.jersey} ${p.name}`).join(', ')}`);
   }
-
   return { coach, lines };
 }
 
 // ─── SESSION RUNTIME ───
 const sessionRuntimes = new Map();
-
 function getRuntime(sessionId) {
   if (!sessionRuntimes.has(sessionId)) {
     sessionRuntimes.set(sessionId, {
@@ -550,16 +610,13 @@ function getRuntime(sessionId) {
   return sessionRuntimes.get(sessionId);
 }
 
-// ─── ADMIN ROUTES: SPORTS BROWSING ───
+// ─── ADMIN ROUTES ───
 app.get('/api/admin/sports', requireAdmin, (req, res) => {
   const result = {};
   for (const [sportKey, sportVal] of Object.entries(SPORTS_CONFIG)) {
     result[sportKey] = {
       name: sportVal.name,
-      leagues: Object.entries(sportVal.leagues).map(([lKey, lVal]) => ({
-        id: lKey,
-        name: lVal.name,
-      })),
+      leagues: Object.entries(sportVal.leagues).map(([lKey, lVal]) => ({ id: lKey, name: lVal.name })),
     };
   }
   res.json(result);
@@ -568,982 +625,180 @@ app.get('/api/admin/sports', requireAdmin, (req, res) => {
 app.get('/api/admin/browse/:sport/:league', requireAdmin, async (req, res) => {
   try {
     const { sport, league } = req.params;
-    const date = req.query.date; // YYYYMMDD
+    const date = req.query.date;
     const sportConfig = SPORTS_CONFIG[sport];
-    if (!sportConfig) return res.status(400).json({ error: `Unknown sport: ${sport}` });
-    const leagueConfig = sportConfig.leagues[league];
-    if (!leagueConfig) return res.status(400).json({ error: `Unknown league: ${league}` });
-
+    const leagueConfig = sportConfig?.leagues[league];
+    if (!leagueConfig) return res.status(400).json({ error: 'Invalid league' });
     const url = espnScoreboard(leagueConfig.espnSlug, date);
     const data = await fetchCached(`browse_${sport}_${league}_${date || 'today'}`, url, 30000);
-    const events = parseScoreboard(data);
-    res.json({ sport, league, events });
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch scoreboard', message: err.message });
-  }
+    res.json({ sport, league, events: parseScoreboard(data) });
+  } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// ─── ADMIN ROUTES: COMMENTATOR PRESETS ───
-
-// List saved presets
 app.get('/api/admin/presets', requireAdmin, async (req, res) => {
   try {
     const snap = await db.collection('commentator_presets').orderBy('createdAt', 'desc').get();
-    const presets = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-    res.json(presets);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to list presets' });
-  }
+    res.json(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
-// Save a preset
-app.post('/api/admin/presets', requireAdmin, async (req, res) => {
-  try {
-    const { name, personality, customPrompt } = req.body;
-    if (!name) return res.status(400).json({ error: 'name is required' });
-    const id = crypto.randomBytes(6).toString('hex');
-    const preset = {
-      name,
-      personality: personality || 'barkley',
-      customPrompt: customPrompt || null,
-      createdAt: new Date().toISOString(),
-    };
-    await db.collection('commentator_presets').doc(id).set(preset);
-    res.json({ id, ...preset });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to save preset' });
-  }
-});
-
-// Delete a preset
-app.delete('/api/admin/presets/:id', requireAdmin, async (req, res) => {
-  try {
-    await db.collection('commentator_presets').doc(req.params.id).delete();
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete preset' });
-  }
-});
-
-// ─── ADMIN ROUTES: SESSION CRUD ───
-
-// Create session
 app.post('/api/admin/sessions', requireAdmin, async (req, res) => {
   try {
-    const { sport, league, espnEventId, gameName, gameDate, homeTeam, awayTeam, commentators } = req.body;
-    if (!sport || !league || !espnEventId) {
-      return res.status(400).json({ error: 'sport, league, and espnEventId are required' });
-    }
-
+    const { sport, league, espnEventId, gameName, commentators, settings } = req.body;
     const sportConfig = SPORTS_CONFIG[sport];
-    if (!sportConfig) return res.status(400).json({ error: `Unknown sport: ${sport}` });
-    const leagueConfig = sportConfig.leagues[league];
-    if (!leagueConfig) return res.status(400).json({ error: `Unknown league: ${league}` });
+    const leagueConfig = sportConfig?.leagues[league];
+    if (!leagueConfig) return res.status(400).json({ error: 'Invalid config' });
 
     const id = crypto.randomBytes(8).toString('hex');
     const session = {
-      id, sport, league, espnSlug: leagueConfig.espnSlug,
-      espnEventId, gameName: gameName || '', gameDate: gameDate || new Date().toISOString(),
-      status: 'active',
-      homeTeam: homeTeam || {},
-      awayTeam: awayTeam || {},
+      id, sport, league, espnSlug: leagueConfig.espnSlug, espnEventId,
+      gameName: gameName || '', status: 'active',
       commentators: commentators || [
-        { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', customPrompt: null },
-        { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', customPrompt: null },
+        { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', avatarUrl: null },
+        { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', avatarUrl: null },
       ],
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
+      settings: { preGameInterval: settings?.preGameInterval || 45, ...settings },
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString(),
     };
-
-    // Fetch rosters for both teams
-    const runtime = getRuntime(id);
-    if (homeTeam?.id) {
-      try {
-        const homeRosterData = await fetchCached(`roster_${homeTeam.id}`, espnRoster(leagueConfig.espnSlug, homeTeam.id), CACHE_TTL.roster);
-        runtime.rosterCache.home = parseRoster(homeRosterData);
-      } catch (e) { console.error('Failed to fetch home roster:', e.message); }
-    }
-    if (awayTeam?.id) {
-      try {
-        const awayRosterData = await fetchCached(`roster_${awayTeam.id}`, espnRoster(leagueConfig.espnSlug, awayTeam.id), CACHE_TTL.roster);
-        runtime.rosterCache.away = parseRoster(awayRosterData);
-      } catch (e) { console.error('Failed to fetch away roster:', e.message); }
-    }
-    runtime.rosterCache.fetchedAt = Date.now();
-
     await db.collection('sessions').doc(id).set(session);
     res.json(session);
-  } catch (err) {
-    console.error('Create session error:', err.message);
-    res.status(500).json({ error: 'Failed to create session' });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// List sessions
 app.get('/api/admin/sessions', requireAdmin, async (req, res) => {
   try {
     const snap = await db.collection('sessions').orderBy('createdAt', 'desc').get();
-    const sessions = snap.docs.map(d => d.data());
-    res.json(sessions);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to list sessions' });
-  }
+    res.json(snap.docs.map(d => d.data()));
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
-// Update session
 app.patch('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
     const updates = { ...req.body, updatedAt: new Date().toISOString() };
-    delete updates.id;
-    delete updates.createdAt;
-    await db.collection('sessions').doc(id).update(updates);
-    const doc = await db.collection('sessions').doc(id).get();
+    delete updates.id; await db.collection('sessions').doc(req.params.id).update(updates);
+    const doc = await db.collection('sessions').doc(req.params.id).get();
     res.json(doc.data());
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to update session' });
-  }
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
-// Delete session
 app.delete('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
   try {
-    const { id } = req.params;
-    await db.collection('sessions').doc(id).delete();
-    sessionRuntimes.delete(id);
-    res.json({ ok: true });
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to delete session' });
-  }
+    await db.collection('sessions').doc(req.params.id).delete();
+    sessionRuntimes.delete(req.params.id); res.json({ ok: true });
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
-// Start session
-app.post('/api/admin/sessions/:id/start', requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    await db.collection('sessions').doc(id).update({ status: 'active', updatedAt: new Date().toISOString() });
-    getRuntime(id); // ensure runtime exists
-    const doc = await db.collection('sessions').doc(id).get();
-    res.json(doc.data());
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to start session' });
-  }
-});
-
-// Stop session
-app.post('/api/admin/sessions/:id/stop', requireAdmin, async (req, res) => {
-  try {
-    const { id } = req.params;
-    await db.collection('sessions').doc(id).update({ status: 'paused', updatedAt: new Date().toISOString() });
-    const doc = await db.collection('sessions').doc(id).get();
-    res.json(doc.data());
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to stop session' });
-  }
-});
-
-// ─── PUBLIC SESSION ROUTES ───
-
-// List active sessions (public)
+// ─── PUBLIC ROUTES ───
 app.get('/api/sessions', async (req, res) => {
   try {
     const snap = await db.collection('sessions').where('status', 'in', ['active', 'paused']).get();
-    const sessions = snap.docs.map(d => {
+    res.json(snap.docs.map(d => {
       const s = d.data();
-      return {
-        id: s.id, sport: s.sport, league: s.league, gameName: s.gameName, gameDate: s.gameDate,
-        status: s.status, homeTeam: s.homeTeam, awayTeam: s.awayTeam,
-        commentators: (s.commentators || []).map(c => ({ id: c.id, name: c.name, team: c.team })),
-      };
-    });
-    res.json(sessions);
-  } catch (err) {
-    res.status(500).json({ error: 'Failed to list sessions' });
-  }
+      return { id: s.id, sport: s.sport, league: s.league, gameName: s.gameName, status: s.status, commentators: s.commentators };
+    }));
+  } catch (err) { res.status(500).json({ error: 'Failed' }); }
 });
 
-// Session game data
 app.get('/api/sessions/:id/game', async (req, res) => {
   try {
     const doc = await db.collection('sessions').doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Session not found' });
     const session = doc.data();
-    const url = espnScoreboard(session.espnSlug);
-    const data = await fetchCached(`scoreboard_${session.espnSlug}`, url, CACHE_TTL.scoreboard);
-    const events = parseScoreboard(data);
-    const game = events.find(e => e.id === session.espnEventId) || null;
-    if (!game) return res.json({ error: 'Game not found in current scoreboard', session: { id: session.id, gameName: session.gameName } });
-    res.json(game);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch game', message: err.message });
-  }
+    const data = await fetchCached(`scoreboard_${session.espnSlug}`, espnScoreboard(session.espnSlug), CACHE_TTL.scoreboard);
+    const game = parseScoreboard(data).find(e => e.id === session.espnEventId);
+    res.json(game || { error: 'Not found' });
+  } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// Session summary
-app.get('/api/sessions/:id/summary', async (req, res) => {
-  try {
-    const doc = await db.collection('sessions').doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Session not found' });
-    const session = doc.data();
-    const url = espnSummary(session.espnSlug, session.espnEventId);
-    const data = await fetchCached(`summary_${session.espnEventId}`, url, CACHE_TTL.summary);
-    const summary = parseSummary(data);
-    res.json(summary);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch summary', message: err.message });
-  }
-});
-
-// Session news
-app.get('/api/sessions/:id/news', async (req, res) => {
-  try {
-    const doc = await db.collection('sessions').doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Session not found' });
-    const session = doc.data();
-    const url = espnNews(session.espnSlug);
-    const data = await fetchCached(`news_${session.espnSlug}`, url, CACHE_TTL.news);
-    const articles = (data.articles || []).slice(0, 15).map(a => ({
-      headline: a.headline, description: a.description, published: a.published,
-      image: a.images?.[0]?.url, link: a.links?.web?.href,
-    }));
-    res.json(articles);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch news', message: err.message });
-  }
-});
-
-// ─── AI COMMENTARY ENGINE (session-scoped) ───
-
+// ─── COMMENTARY ENGINE ───
 const COMMENTARY_COOLDOWN = 5000;
 const STALE_COMMENTARY_MAX = 45000;
 const MAX_HISTORY = 20;
 
 function buildCommentaryPayload(game, summary, session) {
   if (!game || !summary) return null;
-
-  const awayName = game.away?.name || game.away?.abbreviation || 'Away';
-  const homeName = game.home?.name || game.home?.abbreviation || 'Home';
-  const awayAbbr = game.away?.abbreviation || 'AWY';
-  const homeAbbr = game.home?.abbreviation || 'HME';
-
-  // Get sport type
+  const awayAbbr = game.away?.abbreviation || 'AWY', homeAbbr = game.home?.abbreviation || 'HME';
   const sport = session?.sport || 'football';
-  
-  // Extract plays based on sport type
-  let latestPlays = [];
-  let latestPlay = null;
-  let offenseTeam = awayAbbr;
-  let isAwayOffense = true;
+  let latestPlays = [], latestPlay = null, offenseTeam = awayAbbr;
   
   if (sport === 'football') {
-    // Football uses drives
     const drives = summary.drives || [];
     const latestDrive = drives[drives.length - 1];
     latestPlays = latestDrive?.playList || [];
     latestPlay = latestPlays[latestPlays.length - 1];
     offenseTeam = latestDrive?.abbreviation || awayAbbr;
-    isAwayOffense = offenseTeam === awayAbbr;
   } else {
-    // Basketball (and other sports) use plays array or keyEvents
-    // Basketball plays can be in various locations in the ESPN API response
-    let allPlays = [];
-    if (sport === 'basketball') {
-      // Basketball plays might be in different places depending on API response
-      allPlays = summary.plays || summary.keyEvents || summary.teamStats?.plays || [];
-      // Also check for plays nested in periods
-      if (allPlays.length === 0 && summary.periods) {
-        summary.periods.forEach(period => {
-          if (period.plays) allPlays = allPlays.concat(period.plays);
-        });
-      }
-    } else {
-      allPlays = summary.plays || summary.keyEvents || [];
-    }
-    if (allPlays.length > 0) {
-      latestPlays = allPlays.slice(-10); // Last 10 plays
-      latestPlay = allPlays[allPlays.length - 1];
-    }
-    // For basketball, determine offense from play data
+    let allPlays = summary.plays || summary.keyEvents || [];
+    if (allPlays.length === 0 && summary.periods) summary.periods.forEach(p => { if (p.plays) allPlays = allPlays.concat(p.plays); });
+    latestPlays = allPlays.slice(-10); latestPlay = allPlays[allPlays.length - 1];
     offenseTeam = latestPlay?.team?.abbreviation || awayAbbr;
-    isAwayOffense = offenseTeam === awayAbbr;
   }
-  
   if (!latestPlay) return null;
 
-  const last3 = latestPlays.slice(-4, -1).map(p => p.text || p.description || '').filter(Boolean);
-  const playTypes = latestPlays.slice(-6).map(p => p.type || '');
-  
-  // Sport-specific play type detection
-  let playType = 'Unknown';
-  let result = 'Play';
-  let yards = 0;
-  
-  if (sport === 'football') {
-    const passCount = playTypes.filter(t => t.toLowerCase().includes('pass')).length;
-    const runCount = playTypes.filter(t => t.toLowerCase().includes('rush') || t.toLowerCase().includes('run')).length;
-    const tendency = passCount > runCount ? 'pass-heavy' : runCount > passCount ? 'run-heavy' : 'balanced';
-
-    const playTypeStr = (latestPlay.type || '').toLowerCase();
-    if (playTypeStr.includes('pass')) playType = 'Pass';
-    else if (playTypeStr.includes('rush') || playTypeStr.includes('run')) playType = 'Run';
-    else if (playTypeStr.includes('punt')) playType = 'Punt';
-    else if (playTypeStr.includes('kickoff')) playType = 'Kickoff';
-    else if (playTypeStr.includes('field goal')) playType = 'Field Goal';
-    else if (playTypeStr.includes('sack')) playType = 'Sack';
-    else if (playTypeStr.includes('penalty')) playType = 'Penalty';
-    
-    yards = latestPlay.yardsGained || latestPlay.statYardage || 0;
-    if (latestPlay.scoringPlay) result = 'Scoring Play';
-    else if (latestPlay.text?.toLowerCase().includes('first down') || (latestPlay.down === 1 && yards >= (latestPlay.distance || 10))) result = 'First Down';
-    else if (latestPlay.text?.toLowerCase().includes('incomplete')) result = 'Incomplete';
-    else if (latestPlay.text?.toLowerCase().includes('interception') || latestPlay.text?.toLowerCase().includes('intercepted')) result = 'Turnover - Interception';
-    else if (latestPlay.text?.toLowerCase().includes('fumble')) result = 'Turnover - Fumble';
-    else result = `Gain of ${yards}`;
-  } else if (sport === 'basketball') {
-    // Basketball play types
-    const playText = (latestPlay.text || latestPlay.description || '').toLowerCase();
-    if (playText.includes('three-pointer') || playText.includes('3-point')) playType = 'Three Pointer';
-    else if (playText.includes('dunk')) playType = 'Dunk';
-    else if (playText.includes('layup')) playType = 'Layup';
-    else if (playText.includes('free throw')) playType = 'Free Throw';
-    else if (playText.includes('jump shot')) playType = 'Jump Shot';
-    else if (playText.includes('steal')) playType = 'Steal';
-    else if (playText.includes('block')) playType = 'Block';
-    else if (playText.includes('rebound')) playType = 'Rebound';
-    else if (playText.includes('turnover')) playType = 'Turnover';
-    else playType = 'Field Goal';
-    
-    yards = latestPlay.scoreValue || 0;
-    if (latestPlay.scoringPlay || playText.includes('makes')) result = `${yards} Points`;
-    else if (playText.includes('miss')) result = 'Missed Shot';
-    else if (playText.includes('rebound')) result = 'Rebound';
-    else if (playText.includes('turnover')) result = 'Turnover';
-    else if (playText.includes('foul')) result = 'Foul';
-    else result = playType;
-  } else {
-    // Generic for other sports
-    playType = latestPlay.type || 'Play';
-    yards = latestPlay.yardsGained || latestPlay.statYardage || 0;
-    result = latestPlay.result || 'Play';
-  }
-
-  let mood = 'routine';
-  if (latestPlay.scoringPlay) mood = 'electric';
-  else if ((latestPlay.text || latestPlay.description || '').toLowerCase().includes('turnover')) mood = 'disaster';
-  else if (yards >= 20 || (sport === 'basketball' && latestPlay.scoreValue >= 3)) mood = 'momentum_shift';
-  else if (yards >= 10 || (sport === 'basketball' && latestPlay.scoreValue === 2)) mood = 'big_play';
-  else if ((latestPlay.text || '').toLowerCase().includes('sack')) mood = 'defensive_dominance';
-  else if ((latestPlay.text || '').toLowerCase().includes('foul') || (latestPlay.text || '').toLowerCase().includes('penalty')) mood = 'controversial';
-  else if (yards <= 0) mood = 'stuffed';
-
   return {
-    gameId: session ? session.id : `game-${new Date().getFullYear()}`,
-    awayTeam: { name: awayName, abbreviation: awayAbbr },
-    homeTeam: { name: homeName, abbreviation: homeAbbr },
-    offenseTeam: isAwayOffense ? awayAbbr : homeAbbr,
-    defenseTeam: isAwayOffense ? homeAbbr : awayAbbr,
+    gameId: session?.id, awayTeam: game.away, homeTeam: game.home, offenseTeam,
     event: {
       seq: latestPlays.length + (sport === 'football' ? (summary.drives?.length || 0) * 100 : 0),
-      quarter: latestPlay.period || game.status?.period || 1,
-      clock: latestPlay.clock || game.status?.clock || '',
-      down: latestPlay.down || null,
-      distance: latestPlay.distance || null,
-      yardLine: latestPlay.yardLine ? `${offenseTeam} ${latestPlay.yardLine}` : '',
-      offense: isAwayOffense ? awayAbbr : homeAbbr,
-      defense: isAwayOffense ? homeAbbr : awayAbbr,
-      playType, description: latestPlay.text || latestPlay.description || '', yardsGained: yards, result, mood,
+      quarter: latestPlay.period || 1, clock: latestPlay.clock || '',
+      description: latestPlay.text || latestPlay.description || '', result: latestPlay.type || 'Play',
     },
-    state: {
-      score: { [awayAbbr]: game.away?.score || 0, [homeAbbr]: game.home?.score || 0 },
-      possession: offenseTeam,
-      last3Plays: last3.length > 0 ? last3 : ['Game in progress'],
-      rollingSummaryShort: sport === 'football' ? `${isAwayOffense ? awayName : homeName} on offense` : `${offenseTeam} with the ball`,
-    },
+    state: { score: { [awayAbbr]: game.away?.score || 0, [homeAbbr]: game.home?.score || 0 } }
   };
 }
 
-function buildCommentaryPrompt(payload, session, runtime) {
-  const awayName = payload.awayTeam.name;
-  const homeName = payload.homeTeam.name;
-  const awayAbbr = payload.awayTeam.abbreviation;
-  const homeAbbr = payload.homeTeam.abbreviation;
-
-  const sport = session?.sport || 'football';
-  const sportCtx = getSportContext(sport);
-
-  // Build commentator descriptions from session config
-  const commentators = session?.commentators || [
-    { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', customPrompt: null },
-    { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', customPrompt: null },
-  ];
-
-  const commentatorA = commentators.find(c => c.id === 'A') || commentators[0];
-  const commentatorB = commentators.find(c => c.id === 'B') || commentators[1];
-
-  const teamA = commentatorA.team === 'home' ? homeName : awayName;
-  const teamAbbrA = commentatorA.team === 'home' ? homeAbbr : awayAbbr;
-  const teamB = commentatorB.team === 'home' ? homeName : awayName;
-  const teamAbbrB = commentatorB.team === 'home' ? homeAbbr : awayAbbr;
-
-  const personalityA = commentatorA.customPrompt || PERSONALITY_PRESETS[commentatorA.personality]?.prompt || 'Loud, dramatic, biased';
-  const personalityB = commentatorB.customPrompt || PERSONALITY_PRESETS[commentatorB.personality]?.prompt || 'Sarcastic, mocking, dismissive';
-
-  // Possession context
-  const offenseTeamName = payload.offenseTeam === awayAbbr ? awayName : homeName;
-  const defenseTeamName = payload.offenseTeam === awayAbbr ? homeName : awayName;
-
-  let possessionBlock = '';
-  if (sport === 'football') {
-    possessionBlock = `
-CURRENT POSSESSION: ${offenseTeamName} (${payload.offenseTeam}) has the ball.
-This is an OFFENSIVE play by ${offenseTeamName} against ${defenseTeamName}.
-Yards gained = GOOD for ${offenseTeamName}, BAD for ${defenseTeamName}.
-Turnovers = BAD for ${offenseTeamName}, GOOD for ${defenseTeamName}.`;
-  } else if (sport === 'basketball') {
-    possessionBlock = `
-CURRENT POSSESSION: ${offenseTeamName} (${payload.offenseTeam}) has the ball.
-This is a BASKETBALL game. Points are scored via 2-pointers, 3-pointers, and free throws.
-Momentum shifts quickly with scoring runs.`;
-  }
-
-  // Roster block
-  let rosterBlock = '';
-  if (runtime?.rosterCache) {
-    const rc = runtime.rosterCache;
-    if (rc.home) {
-      const hp = extractKeyPlayers(rc.home, sport);
-      rosterBlock += `\nKEY PLAYERS FOR ${homeName} (Coach: ${hp.coach}):\n${hp.lines.join('\n')}`;
-    }
-    if (rc.away) {
-      const ap = extractKeyPlayers(rc.away, sport);
-      rosterBlock += `\nKEY PLAYERS FOR ${awayName} (Coach: ${ap.coach}):\n${ap.lines.join('\n')}`;
-    }
-    if (rosterBlock) {
-      rosterBlock += `\nIMPORTANT: Only reference players on these rosters. Do NOT mention retired or traded players.`;
-    }
-  }
-
-  return `You are an AI commentary engine for a live ${sportCtx.periodName ? sport : ''} broadcast.
-
-${sportCtx.promptFrame}
-
-You produce short, entertaining, argumentative commentary between two unhinged commentators.
-
-COMMENTATOR A — "${commentatorA.name}"
-- Rooting for: ${teamA} (${teamAbbrA})
-- Personality: ${personalityA}
-- Treats every positive ${teamAbbrA} play as genius, every negative play as a conspiracy
-
-COMMENTATOR B — "${commentatorB.name}"
-- Rooting for: ${teamB} (${teamAbbrB})
-- Personality: ${personalityB}
-- Downplays ${teamAbbrA} success, hypes ${teamAbbrB}
-${possessionBlock}
-${rosterBlock}
-
-Rules:
-- Both speak like they are watching live
-- They argue DIRECTLY with each other, never agree politely
-- If info is not in the data, do NOT invent it
-- Keep responses punchy and short
-- The "mood" field hints at emotional tone: use it
-
-OUTPUT FORMAT — Produce EXACTLY 3 turns:
-
-[A] ${commentatorA.name} reacts to the play. 1-2 sentences. Maximum hype. Reference a real field.
-[B] ${commentatorB.name} argues back. 2-3 sentences. Downplay or blame. Reference a different field.
-[A] ${commentatorA.name} fires back. 1-2 sentences. Predict next play type (run/pass/special). Include confidence: X.X
-
-Here is the play data:
-${JSON.stringify(payload, null, 2)}
-
-Respond with ONLY the 3 turns. No preamble, no explanation.`;
-}
-
-function parseCommentary(raw, commentatorA, commentatorB) {
-  const nameA = commentatorA?.name || 'Big Mike';
-  const nameB = commentatorB?.name || 'Salty Steve';
-  const teamA = commentatorA?.team || 'away';
-  const teamB = commentatorB?.team || 'home';
-
-  const lines = raw.trim().split('\n').filter(l => l.trim());
-  const turns = [];
-  let current = null;
-
-  for (const line of lines) {
-    const trimmed = line.trim();
-    if (trimmed.startsWith('[A]') || trimmed.startsWith('[B]')) {
-      if (current) turns.push(current);
-      const speaker = trimmed.startsWith('[A]') ? 'A' : 'B';
-      const name = speaker === 'A' ? nameA : nameB;
-      const team = speaker === 'A' ? teamA : teamB;
-      
-      // Strip [A] or [B]
-      let text = trimmed.replace(/^\[[AB]\]\s*/, '').trim();
-      
-      // Strip "Name: " or "Name — " prefixes if LLM included them
-      const namePrefixPattern = new RegExp(`^${name}[:\\s—]+`, 'i');
-      text = text.replace(namePrefixPattern, '').trim();
-      
-      // Strip surrounding quotes
-      text = text.replace(/^["']|["']$/g, '').trim();
-      
-      current = { speaker, name, team, text };
-    } else if (current) {
-      current.text += ' ' + trimmed.replace(/^["']|["']$/g, '').trim();
-    }
-  }
-  if (current) turns.push(current);
-
-  const lastA = [...turns].reverse().find(t => t.speaker === 'A');
-  if (lastA) {
-    const confMatch = lastA.text.match(/confidence[:\s]*([01]\.\d+)/i) || lastA.text.match(/(\d\.\d+)\s*confidence/i) || lastA.text.match(/([01]\.\d+)/);
-    if (confMatch) lastA.confidence = parseFloat(confMatch[1]);
-    const predMatch = lastA.text.match(/next play[^.]*?(run|pass|special|kick|punt|field goal)/i);
-    if (predMatch) lastA.prediction = predMatch[1].toLowerCase();
-  }
-
-  return turns;
-}
-
-// Session commentary endpoint
 app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
   try {
     const sessionId = req.params.id;
     const doc = await db.collection('sessions').doc(sessionId).get();
-    if (!doc.exists) return res.status(404).json({ error: 'Session not found' });
+    if (!doc.exists) return res.status(404).json({ error: 'Not found' });
     const session = doc.data();
-
-    if (session.status === 'paused') {
-      return res.json({ turns: [], status: 'paused', message: 'Session is paused' });
-    }
+    if (session.status === 'paused') return res.json({ turns: [], status: 'paused' });
 
     const runtime = getRuntime(sessionId);
     const now = Date.now();
 
-    // ─── 1. GLOBAL CACHE CHECK (Live & Pre-Game) ───
-    if (runtime.commentaryCache.data) {
-      const age = now - runtime.commentaryCache.ts;
-      if (age < COMMENTARY_COOLDOWN) {
-        return res.json(runtime.commentaryCache.data);
-      }
-    }
+    if (runtime.commentaryCache.data && (now - runtime.commentaryCache.ts) < COMMENTARY_COOLDOWN) return res.json(runtime.commentaryCache.data);
 
-    // Get game data
-    const scoreUrl = espnScoreboard(session.espnSlug);
-    const scoreData = await fetchCached(`scoreboard_${session.espnSlug}`, scoreUrl, CACHE_TTL.scoreboard);
-    const events = parseScoreboard(scoreData);
-    const game = events.find(e => e.id === session.espnEventId);
+    const scoreData = await fetchCached(`scoreboard_${session.espnSlug}`, espnScoreboard(session.espnSlug), CACHE_TTL.scoreboard);
+    const game = parseScoreboard(scoreData).find(e => e.id === session.espnEventId);
 
-    // ─── 2. HANDLE PRE-GAME / POST-GAME ───
     if (!game || game.status?.state !== 'in') {
-      // Check if we already have a relatively fresh pre-game commentary
-      if (runtime.commentaryCache.data && (now - runtime.commentaryCache.ts) < STALE_COMMENTARY_MAX) {
-        return res.json(runtime.commentaryCache.data);
-      }
+      const intervalMs = (session.settings?.preGameInterval || 45) * 1000;
+      if (runtime.commentaryCache.data && (now - runtime.commentaryCache.ts) < intervalMs) return res.json(runtime.commentaryCache.data);
 
       const prePayload = buildPreGamePayload(game, session);
-      if (!prePayload) {
-        return res.json({ turns: [], status: 'waiting', message: 'Waiting for game to start' });
-      }
       const prompt = buildPreGamePrompt(prePayload, game, session);
-      const llmData = await callModalLLM(MODAL_MISTRAL_URL, {
-        messages: [{ role: 'user', content: prompt }],
-        max_tokens: 300, temperature: 0.9,
-      });
-      const rawText = llmData.choices?.[0]?.message?.content || '';
-      const commentators = session.commentators || [];
-      const commentatorA = commentators.find(c => c.id === 'A') || commentators[0];
-      const commentatorB = commentators.find(c => c.id === 'B') || commentators[1];
-      const turns = parseCommentary(rawText, commentatorA, commentatorB);
-
-      const result = {
-        turns, status: game?.status?.state === 'post' ? 'post' : 'pre',
-        play: { description: game?.status?.state === 'post' ? 'Post-Game Wrap-up' : 'Pre-Game Discussion', seq: now },
-        raw: rawText, timestamp: now,
-        commentators: { a: commentatorA, b: commentatorB },
-      };
-      runtime.commentaryCache = { data: result, ts: now };
-      return res.json(result);
+      const llmData = await callModalLLM(MODAL_MISTRAL_URL, { messages: [{ role: 'user', content: prompt }], max_tokens: 300 });
+      const turns = parseCommentary(llmData.choices[0].message.content, session.commentators[0], session.commentators[1]);
+      const result = { turns, status: 'pre', play: { description: 'Pre-Game Talk', seq: now }, timestamp: now, commentators: { a: session.commentators[0], b: session.commentators[1] } };
+      runtime.commentaryCache = { data: result, ts: now }; return res.json(result);
     }
 
-    // ─── 3. LIVE GAME ───
-    const summaryUrl = espnSummary(session.espnSlug, session.espnEventId);
-    const summaryData = await fetchCached(`summary_${session.espnEventId}`, summaryUrl, CACHE_TTL.summary);
+    const summaryData = await fetchCached(`summary_${session.espnEventId}`, espnSummary(session.espnSlug, session.espnEventId), CACHE_TTL.summary);
     const summary = parseSummary(summaryData);
-
     const payload = buildCommentaryPayload(game, summary, session);
-    if (!payload) {
-      return res.json({ turns: [], status: 'no_plays', message: 'No plays available yet' });
-    }
+    if (!payload) return res.json({ turns: [], status: 'no_plays' });
 
-    const currentSeq = payload.event.seq;
-    const isNewPlay = currentSeq !== runtime.lastCommentarySeq;
-    const isStale = (now - runtime.commentaryCache.ts) > STALE_COMMENTARY_MAX;
-
-    if (!isNewPlay && !isStale && runtime.commentaryCache.data?.turns?.length > 0) {
-      return res.json(runtime.commentaryCache.data);
-    }
-
-    // Refresh roster cache if needed (every 5 minutes)
-    if (now - runtime.rosterCache.fetchedAt > CACHE_TTL.roster) {
-      if (session.homeTeam?.id) {
-        try {
-          const hrd = await fetchCached(`roster_${session.homeTeam.id}`, espnRoster(session.espnSlug, session.homeTeam.id), CACHE_TTL.roster);
-          runtime.rosterCache.home = parseRoster(hrd);
-        } catch (e) {}
-      }
-      if (session.awayTeam?.id) {
-        try {
-          const ard = await fetchCached(`roster_${session.awayTeam.id}`, espnRoster(session.espnSlug, session.awayTeam.id), CACHE_TTL.roster);
-          runtime.rosterCache.away = parseRoster(ard);
-        } catch (e) {}
-      }
-      runtime.rosterCache.fetchedAt = now;
-    }
+    if (payload.event.seq === runtime.lastCommentarySeq && (now - runtime.commentaryCache.ts) < STALE_COMMENTARY_MAX) return res.json(runtime.commentaryCache.data);
 
     const prompt = buildCommentaryPrompt(payload, session, runtime);
-    const commentators = session.commentators || [];
-    const commentatorA = commentators.find(c => c.id === 'A') || commentators[0];
-    const commentatorB = commentators.find(c => c.id === 'B') || commentators[1];
+    const llmData = await callModalLLM(MODAL_MISTRAL_URL, { messages: [{ role: 'user', content: prompt }], max_tokens: 250 });
+    const turns = parseCommentary(llmData.choices[0].message.content, session.commentators[0], session.commentators[1]);
 
-    const llmData = await callModalLLM(MODAL_MISTRAL_URL, {
-      messages: [{ role: 'user', content: prompt }],
-      max_tokens: 250, temperature: 0.9,
-    });
-    const rawText = llmData.choices?.[0]?.message?.content || '';
-    const turns = parseCommentary(rawText, commentatorA, commentatorB);
-
-    runtime.lastCommentarySeq = currentSeq;
-    const result = {
-      turns, status: 'live',
-      play: {
-        description: payload.event.description, quarter: payload.event.quarter,
-        clock: payload.event.clock, yardsGained: payload.event.yardsGained,
-        playType: payload.event.playType, result: payload.event.result, mood: payload.event.mood,
-      },
-      score: payload.state.score,
-      timestamp: now,
-      commentators: { a: commentatorA, b: commentatorB },
-    };
-
+    runtime.lastCommentarySeq = payload.event.seq;
+    const result = { turns, status: 'live', play: payload.event, score: payload.state.score, timestamp: now, commentators: { a: session.commentators[0], b: session.commentators[1] } };
     runtime.commentaryCache = { data: result, ts: now };
-
-    // Store in history
-    runtime.commentaryHistory.unshift(result);
-    if (runtime.commentaryHistory.length > MAX_HISTORY) runtime.commentaryHistory.pop();
-
+    runtime.commentaryHistory.unshift(result); if (runtime.commentaryHistory.length > MAX_HISTORY) runtime.commentaryHistory.pop();
     res.json(result);
-  } catch (err) {
-    console.error('Session commentary error:', err.message);
-    const runtime = sessionRuntimes.get(req.params.id);
-    if (runtime?.commentaryCache?.data) {
-      return res.json({ ...runtime.commentaryCache.data, status: 'error_cached', error: err.message });
-    }
-    res.status(500).json({ turns: [], status: 'error', message: err.message });
-  }
+  } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-// Session commentary history
-app.get('/api/sessions/:id/commentary/history', (req, res) => {
-  const runtime = sessionRuntimes.get(req.params.id);
-  res.json(runtime?.commentaryHistory || []);
-});
-
-// Pre-game payload builder
 function buildPreGamePayload(game, session) {
-  if (!game) return null;
-  return {
-    awayTeam: { name: game.away?.name || 'Away', abbreviation: game.away?.abbreviation || 'AWY' },
-    homeTeam: { name: game.home?.name || 'Home', abbreviation: game.home?.abbreviation || 'HME' },
-    score: { away: game.away?.score || 0, home: game.home?.score || 0 },
-    odds: game.odds || {},
-    records: { away: game.away?.record || '', home: game.home?.record || '' },
-  };
+  return { awayTeam: game?.away || { name: 'Away' }, homeTeam: game?.home || { name: 'Home' }, records: { away: game?.away?.record, home: game?.home?.record } };
 }
 
-function buildPreGamePrompt(payload, game, session) {
-  const awayName = payload.awayTeam.name;
-  const homeName = payload.homeTeam.name;
-  const isPre = game?.status?.state === 'pre';
-
-  const commentators = session?.commentators || [
-    { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', customPrompt: null },
-    { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', customPrompt: null },
-  ];
-  const commentatorA = commentators.find(c => c.id === 'A') || commentators[0];
-  const commentatorB = commentators.find(c => c.id === 'B') || commentators[1];
-  const teamA = commentatorA.team === 'home' ? homeName : awayName;
-  const teamB = commentatorB.team === 'home' ? homeName : awayName;
-
-  const personalityA = commentatorA.customPrompt || PERSONALITY_PRESETS[commentatorA.personality]?.prompt || 'Loud, dramatic, biased';
-  const personalityB = commentatorB.customPrompt || PERSONALITY_PRESETS[commentatorB.personality]?.prompt || 'Sarcastic, mocking, dismissive';
-
-  const sport = session?.sport || 'football';
-  const sportCtx = getSportContext(sport);
-  const gameName = session?.gameName || `${awayName} vs ${homeName}`;
-
-  const scenario = isPre
-    ? `${gameName} is about to start! ${awayName} (${payload.records.away}) vs ${homeName} (${payload.records.home}). Spread: ${payload.odds?.spread || 'unknown'}. Over/Under: ${payload.odds?.overUnder || 'unknown'}.`
-    : `${gameName} is OVER! Final: ${awayName} ${payload.score.away} - ${homeName} ${payload.score.home}.`;
-
-  return `You are an AI commentary engine for a live ${sport} broadcast.
-
-${sportCtx.promptFrame}
-
-You produce short, entertaining, argumentative commentary between two unhinged commentators.
-
-COMMENTATOR A — "${commentatorA.name}"
-- Rooting for: ${teamA}
-- Personality: ${personalityA}
-
-COMMENTATOR B — "${commentatorB.name}"
-- Rooting for: ${teamB}
-- Personality: ${personalityB}
-
-They argue DIRECTLY. Never agree. Keep it punchy and short.
-
-Scenario: ${scenario}
-
-${isPre ? 'Generate pre-game hype trash talk. Each commentator should make a bold prediction.' : 'Generate post-game reaction. Winner\'s commentator gloats, loser\'s makes excuses.'}
-
-OUTPUT FORMAT — Produce EXACTLY 3 turns:
-[A] ${commentatorA.name}. 1-2 sentences.
-[B] ${commentatorB.name}. 2-3 sentences.
-[A] ${commentatorA.name} fires back. 1-2 sentences.${isPre ? ' Include a score prediction.' : ''}
-
-Respond with ONLY the 3 turns. No preamble.`;
+function buildPreGamePrompt(p, g, s) {
+  return `Argue about ${p.awayTeam.name} vs ${p.homeTeam.name}. Be unhinged. 3 turns: [A], [B], [A].`;
 }
 
-// ─── BACKWARD COMPATIBLE OLD ROUTES ───
-// These proxy to the first active session
-
-async function getFirstActiveSession() {
-  const snap = await db.collection('sessions').where('status', '==', 'active').limit(1).get();
-  if (snap.empty) return null;
-  return snap.docs[0].data();
-}
-
-// Old scoreboard route (still works directly with NFL)
-const ESPN_SCOREBOARD_NFL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/scoreboard?seasontype=3';
-const ESPN_SUMMARY_NFL = (id) => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/summary?event=${id}`;
-const ESPN_ROSTER_NFL = (teamId) => `https://site.api.espn.com/apis/site/v2/sports/football/nfl/teams/${teamId}/roster`;
-const ESPN_NEWS_NFL = 'https://site.api.espn.com/apis/site/v2/sports/football/nfl/news?limit=15';
-
-let superBowlEventId = null;
-let superBowlTeams = null;
-
-async function findSuperBowl() {
-  const data = await fetchCached('scoreboard', ESPN_SCOREBOARD_NFL, CACHE_TTL.scoreboard);
-  const events = data.events || [];
-  let sbEvent = events.find(e =>
-    (e.name || '').toLowerCase().includes('super bowl') ||
-    (e.shortName || '').toLowerCase().includes('super bowl') ||
-    (e.competitions?.[0]?.notes?.[0]?.headline || '').toLowerCase().includes('super bowl')
-  );
-  if (!sbEvent && events.length > 0) sbEvent = events[events.length - 1];
-  if (sbEvent) {
-    superBowlEventId = sbEvent.id;
-    const comp = sbEvent.competitions?.[0];
-    if (comp) {
-      const homeTeam = comp.competitors?.find(c => c.homeAway === 'home');
-      const awayTeam = comp.competitors?.find(c => c.homeAway === 'away');
-      superBowlTeams = {
-        home: { id: homeTeam?.team?.id, abbr: homeTeam?.team?.abbreviation },
-        away: { id: awayTeam?.team?.id, abbr: awayTeam?.team?.abbreviation },
-      };
-    }
-  }
-  return sbEvent;
-}
-
-findSuperBowl().then(sb => {
-  if (sb) console.log(`Found Super Bowl: ${sb.name} (Event ID: ${sb.id})`);
-  else console.log('No Super Bowl event found in current postseason scoreboard');
-}).catch(err => console.error('Init error:', err.message));
-
-app.get('/api/scoreboard', async (req, res) => {
-  try {
-    const data = await fetchCached('scoreboard', ESPN_SCOREBOARD_NFL, CACHE_TTL.scoreboard);
-    const events = parseScoreboard(data);
-    res.json({ events, superBowlEventId });
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch scoreboard', message: err.message });
-  }
-});
-
-app.get('/api/game', async (req, res) => {
-  try {
-    // Try session-based first
-    const session = await getFirstActiveSession();
-    if (session) {
-      const url = espnScoreboard(session.espnSlug);
-      const data = await fetchCached(`scoreboard_${session.espnSlug}`, url, CACHE_TTL.scoreboard);
-      const events = parseScoreboard(data);
-      const game = events.find(e => e.id === session.espnEventId);
-      if (game) return res.json(game);
-    }
-    // Fallback to old Super Bowl logic
-    await findSuperBowl();
-    const data = await fetchCached('scoreboard', ESPN_SCOREBOARD_NFL, CACHE_TTL.scoreboard);
-    const events = parseScoreboard(data);
-    const sb = events.find(e => e.id === superBowlEventId) || events[events.length - 1];
-    if (!sb) return res.json({ error: 'No game found', events: [] });
-    res.json(sb);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch game', message: err.message });
-  }
-});
-
-app.get('/api/summary', async (req, res) => {
-  try {
-    const session = await getFirstActiveSession();
-    if (session) {
-      const url = espnSummary(session.espnSlug, session.espnEventId);
-      const data = await fetchCached(`summary_${session.espnEventId}`, url, CACHE_TTL.summary);
-      return res.json(parseSummary(data));
-    }
-    if (!superBowlEventId) await findSuperBowl();
-    const eventId = req.query.event || superBowlEventId;
-    if (!eventId) return res.status(404).json({ error: 'No event ID available' });
-    const data = await fetchCached(`summary_${eventId}`, ESPN_SUMMARY_NFL(eventId), CACHE_TTL.summary);
-    res.json(parseSummary(data));
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch summary', message: err.message });
-  }
-});
-
-app.get('/api/roster/:teamId', async (req, res) => {
-  try {
-    const teamId = req.params.teamId;
-    const data = await fetchCached(`roster_${teamId}`, ESPN_ROSTER_NFL(teamId), CACHE_TTL.roster);
-    res.json(parseRoster(data));
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch roster', message: err.message });
-  }
-});
-
-app.get('/api/news', async (req, res) => {
-  try {
-    const session = await getFirstActiveSession();
-    if (session) {
-      const url = espnNews(session.espnSlug);
-      const data = await fetchCached(`news_${session.espnSlug}`, url, CACHE_TTL.news);
-      const articles = (data.articles || []).slice(0, 15).map(a => ({
-        headline: a.headline, description: a.description, published: a.published,
-        image: a.images?.[0]?.url, link: a.links?.web?.href,
-      }));
-      return res.json(articles);
-    }
-    const data = await fetchCached('news', ESPN_NEWS_NFL, CACHE_TTL.news);
-    const articles = (data.articles || []).slice(0, 15).map(a => ({
-      headline: a.headline, description: a.description, published: a.published,
-      image: a.images?.[0]?.url, link: a.links?.web?.href,
-    }));
-    res.json(articles);
-  } catch (err) {
-    res.status(502).json({ error: 'Failed to fetch news', message: err.message });
-  }
-});
-
-// Old commentary routes — proxy to first active session
-app.get('/api/commentary', async (req, res) => {
-  try {
-    const session = await getFirstActiveSession();
-    if (session) {
-      // Redirect internally to session commentary
-      const response = await fetch(`http://127.0.0.1:${PORT}/api/sessions/${session.id}/commentary/latest`);
-      const data = await response.json();
-      return res.json(data);
-    }
-    res.json({ turns: [], status: 'no_session', message: 'No active session' });
-  } catch (err) {
-    res.status(500).json({ turns: [], status: 'error', message: err.message });
-  }
-});
-
-app.get('/api/commentary/latest', async (req, res) => {
-  try {
-    const session = await getFirstActiveSession();
-    if (session) {
-      const response = await fetch(`http://127.0.0.1:${PORT}/api/sessions/${session.id}/commentary/latest`);
-      const data = await response.json();
-      return res.json(data);
-    }
-    res.json({ turns: [], status: 'no_session', message: 'No active session' });
-  } catch (err) {
-    res.status(500).json({ turns: [], status: 'error', message: err.message });
-  }
-});
-
-app.get('/api/commentary/history', async (req, res) => {
-  try {
-    const session = await getFirstActiveSession();
-    if (session) {
-      const runtime = sessionRuntimes.get(session.id);
-      return res.json(runtime?.commentaryHistory || []);
-    }
-    res.json([]);
-  } catch (err) {
-    res.json([]);
-  }
-});
-
-// Health/status
-app.get('/api/status', (req, res) => {
-  res.json({
-    status: 'ok',
-    superBowlEventId,
-    superBowlTeams,
-    activeSessions: sessionRuntimes.size,
-    cacheKeys: Object.keys(cache),
-    uptime: process.uptime(),
-  });
-});
-
-// ─── ELEVENLABS TTS ───
-const ELEVENLABS_API_KEY = 'sk_a3c8531fdcdb20889cfc4b06b86edde029d8f73d0789be50';
-
-app.post('/api/tts', async (req, res) => {
-  try {
-    const { text, voiceId } = req.body;
-    if (!text) return res.status(400).json({ error: 'text required' });
-    
-    const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceId || '21m00Tcm4TlvDq8ikWAM'}`, {
-      method: 'POST',
-      headers: {
-        'xi-api-key': ELEVENLABS_API_KEY,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        text,
-        model_id: "eleven_turbo_v2_5",
-        voice_settings: { stability: 0.5, similarity_boost: 0.75 }
-      }),
-    });
-    
-    if (!response.ok) {
-      const errText = await response.text();
-      throw new Error(`ElevenLabs Error: ${errText}`);
-    }
-    
-    const arrayBuffer = await response.arrayBuffer();
-    const audioBase64 = Buffer.from(arrayBuffer).toString('base64');
-    
-    res.json({ audio: audioBase64, format: 'mp3' });
-  } catch (err) {
-    console.error('TTS error:', err.message);
-    res.status(500).json({ error: err.message });
-  }
-});
-
-// Serve the SPA (must be last)
-app.get('*', (req, res) => {
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
-});
-
-app.listen(PORT, '0.0.0.0', () => {
-  console.log(`Sushi Live Sports Commentary running on http://localhost:${PORT}`);
-  console.log(`Admin panel: http://localhost:${PORT}/admin`);
-  console.log(`Fetching live data from ESPN API...`);
-});
+// ─── START ───
+app.listen(PORT, '0.0.0.0', () => console.log(`Sushi on ${PORT}`));

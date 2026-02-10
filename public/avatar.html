@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Sushi - VRM Cinematic</title>
+    <title>Sushi - VRM Cinematic Stream</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -66,6 +66,7 @@
             text-align: center; z-index: 200;
             box-shadow: 0 30px 60px rgba(0,0,0,0.6);
         }
+        @keyframes slideUp { from { transform: translate(-50%, 60px); opacity: 0; } to { transform: translate(-50%, 0); opacity: 1; } }
         .subtitle-name { font-size: 13px; font-weight: 900; color: #FFB81C; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 3px; }
         .subtitle-text { font-size: 20px; line-height: 1.6; color: #fff; font-weight: 600; }
 
@@ -75,6 +76,7 @@
         }
         .spinner { width: 70px; height: 70px; border: 5px solid rgba(255,255,255,0.05); border-top-color: #FFB81C; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
+        .loading-text { margin-top: 25px; font-weight: 900; letter-spacing: 6px; color: #FFB81C; font-size: 14px; text-transform: uppercase; }
         
         .start-overlay {
             position: fixed; inset: 0; z-index: 500;
@@ -83,7 +85,7 @@
         }
         .start-btn {
             padding: 28px 56px; border-radius: 60px;
-            background: #fff; color: #000; font-weight: 950; font-size: 24px;
+            background: #fff; color: #000; font-weight: 900; font-size: 22px;
             box-shadow: 0 20px 50px rgba(255,184,28,0.5);
             letter-spacing: 2px; transition: all 0.3s;
         }
@@ -92,8 +94,8 @@
 <body>
     <div id="root"></div>
     
-    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
-    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js" crossorigin></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js" crossorigin></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
     
     <script type="importmap">
@@ -117,30 +119,31 @@
     
     <script type="text/babel">
         const { useState, useEffect, useRef, useCallback } = React;
-        const SAKURA_URL = 'https://raw.githubusercontent.com/pixiv/three-vrm/release/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
-        const YUKI_URL = '/Avatar.vrm';
+        const DEFAULT_SAKURA_URL = 'https://raw.githubusercontent.com/pixiv/three-vrm/release/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
+        const DEFAULT_YUKI_URL = '/Avatar.vrm';
 
         const damp = (current, target, lambda, delta) => THREE.MathUtils.damp(current, target, lambda, delta);
         const noise = (t) => Math.sin(t) + Math.sin(t * 2.5) * 0.5;
 
-        const events = {
+        const avatarEvents = {
             listeners: [],
-            sub(fn) { this.listeners.push(fn); return () => this.listeners = this.listeners.filter(l => l !== fn); },
+            subscribe(fn) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter(l => l !== fn); }; },
             emit(side, type, data) { this.listeners.forEach(l => l(side, type, data)); }
         };
 
-        class VoiceService {
-            constructor() { this.ctx = null; }
+        class TTSService {
+            constructor() { this.audioContext = null; this.isSpeaking = false; }
             async init() {
-                if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-                if (this.ctx.state === 'suspended') await this.ctx.resume();
-                const b = this.ctx.createBuffer(1, 1, 22050);
-                const s = this.ctx.createBufferSource(); s.buffer = b;
-                s.connect(this.ctx.destination); s.start(0);
+                if (!this.audioContext) this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if (this.audioContext.state === 'suspended') await this.audioContext.resume();
+                const b = this.audioContext.createBuffer(1, 1, 22050);
+                const s = this.audioContext.createBufferSource(); s.buffer = b;
+                s.connect(this.audioContext.destination); s.start(0);
                 const u = new SpeechSynthesisUtterance(" ");
                 u.volume = 0; window.speechSynthesis.speak(u);
             }
             async speak(text, side, voiceId) {
+                if (this.isSpeaking) return; this.isSpeaking = true;
                 await this.init();
                 try {
                     const res = await fetch('/api/tts', {
@@ -148,54 +151,46 @@
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ text, voiceId })
                     });
-                    if (!res.ok) throw new Error('API Error');
+                    if (!res.ok) throw new Error("TTS API Error");
                     const data = await res.json();
-                    if (!data.audio) throw new Error('Empty Audio');
-
+                    if (!data.audio) throw new Error("No audio");
                     const bin = atob(data.audio.replace(/\s/g, ''));
                     const buf = new Uint8Array(bin.length);
                     for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
-
-                    const ad = await this.ctx.decodeAudioData(buf.buffer);
-                    const src = this.ctx.createBufferSource(); src.buffer = ad;
-                    const ana = this.ctx.createAnalyser(); ana.fftSize = 256;
-                    src.connect(ana); ana.connect(this.ctx.destination);
-
-                    const dat = new Uint8Array(ana.frequencyBinCount);
-                    const dur = ad.duration * 1000; const start = Date.now();
+                    const audioBuffer = await this.audioContext.decodeAudioData(buf.buffer);
+                    const source = this.audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    const analyser = this.audioContext.createAnalyser();
+                    analyser.fftSize = 256; source.connect(analyser); analyser.connect(this.audioContext.destination);
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    const duration = audioBuffer.duration * 1000; const start = Date.now();
                     return new Promise(resolve => {
+                        let active = true;
                         const loop = () => {
-                            if (Date.now() - start > dur) return;
-                            ana.getByteFrequencyData(dat);
-                            let avg = 0; for(let i=0; i<dat.length; i++) avg += dat[i];
-                            avg /= dat.length;
-                            events.emit(side, 'vis', { v: avg > 20 ? ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)] : 'sil', vol: avg/255 });
+                            if (!active) return;
+                            if (Date.now() - start > duration) { active = false; resolve(); return; }
+                            analyser.getByteFrequencyData(dataArray);
+                            let avg = 0; for(let i=0; i<dataArray.length; i++) avg += dataArray[i];
+                            avg /= dataArray.length;
+                            avatarEvents.emit(side, 'viseme', { viseme: avg > 25 ? ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)] : 'sil', volume: avg/255 });
                             requestAnimationFrame(loop);
                         };
-                        src.onended = () => { events.emit(side, 'vis', { v: 'sil', vol: 0 }); resolve(); };
-                        src.start(0);
-                        loop();
+                        source.onended = () => { active = false; this.isSpeaking = false; avatarEvents.emit(side, 'viseme', { viseme: 'sil', volume: 0 }); resolve(); };
+                        source.start(0); loop();
                     });
                 } catch (e) {
-                    console.warn("TTS Error:", e);
-                    return new Promise(resolve => {
-                        const utter = new SpeechSynthesisUtterance(text);
-                        utter.onboundary = (ev) => {
-                            if (ev.name === 'word') {
-                                events.emit(side, 'vis', { v: ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)], volume: 0.5 });
-                                setTimeout(() => events.emit(side, 'vis', { v: 'sil', vol: 0 }), 100);
-                            }
-                        };
-                        utter.onend = resolve;
-                        window.speechSynthesis.speak(utter);
+                    console.warn("TTS Fallback", e);
+                    return new Promise(r => {
+                        const u = new SpeechSynthesisUtterance(text);
+                        u.onboundary = (ev) => { if (ev.name === 'word') { avatarEvents.emit(side, 'viseme', { viseme: ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)], volume: 0.5 }); setTimeout(() => avatarEvents.emit(side, 'viseme', { viseme: 'sil', volume: 0 }), 100); } };
+                        u.onend = () => { this.isSpeaking = false; r(); }; window.speechSynthesis.speak(u);
                     });
                 }
             }
         }
 
         function Avatar({ side, modelUrl, activeSpeaker }) {
-            const canvasRef = useRef(null), vrmRef = useRef(null), [loaded, setLoaded] = useState(false);
-            const speakerRef = useRef(activeSpeaker);
+            const canvasRef = useRef(null), vrmRef = useRef(null), speakerRef = useRef(activeSpeaker), isLoadedRef = useRef(false);
             useEffect(() => { speakerRef.current = activeSpeaker; }, [activeSpeaker]);
 
             useEffect(() => {
@@ -203,89 +198,67 @@
                 const init = () => {
                     const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = window;
                     const scene = new THREE.Scene(), cam = new THREE.PerspectiveCamera(30, canvasRef.current.clientWidth / canvasRef.current.clientHeight, 0.1, 1000);
-                    cam.position.set(0, 1.4, 2.5); cam.lookAt(0, 1.25, 0);
+                    cam.position.set(0, 1.35, 2.2); cam.lookAt(0, 1.25, 0);
                     const ren = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
                     ren.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight); ren.setPixelRatio(window.devicePixelRatio);
-                    scene.add(new THREE.AmbientLight(0xffffff, 0.6));
-                    const l = new THREE.DirectionalLight(0xffffff, 1.2); l.position.set(1, 2, 3); scene.add(l);
+                    scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+                    const key = new THREE.DirectionalLight(0xffeeb1, 1.5); key.position.set(-1, 2, 3); scene.add(key);
+                    const rim = new THREE.DirectionalLight(0x4455ff, 2.0); rim.position.set(2, 2, -2); scene.add(rim);
 
-                    const loader = new GLTFLoader();
-                    loader.register(p => new VRMLoaderPlugin(p));
-                    loader.load(modelUrl, gltf => {
+                    new GLTFLoader().register(p => new VRMLoaderPlugin(p)).load(modelUrl || (side === 'left' ? DEFAULT_SAKURA_URL : DEFAULT_YUKI_URL), gltf => {
                         if (!mounted) return;
                         const vrm = gltf.userData.vrm;
                         if (vrm) {
                             vrmRef.current = vrm; VRMUtils.rotateVRM0(vrm); scene.add(vrm.scene);
                             if (vrm.humanoid) {
-                                ['leftUpperArm','rightUpperArm'].forEach(b => {
-                                    const n = vrm.humanoid.getNormalizedBoneNode(b);
-                                    if (n) n.rotation.z = b.includes('left') ? -1.4 : 1.4;
-                                });
-                                vrm.humanoid.update();
+                                const l = vrm.humanoid.getNormalizedBoneNode('leftUpperArm'), r = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+                                if (l) l.rotation.z = -1.35; if (r) r.rotation.z = 1.35;
                             }
                         } else { scene.add(gltf.scene); }
-                        setLoaded(true);
+                        isLoadedRef.current = true;
                     });
 
                     const clock = new THREE.Clock();
                     const animate = () => {
                         if (!mounted) return; requestAnimationFrame(animate);
                         const dt = Math.min(clock.getDelta(), 0.05), time = clock.getElapsedTime();
-                        if (vrmRef.current) {
+                        if (vrmRef.current && isLoadedRef.current) {
                             const h = vrmRef.current.humanoid;
                             if (h) {
-                                const spine = h.getNormalizedBoneNode('spine'), head = h.getNormalizedBoneNode('head');
-                                const lua = h.getNormalizedBoneNode('leftUpperArm'), rua = h.getNormalizedBoneNode('rightUpperArm');
-                                const lla = h.getNormalizedBoneNode('leftLowerArm'), rla = h.getNormalizedBoneNode('rightLowerArm');
-                                const isSpeaking = speakerRef.current === side;
-                                
-                                const sway = noise(time * 0.2) * 0.02;
-                                if (spine) {
-                                    spine.rotation.x = damp(spine.rotation.x, isSpeaking ? 0.1 : sway, 2, dt);
-                                    spine.position.y = Math.sin(time * 0.8) * 0.01;
-                                }
-                                if (head) {
-                                    const targetY = isSpeaking ? 0 : (side === 'left' ? 0.3 : -0.3);
-                                    head.rotation.y = damp(head.rotation.y, targetY + sway, 3, dt);
-                                    head.rotation.x = damp(head.rotation.x, isSpeaking ? Math.sin(time * 10) * 0.05 : 0, 5, dt);
-                                }
-
-                                let lz = -1.4, rz = 1.4, lx = 0, rx = 0, llx = -0.1, rlx = -0.1;
-                                if (isSpeaking) {
-                                    const g = noise(time * 1.5);
-                                    lz = -1.1 + g * 0.1; rz = 1.1 - g * 0.1;
-                                    lx = -0.4 + g * 0.2; rx = -0.4 + g * 0.2;
-                                    llx = -0.7 + g * 0.3; rlx = -0.7 + g * 0.3;
-                                }
+                                const spine = h.getNormalizedBoneNode('spine'), head = h.getNormalizedBoneNode('head'), lua = h.getNormalizedBoneNode('leftUpperArm'), rua = h.getNormalizedBoneNode('rightUpperArm'), lla = h.getNormalizedBoneNode('leftLowerArm'), rla = h.getNormalizedBoneNode('rightLowerArm');
+                                const isSpeaking = speakerRef.current === side, sway = noise(time * 0.2) * 0.02;
+                                if (spine) { spine.rotation.x = damp(spine.rotation.x, isSpeaking ? 0.15 : sway, 2, dt); spine.rotation.y = damp(spine.rotation.y, sway * 0.5, 2, dt); spine.position.y = Math.sin(time * 0.8) * 0.01; }
+                                if (head) { const ty = isSpeaking ? 0 : (side === 'left' ? 0.3 : -0.3); const tx = isSpeaking ? Math.sin(time * 2) * 0.05 : 0; head.rotation.y = damp(head.rotation.y, ty + sway, 3, dt); head.rotation.x = damp(head.rotation.x, tx, 5, dt); }
+                                let lz = -1.35, rz = 1.35, lx = 0, rx = 0, llx = -0.1, rlx = -0.1;
+                                if (isSpeaking) { const g = noise(time * 1.5); lz = -1.1 + g * 0.1; rz = 1.1 - g * 0.1; lx = -0.4 + g * 0.2; rx = -0.4 + g * 0.2; llx = -0.8 + g * 0.3; rlx = -0.8 + g * 0.3; }
                                 if (lua) { lua.rotation.z = damp(lua.rotation.z, lz, 4, dt); lua.rotation.x = damp(lua.rotation.x, lx, 4, dt); }
                                 if (rua) { rua.rotation.z = damp(rua.rotation.z, rz, 4, dt); rua.rotation.x = damp(rua.rotation.x, rx, 4, dt); }
-                                if (lla) lla.rotation.x = damp(lla.rotation.x, llx, 4, dt);
-                                if (rla) rla.rotation.x = damp(rla.rotation.x, rlx, 4, dt);
+                                if (lla) lla.rotation.x = damp(lla.rotation.x, llx, 4, dt); if (rla) rla.rotation.x = damp(rla.rotation.x, rlx, 4, dt);
                             }
                             vrmRef.current.update(dt);
-                            if (vrmRef.current.expressionManager && Math.random() < 0.005) {
-                                vrmRef.current.expressionManager.setValue('blink', 1);
-                                setTimeout(() => vrmRef.current?.expressionManager?.setValue('blink', 0), 150);
-                            }
+                            const m = vrmRef.current.expressionManager;
+                            if (m && Math.random() < 0.005) { m.setValue('blink', 1); setTimeout(() => m.setValue('blink', 0), 150); }
                         }
                         ren.render(scene, cam);
                     };
                     animate();
+                    window.addEventListener('resize', () => { cam.aspect = canvasRef.current.clientWidth / canvasRef.current.clientHeight; cam.updateProjectionMatrix(); ren.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight); });
                 };
                 if (window.modulesLoaded) init(); else window.addEventListener('modulesLoaded', init);
                 return () => mounted = false;
             }, [side, modelUrl]);
 
             useEffect(() => {
-                return events.sub((s, type, data) => {
-                    if (s !== side || !vrmRef.current?.expressionManager) return;
+                return avatarEvents.subscribe((targetSide, type, data) => {
+                    if (targetSide !== side || !vrmRef.current?.expressionManager) return;
                     const m = vrmRef.current.expressionManager, map = m._expressionMap;
-                    if (type === 'vis') {
+                    if (type === 'viseme') {
                         ['aa','ih','ou','E','oh','a','i','u','e','o'].forEach(v => { if (v in map) m.setValue(v, 0); });
-                        if (data.v !== 'sil') {
-                            let t = data.v;
-                            if (!(t in map)) { const f = { 'aa':'a','ih':'i','ou':'u','E':'e','oh':'o' }; t = f[data.v] || data.v[0].toLowerCase(); }
-                            if (t in map) m.setValue(t, data.vol * 2);
+                        if (data.viseme !== 'sil') {
+                            let t = data.viseme;
+                            if (!(t in map)) { const f = { 'aa':'a','ih':'i','ou':'u','E':'e','oh':'o' }; t = f[data.viseme] || data.viseme[0].toLowerCase(); }
+                            if (!(t in map)) t = t.toUpperCase();
+                            if (t in map) m.setValue(t, data.volume * 2.0);
                         }
                         m.update();
                     }
@@ -298,11 +271,19 @@
         function App() {
             const [started, setStarted] = useState(false), [game, setGame] = useState(null), [commentary, setCommentary] = useState(null);
             const [activeSpeaker, setActiveSpeaker] = useState(null), [sub, setSub] = useState({ name: "", text: "" });
-            const voiceRef = useRef(new VoiceService()), queueRef = useRef([]), isProcessingRef = useRef(false), voicedRef = useRef(new Set()), lastSeqRef = useRef(-1);
+            const [sessionMeta, setSessionMeta] = useState(null);
+            const voiceRef = useRef(new TTSService()), queueRef = useRef([]), isProcessingRef = useRef(false), voicedRef = useRef(new Set()), lastSeqRef = useRef(-1);
 
             useEffect(() => {
-                if (!started) return;
                 const sid = new URLSearchParams(window.location.search).get('session');
+                if (!started || !sid) return;
+                
+                // Fetch session meta once
+                fetch('/api/sessions').then(r => r.json()).then(sessions => {
+                    const s = sessions.find(s => s.id === sid);
+                    if (s) setSessionMeta(s);
+                });
+
                 const poll = async () => {
                     try {
                         const [g, c] = await Promise.all([
@@ -313,28 +294,32 @@
                         const seq = c.play?.seq || c.timestamp, pid = c.play?.description || c.timestamp;
                         if (seq !== lastSeqRef.current && !voicedRef.current.has(pid)) {
                             lastSeqRef.current = seq; voicedRef.current.add(pid);
-                            setCommentary(c); queueRef.current = [...c.turns]; runQueue();
+                            setCommentary(c); queueRef.current = [...c.turns];
+                            processQueue();
                         }
                     } catch (e) {}
                 };
-                poll(); const itv = setInterval(poll, 10000); return () => clearInterval(itv);
+                poll(); const itv = setInterval(poll, 8000); return () => clearInterval(itv);
             }, [started]);
 
-            const runQueue = async () => {
+            const processQueue = async () => {
                 if (isProcessingRef.current || queueRef.current.length === 0) return;
                 isProcessingRef.current = true;
                 while (queueRef.current.length > 0) {
-                    const t = queueRef.current.shift(), side = t.speaker === 'A' ? 'left' : 'right';
-                    const vid = side === 'left' ? '21m00Tcm4TlvDq8ikWAM' : 'ErXwobaYiN019PkySvjV';
+                    const t = queueRef.current.shift();
+                    const side = t.speaker === 'A' ? 'left' : 'right';
+                    const voiceId = side === 'left' ? '21m00Tcm4TlvDq8ikWAM' : 'ErXwobaYiN019PkySvjV';
                     setSub({ name: t.name, text: t.text }); setActiveSpeaker(side);
-                    await voiceRef.current.speak(t.text, side, vid);
+                    await voiceRef.current.speak(t.text, side, voiceId);
                     setActiveSpeaker(null); setSub({ name: "", text: "" });
                     await new Promise(r => setTimeout(r, 1000));
                 }
                 isProcessingRef.current = false;
             };
 
-            if (!started) return <div className="start-overlay" onClick={async () => { await voiceRef.current.init(); setStarted(true); }}><div className="start-btn">TAP TO ENTER STREAM</div></div>;
+            if (!started) return <div className="start-overlay" onClick={async () => { await voiceRef.current.init(); setStarted(true); }}><div className="start-btn">TAP TO START STREAM</div></div>;
+
+            const cA = sessionMeta?.commentators?.[0], cB = sessionMeta?.commentators?.[1];
 
             return (
                 <div id="root">
@@ -354,8 +339,8 @@
                         )}
                     </div>
                     <div className="vrm-stage">
-                        <Avatar side="left" modelUrl={SAKURA_URL} activeSpeaker={activeSpeaker} />
-                        <Avatar side="right" modelUrl={YUKI_URL} activeSpeaker={activeSpeaker} />
+                        <Avatar side="left" modelUrl={cA?.avatarUrl} activeSpeaker={activeSpeaker} />
+                        <Avatar side="right" modelUrl={cB?.avatarUrl} activeSpeaker={activeSpeaker} />
                     </div>
                     {sub.text && (
                         <div className="subtitle-box">

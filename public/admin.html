@@ -31,11 +31,11 @@
 <body class="font-sans text-white min-h-screen">
   <div id="root"></div>
   <script type="text/babel">
-    const { useState, useEffect, useCallback } = React;
+    const { useState, useEffect, useCallback, useRef } = React;
     const {
       Trophy, Shield, Play, Pause, Trash2, Plus, ArrowLeft,
       Loader2, Settings, Lock, Eye, EyeOff, Check, X, RefreshCw,
-      ChevronRight, Calendar, Users, Save, Download, Bookmark
+      ChevronRight, Calendar, Users, Save, Download, Bookmark, Upload, Clock
     } = LucideReact;
 
     const SPORT_ICONS = { football: '\uD83C\uDFC8', basketball: '\uD83C\uDFC0', baseball: '\u26BE', hockey: '\uD83C\uDFD2', soccer: '\u26BD' };
@@ -47,20 +47,19 @@
       romo: { name: 'Stats Guru Tony (Romo)', desc: 'Analytical, predicts plays, "HERE IT COMES!"' },
     };
 
-    // ─── API helpers ───
     function getToken() { return localStorage.getItem('sushi_admin_token'); }
     function setToken(t) { localStorage.setItem('sushi_admin_token', t); }
     function clearToken() { localStorage.removeItem('sushi_admin_token'); }
 
     async function api(path, opts = {}) {
       const token = getToken();
-      const headers = { 'Content-Type': 'application/json', ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      const headers = { 'Content-Type': opts.body instanceof FormData ? {} : { 'Content-Type': 'application/json' }, ...(token ? { Authorization: `Bearer ${token}` } : {}) };
+      if (opts.body instanceof FormData) delete headers['Content-Type'];
       const res = await fetch(path, { ...opts, headers });
       if (res.status === 401) { clearToken(); throw new Error('Unauthorized'); }
       return res.json();
     }
 
-    // ─── LOGIN ───
     function LoginScreen({ onLogin }) {
       const [password, setPassword] = useState('');
       const [error, setError] = useState('');
@@ -68,9 +67,7 @@
       const [showPw, setShowPw] = useState(false);
 
       const handleLogin = async (e) => {
-        e.preventDefault();
-        setLoading(true);
-        setError('');
+        e.preventDefault(); setLoading(true); setError('');
         try {
           const data = await api('/api/admin/login', { method: 'POST', body: JSON.stringify({ password }) });
           if (data.token) { setToken(data.token); onLogin(); }
@@ -81,37 +78,24 @@
 
       return (
         <div className="min-h-screen flex items-center justify-center px-4">
-          <div className="glass rounded-2xl p-8 w-full max-w-sm">
-            <div className="text-center mb-8">
-              <div className="flex justify-center mb-3"><Lock size={32} className="text-yellow-400" /></div>
-              <h1 className="text-xl font-black text-gradient">SUSHI ADMIN</h1>
-              <p className="text-xs text-gray-500 mt-1">Enter password to continue</p>
-            </div>
-            <form onSubmit={handleLogin}>
+          <div className="glass rounded-2xl p-8 w-full max-w-sm text-center">
+            <Lock size={32} className="text-yellow-400 mx-auto mb-3" />
+            <h1 className="text-xl font-black text-gradient">SUSHI ADMIN</h1>
+            <form onSubmit={handleLogin} className="mt-6">
               <div className="relative mb-4">
                 <input type={showPw ? 'text' : 'password'} value={password} onChange={e => setPassword(e.target.value)}
-                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400/50"
-                  placeholder="Password" autoFocus />
-                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-3 text-gray-600 hover:text-gray-400">
-                  {showPw ? <EyeOff size={16} /> : <Eye size={16} />}
-                </button>
+                  className="w-full bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm focus:outline-none focus:border-yellow-400/50" placeholder="Password" />
+                <button type="button" onClick={() => setShowPw(!showPw)} className="absolute right-3 top-3 text-gray-600">{showPw ? <EyeOff size={16} /> : <Eye size={16} />}</button>
               </div>
-              {error && <div className="text-red-400 text-xs mb-3 text-center">{error}</div>}
-              <button type="submit" disabled={loading || !password}
-                className="w-full py-3 rounded-xl bg-yellow-400/20 text-yellow-400 font-bold text-sm hover:bg-yellow-400/30 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
-                {loading ? <Loader2 size={16} className="animate-spin" /> : <Shield size={16} />}
-                {loading ? 'Logging in...' : 'Login'}
+              <button type="submit" disabled={loading} className="w-full py-3 rounded-xl bg-yellow-400/20 text-yellow-400 font-bold hover:bg-yellow-400/30 disabled:opacity-50">
+                {loading ? '...' : 'Login'}
               </button>
             </form>
-            <div className="text-center mt-6">
-              <a href="/" className="text-[10px] text-gray-600 hover:text-gray-400">Back to Sushi</a>
-            </div>
           </div>
         </div>
       );
     }
 
-    // ─── CREATE SESSION WIZARD ───
     function CreateSessionWizard({ onCreated, onCancel }) {
       const [step, setStep] = useState(1);
       const [sports, setSports] = useState(null);
@@ -121,511 +105,145 @@
       const [games, setGames] = useState([]);
       const [loadingGames, setLoadingGames] = useState(false);
       const [selectedGame, setSelectedGame] = useState(null);
+      const [preGameInterval, setPreGameInterval] = useState(45);
       const [commentators, setCommentators] = useState([
-        { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', customPrompt: '' },
-        { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', customPrompt: '' },
+        { id: 'A', name: 'Big Mike', team: 'away', personality: 'barkley', avatarUrl: '' },
+        { id: 'B', name: 'Salty Steve', team: 'home', personality: 'skip', avatarUrl: '' },
       ]);
       const [creating, setCreating] = useState(false);
-      const [savedPresets, setSavedPresets] = useState([]);
-      const [savingPreset, setSavingPreset] = useState(null); // index of commentator being saved
 
       useEffect(() => {
         api('/api/admin/sports').then(setSports).catch(() => {});
-        api('/api/admin/presets').then(setSavedPresets).catch(() => {});
       }, []);
 
       const browseGames = async () => {
-        if (!selectedSport || !selectedLeague) return;
         setLoadingGames(true);
         try {
-          const dateStr = selectedDate.replace(/-/g, '');
-          const data = await api(`/api/admin/browse/${selectedSport}/${selectedLeague}?date=${dateStr}`);
-          setGames(data.events || []);
-        } catch (err) { console.error(err); }
-        finally { setLoadingGames(false); }
+          const d = await api(`/api/admin/browse/${selectedSport}/${selectedLeague}?date=${selectedDate.replace(/-/g, '')}`);
+          setGames(d.events || []);
+        } finally { setLoadingGames(false); }
       };
 
-      useEffect(() => {
-        if (step === 3 && selectedSport && selectedLeague) browseGames();
-      }, [step]);
+      useEffect(() => { if (step === 3) browseGames(); }, [step]);
+
+      const handleUpload = async (idx, file) => {
+        const fd = new FormData(); fd.append('file', file);
+        try {
+          const d = await api('/api/admin/upload', { method: 'POST', body: fd });
+          updateCommentator(idx, 'avatarUrl', d.url);
+        } catch (e) { alert("Upload failed"); }
+      };
+
+      const updateCommentator = (idx, f, v) => {
+        const n = [...commentators]; n[idx] = { ...n[idx], [f]: v }; setCommentators(n);
+      };
 
       const handleCreate = async () => {
-        if (!selectedGame) return;
         setCreating(true);
         try {
           const body = {
-            sport: selectedSport,
-            league: selectedLeague,
-            espnEventId: selectedGame.id,
+            sport: selectedSport, league: selectedLeague, espnEventId: selectedGame.id,
             gameName: selectedGame.name || selectedGame.shortName,
-            gameDate: selectedGame.date,
-            homeTeam: {
-              id: selectedGame.home.id, name: selectedGame.home.name,
-              abbreviation: selectedGame.home.abbreviation, logo: selectedGame.home.logo,
-              color: selectedGame.home.color,
-            },
-            awayTeam: {
-              id: selectedGame.away.id, name: selectedGame.away.name,
-              abbreviation: selectedGame.away.abbreviation, logo: selectedGame.away.logo,
-              color: selectedGame.away.color,
-            },
-            commentators: commentators.map(c => ({
-              id: c.id, name: c.name, team: c.team,
-              personality: c.personality,
-              customPrompt: c.customPrompt || null,
-            })),
+            homeTeam: selectedGame.home, awayTeam: selectedGame.away,
+            commentators, settings: { preGameInterval }
           };
-          const session = await api('/api/admin/sessions', { method: 'POST', body: JSON.stringify(body) });
-          onCreated(session);
-        } catch (err) { alert('Failed to create: ' + err.message); }
-        finally { setCreating(false); }
-      };
-
-      const updateCommentator = (idx, field, value) => {
-        const next = [...commentators];
-        next[idx] = { ...next[idx], [field]: value };
-        setCommentators(next);
-      };
-
-      const saveAsPreset = async (idx) => {
-        const c = commentators[idx];
-        if (!c.name) return;
-        setSavingPreset(idx);
-        try {
-          const preset = await api('/api/admin/presets', {
-            method: 'POST',
-            body: JSON.stringify({ name: c.name, personality: c.personality, customPrompt: c.customPrompt || null }),
-          });
-          setSavedPresets(prev => [preset, ...prev]);
-        } catch (err) { alert('Failed to save preset'); }
-        finally { setSavingPreset(null); }
-      };
-
-      const loadPreset = (idx, preset) => {
-        const next = [...commentators];
-        next[idx] = { ...next[idx], name: preset.name, personality: preset.personality, customPrompt: preset.customPrompt || '' };
-        setCommentators(next);
-      };
-
-      const deletePreset = async (presetId) => {
-        try {
-          await api(`/api/admin/presets/${presetId}`, { method: 'DELETE' });
-          setSavedPresets(prev => prev.filter(p => p.id !== presetId));
-        } catch (err) { alert('Failed to delete preset'); }
+          await api('/api/admin/sessions', { method: 'POST', body: JSON.stringify(body) });
+          onCreated();
+        } finally { setCreating(false); }
       };
 
       return (
         <div className="glass rounded-2xl p-6">
-          <div className="flex items-center justify-between mb-6">
-            <h2 className="text-lg font-bold text-white">Create Session</h2>
-            <button onClick={onCancel} className="text-gray-600 hover:text-gray-400"><X size={20} /></button>
+          <div className="flex justify-between mb-6">
+            <h2 className="font-bold">New Session</h2>
+            <button onClick={onCancel}><X size={20}/></button>
           </div>
 
-          {/* Step indicators */}
-          <div className="flex items-center gap-2 mb-6">
-            {[1,2,3,4].map(s => (
-              <div key={s} className={`flex-1 h-1 rounded-full ${step >= s ? 'bg-yellow-400' : 'bg-white/10'}`} />
-            ))}
-          </div>
-
-          {/* Step 1: Pick Sport */}
           {step === 1 && (
-            <div>
-              <h3 className="text-sm font-bold text-gray-400 mb-4">Pick a Sport</h3>
-              {sports ? (
-                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                  {Object.entries(sports).map(([key, sport]) => (
-                    <button key={key} onClick={() => { setSelectedSport(key); setSelectedLeague(null); }}
-                      className={`p-4 rounded-xl text-center transition-all ${selectedSport === key ? 'bg-yellow-400/20 border border-yellow-400/30' : 'glass-bright hover:bg-white/10'}`}>
-                      <div className="text-3xl mb-2">{SPORT_ICONS[key] || '\uD83C\uDFC6'}</div>
-                      <div className="text-sm font-bold">{sport.name}</div>
-                    </button>
-                  ))}
-                </div>
-              ) : <div className="text-center py-8"><Loader2 size={24} className="animate-spin mx-auto text-gray-600" /></div>}
-
-              {selectedSport && sports?.[selectedSport] && (
-                <div className="mt-4">
-                  <h4 className="text-xs font-bold text-gray-500 mb-2 uppercase tracking-wider">League</h4>
-                  <div className="flex gap-2 flex-wrap">
-                    {sports[selectedSport].leagues.map(l => (
-                      <button key={l.id} onClick={() => setSelectedLeague(l.id)}
-                        className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${selectedLeague === l.id ? 'bg-yellow-400/20 text-yellow-400 border border-yellow-400/30' : 'bg-white/5 text-gray-400 hover:bg-white/10'}`}>
-                        {l.name}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="flex justify-end mt-6">
-                <button onClick={() => setStep(2)} disabled={!selectedSport || !selectedLeague}
-                  className="px-6 py-2 rounded-xl bg-yellow-400/20 text-yellow-400 font-bold text-sm disabled:opacity-30 hover:bg-yellow-400/30 transition-colors flex items-center gap-1">
-                  Next <ChevronRight size={14} />
+            <div className="grid grid-cols-2 gap-3">
+              {sports && Object.entries(sports).map(([k, s]) => (
+                <button key={k} onClick={() => { setSelectedSport(k); setStep(2); }} className="p-4 glass-bright rounded-xl hover:bg-white/10">
+                  <div className="text-3xl mb-2">{SPORT_ICONS[k]}</div>
+                  <div className="text-sm font-bold">{s.name}</div>
                 </button>
-              </div>
+              ))}
             </div>
           )}
 
-          {/* Step 2: Pick Date */}
           {step === 2 && (
-            <div>
-              <h3 className="text-sm font-bold text-gray-400 mb-4">Pick a Date</h3>
-              <div className="flex items-center gap-3 mb-4">
-                <Calendar size={20} className="text-gray-500" />
-                <input type="date" value={selectedDate} onChange={e => setSelectedDate(e.target.value)}
-                  className="bg-white/5 border border-white/10 rounded-xl px-4 py-3 text-sm text-white focus:outline-none focus:border-yellow-400/50 flex-1" />
-              </div>
-              <div className="flex gap-2">
-                {[-1, 0, 1, 2].map(offset => {
-                  const d = new Date(); d.setDate(d.getDate() + offset);
-                  const ds = d.toISOString().slice(0, 10);
-                  const labels = { '-1': 'Yesterday', '0': 'Today', '1': 'Tomorrow', '2': d.toLocaleDateString('en-US', { weekday: 'short' }) };
-                  return (
-                    <button key={offset} onClick={() => setSelectedDate(ds)}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-medium transition-all ${selectedDate === ds ? 'bg-yellow-400/20 text-yellow-400' : 'bg-white/5 text-gray-500 hover:bg-white/10'}`}>
-                      {labels[String(offset)]}
-                    </button>
-                  );
-                })}
-              </div>
-              <div className="flex justify-between mt-6">
-                <button onClick={() => setStep(1)} className="px-4 py-2 rounded-xl bg-white/5 text-gray-400 text-sm hover:bg-white/10">Back</button>
-                <button onClick={() => setStep(3)} className="px-6 py-2 rounded-xl bg-yellow-400/20 text-yellow-400 font-bold text-sm hover:bg-yellow-400/30 flex items-center gap-1">
-                  Browse Games <ChevronRight size={14} />
-                </button>
-              </div>
+            <div className="space-y-4">
+              {sports[selectedSport].leagues.map(l => (
+                <button key={l.id} onClick={() => { setSelectedLeague(l.id); setStep(3); }} className="w-full p-3 glass-bright rounded-xl text-left font-bold">{l.name}</button>
+              ))}
+              <button onClick={() => setStep(1)} className="text-xs text-gray-500">Back</button>
             </div>
           )}
 
-          {/* Step 3: Browse Games */}
           {step === 3 && (
-            <div>
-              <div className="flex items-center justify-between mb-4">
-                <h3 className="text-sm font-bold text-gray-400">
-                  {SPORT_ICONS[selectedSport]} {selectedLeague?.toUpperCase()} Games — {new Date(selectedDate + 'T12:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
-                </h3>
-                <button onClick={browseGames} className="text-gray-600 hover:text-gray-400"><RefreshCw size={14} /></button>
-              </div>
-
-              {loadingGames ? (
-                <div className="text-center py-12"><Loader2 size={24} className="animate-spin mx-auto text-gray-600" /><div className="text-xs text-gray-600 mt-2">Loading games...</div></div>
-              ) : games.length === 0 ? (
-                <div className="text-center py-12 text-gray-600">
-                  <div className="text-sm">No games found for this date</div>
-                  <div className="text-xs mt-1">Try a different date</div>
-                </div>
-              ) : (
-                <div className="space-y-3 max-h-96 overflow-y-auto pr-1">
-                  {games.map(g => {
-                    const isSelected = selectedGame?.id === g.id;
-                    return (
-                      <button key={g.id} onClick={() => setSelectedGame(g)}
-                        className={`w-full p-4 rounded-xl text-left transition-all ${isSelected ? 'bg-yellow-400/15 border border-yellow-400/30' : 'glass-bright hover:bg-white/10'}`}>
-                        <div className="flex items-center justify-between mb-2">
-                          <span className={`text-[10px] font-bold uppercase tracking-wider ${g.status?.state === 'in' ? 'text-red-400' : g.status?.state === 'post' ? 'text-gray-500' : 'text-gray-400'}`}>
-                            {g.status?.detail || 'Scheduled'}
-                          </span>
-                          {isSelected && <Check size={14} className="text-yellow-400" />}
-                        </div>
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            {g.away.logo && <img src={g.away.logo} className="w-6 h-6 object-contain" onError={e => e.target.style.display='none'} />}
-                            <span className="text-sm font-bold">{g.away.abbreviation}</span>
-                            <span className="text-lg font-black ml-1">{g.status?.state !== 'pre' ? g.away.score : ''}</span>
-                          </div>
-                          <span className="text-xs text-gray-600">@</span>
-                          <div className="flex items-center gap-2">
-                            <span className="text-lg font-black mr-1">{g.status?.state !== 'pre' ? g.home.score : ''}</span>
-                            <span className="text-sm font-bold">{g.home.abbreviation}</span>
-                            {g.home.logo && <img src={g.home.logo} className="w-6 h-6 object-contain" onError={e => e.target.style.display='none'} />}
-                          </div>
-                        </div>
-                        {g.name && <div className="text-[10px] text-gray-600 mt-1 text-center">{g.name}</div>}
-                      </button>
-                    );
-                  })}
-                </div>
-              )}
-
-              <div className="flex justify-between mt-6">
-                <button onClick={() => setStep(2)} className="px-4 py-2 rounded-xl bg-white/5 text-gray-400 text-sm hover:bg-white/10">Back</button>
-                <button onClick={() => setStep(4)} disabled={!selectedGame}
-                  className="px-6 py-2 rounded-xl bg-yellow-400/20 text-yellow-400 font-bold text-sm disabled:opacity-30 hover:bg-yellow-400/30 flex items-center gap-1">
-                  Configure <ChevronRight size={14} />
-                </button>
-              </div>
-            </div>
-          )}
-
-          {/* Step 4: Configure Commentators */}
-          {step === 4 && (
-            <div>
-              <h3 className="text-sm font-bold text-gray-400 mb-4">Configure Commentators</h3>
-
-              {selectedGame && (
-                <div className="glass rounded-xl p-3 mb-4 flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    {selectedGame.away.logo && <img src={selectedGame.away.logo} className="w-5 h-5" onError={e => e.target.style.display='none'} />}
-                    <span className="text-xs font-bold">{selectedGame.away.abbreviation}</span>
-                    <span className="text-xs text-gray-600">vs</span>
-                    <span className="text-xs font-bold">{selectedGame.home.abbreviation}</span>
-                    {selectedGame.home.logo && <img src={selectedGame.home.logo} className="w-5 h-5" onError={e => e.target.style.display='none'} />}
-                  </div>
-                  <span className="text-[10px] text-gray-500">{selectedGame.status?.detail}</span>
-                </div>
-              )}
-
-              {/* Saved Presets */}
-              {savedPresets.length > 0 && (
-                <div className="mb-4">
-                  <div className="flex items-center gap-2 mb-2">
-                    <Bookmark size={12} className="text-yellow-400" />
-                    <span className="text-[10px] font-bold text-gray-500 uppercase tracking-wider">Saved Commentators</span>
-                  </div>
-                  <div className="flex gap-2 flex-wrap">
-                    {savedPresets.map(sp => (
-                      <div key={sp.id} className="glass rounded-lg px-3 py-2 flex items-center gap-2 group">
-                        <div className="flex-1 min-w-0">
-                          <div className="text-xs font-bold text-white truncate">{sp.name}</div>
-                          <div className="text-[9px] text-gray-500">{sp.customPrompt ? 'Custom' : PRESETS[sp.personality]?.name || sp.personality}</div>
-                        </div>
-                        <div className="flex items-center gap-1">
-                          <button onClick={() => loadPreset(0, sp)} title="Load as Commentator A"
-                            className="text-[9px] px-1.5 py-0.5 rounded bg-blue-500/20 text-blue-400 hover:bg-blue-500/30 font-bold">A</button>
-                          <button onClick={() => loadPreset(1, sp)} title="Load as Commentator B"
-                            className="text-[9px] px-1.5 py-0.5 rounded bg-purple-500/20 text-purple-400 hover:bg-purple-500/30 font-bold">B</button>
-                          <button onClick={() => deletePreset(sp.id)} title="Delete preset"
-                            className="text-gray-700 hover:text-red-400 transition-colors opacity-0 group-hover:opacity-100">
-                            <Trash2 size={10} />
-                          </button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div className="space-y-4">
-                {commentators.map((c, idx) => (
-                  <div key={c.id} className="glass rounded-xl p-4">
-                    <div className="flex items-center justify-between mb-3">
-                      <div className="flex items-center gap-2">
-                        <div className="w-6 h-6 rounded-full bg-yellow-400/20 flex items-center justify-center text-xs font-black text-yellow-400">{c.id}</div>
-                        <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">Commentator {c.id}</span>
-                      </div>
-                      <button onClick={() => saveAsPreset(idx)} disabled={savingPreset === idx || !c.name}
-                        className="flex items-center gap-1 text-[9px] px-2 py-1 rounded-lg bg-white/5 text-gray-500 hover:bg-yellow-400/20 hover:text-yellow-400 transition-all disabled:opacity-30"
-                        title="Save as preset">
-                        {savingPreset === idx ? <Loader2 size={10} className="animate-spin" /> : <Save size={10} />}
-                        Save Preset
-                      </button>
-                    </div>
-
-                    <div className="space-y-3">
-                      <div>
-                        <label className="text-[10px] text-gray-600 uppercase tracking-wider mb-1 block">Name</label>
-                        <input value={c.name} onChange={e => updateCommentator(idx, 'name', e.target.value)}
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-400/50" />
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] text-gray-600 uppercase tracking-wider mb-1 block">Rooting For</label>
-                        <div className="flex gap-2">
-                          <button onClick={() => updateCommentator(idx, 'team', 'away')}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${c.team === 'away' ? 'bg-yellow-400/20 text-yellow-400 border border-yellow-400/30' : 'bg-white/5 text-gray-500'}`}>
-                            {selectedGame?.away?.abbreviation || 'Away'} (Away)
-                          </button>
-                          <button onClick={() => updateCommentator(idx, 'team', 'home')}
-                            className={`flex-1 py-2 rounded-lg text-xs font-bold transition-all ${c.team === 'home' ? 'bg-yellow-400/20 text-yellow-400 border border-yellow-400/30' : 'bg-white/5 text-gray-500'}`}>
-                            {selectedGame?.home?.abbreviation || 'Home'} (Home)
-                          </button>
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] text-gray-600 uppercase tracking-wider mb-1 block">Personality Preset</label>
-                        <div className="grid grid-cols-2 gap-2">
-                          {Object.entries(PRESETS).map(([key, p]) => (
-                            <button key={key} onClick={() => updateCommentator(idx, 'personality', key)}
-                              className={`p-2 rounded-lg text-left transition-all ${c.personality === key ? 'bg-yellow-400/15 border border-yellow-400/30' : 'bg-white/5 hover:bg-white/10'}`}>
-                              <div className="text-xs font-bold text-white">{p.name}</div>
-                              <div className="text-[9px] text-gray-500 mt-0.5">{p.desc}</div>
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-
-                      <div>
-                        <label className="text-[10px] text-gray-600 uppercase tracking-wider mb-1 block">Custom Prompt (optional, overrides preset)</label>
-                        <textarea value={c.customPrompt} onChange={e => updateCommentator(idx, 'customPrompt', e.target.value)}
-                          rows={2} placeholder="Leave empty to use preset personality..."
-                          className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400/50 resize-none" />
-                      </div>
-                    </div>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex justify-between mt-6">
-                <button onClick={() => setStep(3)} className="px-4 py-2 rounded-xl bg-white/5 text-gray-400 text-sm hover:bg-white/10">Back</button>
-                <button onClick={handleCreate} disabled={creating}
-                  className="px-6 py-2 rounded-xl bg-green-500/20 text-green-400 font-bold text-sm hover:bg-green-500/30 transition-colors disabled:opacity-50 flex items-center gap-2">
-                  {creating ? <Loader2 size={14} className="animate-spin" /> : <Plus size={14} />}
-                  {creating ? 'Creating...' : 'Create & Start'}
-                </button>
-              </div>
-            </div>
-          )}
-        </div>
-      );
-    }
-
-    // ─── SETTINGS PANEL ───
-    function SettingsPanel() {
-      const [current, setCurrent] = useState('');
-      const [newPw, setNewPw] = useState('');
-      const [msg, setMsg] = useState('');
-      const [loading, setLoading] = useState(false);
-
-      const handleChange = async (e) => {
-        e.preventDefault();
-        setLoading(true); setMsg('');
-        try {
-          const data = await api('/api/admin/change-password', {
-            method: 'POST', body: JSON.stringify({ current, newPassword: newPw }),
-          });
-          if (data.ok) { setMsg('Password changed!'); setCurrent(''); setNewPw(''); }
-          else setMsg(data.error || 'Failed');
-        } catch (err) { setMsg(err.message); }
-        finally { setLoading(false); }
-      };
-
-      return (
-        <div className="glass rounded-2xl p-6">
-          <h2 className="text-lg font-bold text-white mb-4">Settings</h2>
-          <form onSubmit={handleChange} className="space-y-3 max-w-sm">
-            <div>
-              <label className="text-xs text-gray-500 mb-1 block">Current Password</label>
-              <input type="password" value={current} onChange={e => setCurrent(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-400/50" />
-            </div>
-            <div>
-              <label className="text-xs text-gray-500 mb-1 block">New Password</label>
-              <input type="password" value={newPw} onChange={e => setNewPw(e.target.value)}
-                className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-yellow-400/50" />
-            </div>
-            {msg && <div className={`text-xs ${msg.includes('changed') ? 'text-green-400' : 'text-red-400'}`}>{msg}</div>}
-            <button type="submit" disabled={loading || !current || !newPw}
-              className="px-4 py-2 rounded-lg bg-yellow-400/20 text-yellow-400 text-sm font-bold hover:bg-yellow-400/30 disabled:opacity-50">
-              {loading ? 'Changing...' : 'Change Password'}
-            </button>
-          </form>
-        </div>
-      );
-    }
-
-    // ─── PRESETS PANEL ───
-    function PresetsPanel() {
-      const [presets, setPresets] = useState([]);
-      const [loading, setLoading] = useState(true);
-      const [newName, setNewName] = useState('');
-      const [newPersonality, setNewPersonality] = useState('barkley');
-      const [newCustom, setNewCustom] = useState('');
-      const [saving, setSaving] = useState(false);
-
-      useEffect(() => {
-        api('/api/admin/presets').then(data => { setPresets(data); setLoading(false); }).catch(() => setLoading(false));
-      }, []);
-
-      const handleSave = async () => {
-        if (!newName) return;
-        setSaving(true);
-        try {
-          const preset = await api('/api/admin/presets', {
-            method: 'POST',
-            body: JSON.stringify({ name: newName, personality: newPersonality, customPrompt: newCustom || null }),
-          });
-          setPresets(prev => [preset, ...prev]);
-          setNewName(''); setNewCustom('');
-        } catch (err) { alert('Failed to save'); }
-        finally { setSaving(false); }
-      };
-
-      const handleDelete = async (id) => {
-        if (!confirm('Delete this preset?')) return;
-        try {
-          await api(`/api/admin/presets/${id}`, { method: 'DELETE' });
-          setPresets(prev => prev.filter(p => p.id !== id));
-        } catch (err) { alert('Failed to delete'); }
-      };
-
-      return (
-        <div>
-          <h2 className="text-lg font-bold text-white mb-4">Commentator Presets</h2>
-          <p className="text-xs text-gray-500 mb-6">Save commentator configs here to quickly reuse them when creating sessions.</p>
-
-          {/* Create new preset */}
-          <div className="glass rounded-xl p-4 mb-6">
-            <h3 className="text-sm font-bold text-gray-400 mb-3">New Preset</h3>
             <div className="space-y-3">
-              <div>
-                <label className="text-[10px] text-gray-600 uppercase tracking-wider mb-1 block">Name</label>
-                <input value={newName} onChange={e => setNewName(e.target.value)} placeholder="e.g. Big Mike"
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400/50" />
+              {games.map(g => (
+                <button key={g.id} onClick={() => { setSelectedGame(g); setStep(4); }} className="w-full p-4 glass-bright rounded-xl text-left">
+                  <div className="text-xs opacity-50 mb-1">{g.status.detail}</div>
+                  <div className="font-bold">{g.away.abbreviation} @ {g.home.abbreviation}</div>
+                </button>
+              ))}
+              <button onClick={() => setStep(2)} className="text-xs text-gray-500">Back</button>
+            </div>
+          )}
+
+          {step === 4 && (
+            <div className="space-y-6">
+              <div className="p-4 glass-bright rounded-xl">
+                <label className="text-xs text-gray-500 uppercase font-black flex items-center gap-2 mb-2"><Clock size={12}/> Pre-Game Interval (seconds)</label>
+                <input type="number" value={preGameInterval} onChange={e => setPreGameInterval(e.target.value)} className="w-full bg-white/5 p-2 rounded-lg" />
               </div>
-              <div>
-                <label className="text-[10px] text-gray-600 uppercase tracking-wider mb-1 block">Personality</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {Object.entries(PRESETS).map(([key, p]) => (
-                    <button key={key} onClick={() => setNewPersonality(key)}
-                      className={`p-2 rounded-lg text-left transition-all ${newPersonality === key ? 'bg-yellow-400/15 border border-yellow-400/30' : 'bg-white/5 hover:bg-white/10'}`}>
-                      <div className="text-xs font-bold text-white">{p.name}</div>
-                      <div className="text-[9px] text-gray-500 mt-0.5">{p.desc}</div>
-                    </button>
-                  ))}
+
+              {commentators.map((c, i) => (
+                <div key={i} className="p-4 glass-bright rounded-xl space-y-3">
+                  <div className="font-black text-xs opacity-50 uppercase">Commentator {c.id}</div>
+                  <input value={c.name} onChange={e => updateCommentator(i, 'name', e.target.value)} className="w-full bg-white/5 p-2 rounded-lg text-sm" placeholder="Name" />
+                  <div>
+                    <label className="text-[10px] opacity-50 uppercase block mb-1">Avatar Model (.vrm/.glb)</label>
+                    <div className="flex gap-2">
+                      <input value={c.avatarUrl} onChange={e => updateCommentator(i, 'avatarUrl', e.target.value)} className="flex-1 bg-white/5 p-2 rounded-lg text-xs" placeholder="URL or Upload ->" />
+                      <label className="cursor-pointer p-2 glass-bright rounded-lg hover:bg-white/10"><Upload size={14}/><input type="file" className="hidden" onChange={e => handleUpload(i, e.target.files[0])} /></label>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="text-[10px] text-gray-600 uppercase tracking-wider mb-1 block">Custom Prompt (optional, overrides preset)</label>
-                <textarea value={newCustom} onChange={e => setNewCustom(e.target.value)} rows={3}
-                  placeholder="Leave empty to use the personality preset above..."
-                  className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-yellow-400/50 resize-none" />
-              </div>
-              <button onClick={handleSave} disabled={saving || !newName}
-                className="flex items-center gap-1 px-4 py-2 rounded-lg bg-green-500/20 text-green-400 font-bold text-sm hover:bg-green-500/30 transition-colors disabled:opacity-30">
-                {saving ? <Loader2 size={14} className="animate-spin" /> : <Save size={14} />}
-                {saving ? 'Saving...' : 'Save Preset'}
+              ))}
+              
+              <button onClick={handleCreate} disabled={creating} className="w-full py-4 bg-green-500/20 text-green-400 font-black rounded-xl hover:bg-green-500/30">
+                {creating ? 'CREATING...' : 'CREATE SESSION'}
               </button>
             </div>
+          )}
+        </div>
+      );
+    }
+
+    function Dashboard({ onLogout }) {
+      const [sessions, setSessions] = useState([]), [loading, setLoading] = useState(true), [showCreate, setShowCreate] = useState(false);
+      const fetch = useCallback(async () => {
+        api('/api/admin/sessions').then(d => { setSessions(d); setLoading(false); }).catch(onLogout);
+      }, [onLogout]);
+      useEffect(() => fetch(), [fetch]);
+
+      return (
+        <div className="max-w-2xl mx-auto p-4 py-8">
+          <div className="flex justify-between items-center mb-8">
+            <h1 className="text-2xl font-black text-gradient">SUSHI ADMIN</h1>
+            <button onClick={() => setShowCreate(true)} className="p-3 bg-yellow-400 text-black rounded-full"><Plus/></button>
           </div>
 
-          {/* Saved presets list */}
-          {loading ? (
-            <div className="text-center py-8"><Loader2 size={24} className="animate-spin mx-auto text-gray-600" /></div>
-          ) : presets.length === 0 ? (
-            <div className="glass rounded-xl p-8 text-center">
-              <Bookmark size={24} className="mx-auto mb-2 text-gray-600" />
-              <div className="text-sm text-gray-500">No saved presets yet</div>
-              <div className="text-xs text-gray-600 mt-1">Create one above to get started</div>
-            </div>
-          ) : (
-            <div className="space-y-3">
-              {presets.map(p => (
-                <div key={p.id} className="glass-bright rounded-xl p-4 flex items-start justify-between gap-3">
-                  <div className="flex-1 min-w-0">
-                    <div className="text-sm font-bold text-white">{p.name}</div>
-                    <div className="text-[10px] text-gray-500 mt-0.5">
-                      {p.customPrompt ? 'Custom prompt' : `Personality: ${PRESETS[p.personality]?.name || p.personality}`}
-                    </div>
-                    {p.customPrompt && (
-                      <div className="text-[10px] text-gray-600 mt-1 line-clamp-2">{p.customPrompt}</div>
-                    )}
+          {showCreate ? <CreateSessionWizard onCreated={() => { setShowCreate(false); fetch(); }} onCancel={() => setShowCreate(false)} /> : (
+            <div className="space-y-4">
+              {sessions.map(s => (
+                <div key={s.id} className="p-4 glass rounded-2xl flex justify-between items-center">
+                  <div>
+                    <div className="font-black">{s.gameName}</div>
+                    <div className="text-[10px] opacity-50 uppercase tracking-widest">{s.id} | {s.settings?.preGameInterval}s interval</div>
                   </div>
-                  <button onClick={() => handleDelete(p.id)}
-                    className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors flex-shrink-0" title="Delete">
-                    <Trash2 size={12} />
-                  </button>
+                  <button onClick={async () => { await api(`/api/admin/sessions/${s.id}`, { method: 'DELETE' }); fetch(); }} className="text-red-400 p-2"><Trash2 size={18}/></button>
                 </div>
               ))}
             </div>
@@ -634,210 +252,15 @@
       );
     }
 
-    // ─── DASHBOARD ───
-    function Dashboard({ onLogout }) {
-      const [sessions, setSessions] = useState([]);
-      const [loading, setLoading] = useState(true);
-      const [showCreate, setShowCreate] = useState(false);
-      const [activeSection, setActiveSection] = useState('sessions');
-
-      const fetchSessions = useCallback(async () => {
-        try {
-          const data = await api('/api/admin/sessions');
-          setSessions(Array.isArray(data) ? data : []);
-        } catch (err) {
-          if (err.message === 'Unauthorized') onLogout();
-        }
-        setLoading(false);
-      }, [onLogout]);
-
-      useEffect(() => { fetchSessions(); }, [fetchSessions]);
-
-      const toggleSession = async (id, currentStatus) => {
-        try {
-          const endpoint = currentStatus === 'active' ? 'stop' : 'start';
-          await api(`/api/admin/sessions/${id}/${endpoint}`, { method: 'POST' });
-          fetchSessions();
-        } catch (err) { alert(err.message); }
-      };
-
-      const deleteSession = async (id) => {
-        if (!confirm('Delete this session?')) return;
-        try {
-          await api(`/api/admin/sessions/${id}`, { method: 'DELETE' });
-          fetchSessions();
-        } catch (err) { alert(err.message); }
-      };
-
-      if (showCreate) {
-        return (
-          <div className="max-w-2xl mx-auto px-4 py-6">
-            <CreateSessionWizard
-              onCreated={() => { setShowCreate(false); fetchSessions(); }}
-              onCancel={() => setShowCreate(false)}
-            />
-          </div>
-        );
-      }
-
-      return (
-        <div>
-          <header className="sticky top-0 z-50 bg-dark-900/80 backdrop-blur-xl border-b border-white/5">
-            <div className="max-w-3xl mx-auto px-4 py-3 flex items-center justify-between">
-              <div className="flex items-center gap-3">
-                <Trophy size={20} className="text-yellow-400" />
-                <div>
-                  <h1 className="text-sm font-black text-gradient">SUSHI ADMIN</h1>
-                  <p className="text-[10px] text-gray-500 -mt-0.5">Session Management</p>
-                </div>
-              </div>
-              <div className="flex items-center gap-3">
-                <a href="/" className="text-[10px] text-gray-600 hover:text-gray-400 flex items-center gap-1">
-                  <ArrowLeft size={10} /> Back to App
-                </a>
-                <button onClick={onLogout} className="text-[10px] text-red-400 hover:text-red-300">Logout</button>
-              </div>
-            </div>
-          </header>
-
-          <div className="max-w-3xl mx-auto px-4 py-6">
-            {/* Section tabs */}
-            <div className="flex gap-2 mb-6">
-              <button onClick={() => setActiveSection('sessions')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeSection === 'sessions' ? 'bg-yellow-400/20 text-yellow-400' : 'bg-white/5 text-gray-500 hover:bg-white/10'}`}>
-                Sessions
-              </button>
-              <button onClick={() => setActiveSection('presets')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeSection === 'presets' ? 'bg-yellow-400/20 text-yellow-400' : 'bg-white/5 text-gray-500 hover:bg-white/10'}`}>
-                Presets
-              </button>
-              <button onClick={() => setActiveSection('settings')}
-                className={`px-4 py-2 rounded-lg text-sm font-medium transition-all ${activeSection === 'settings' ? 'bg-yellow-400/20 text-yellow-400' : 'bg-white/5 text-gray-500 hover:bg-white/10'}`}>
-                Settings
-              </button>
-            </div>
-
-            {activeSection === 'settings' && <SettingsPanel />}
-
-            {activeSection === 'presets' && <PresetsPanel />}
-
-            {activeSection === 'sessions' && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-bold text-white">Sessions</h2>
-                  <div className="flex items-center gap-2">
-                    <button onClick={fetchSessions} className="text-gray-600 hover:text-gray-400"><RefreshCw size={14} /></button>
-                    <button onClick={() => setShowCreate(true)}
-                      className="flex items-center gap-1 px-4 py-2 rounded-xl bg-green-500/20 text-green-400 font-bold text-sm hover:bg-green-500/30 transition-colors">
-                      <Plus size={14} /> New Session
-                    </button>
-                  </div>
-                </div>
-
-                {loading ? (
-                  <div className="text-center py-12"><Loader2 size={24} className="animate-spin mx-auto text-gray-600" /></div>
-                ) : sessions.length === 0 ? (
-                  <div className="glass rounded-2xl p-12 text-center">
-                    <div className="text-4xl mb-4">{'\uD83C\uDFC6'}</div>
-                    <div className="text-lg font-bold text-white mb-2">No Sessions Yet</div>
-                    <div className="text-sm text-gray-500 mb-6">Create your first session to start live commentary</div>
-                    <button onClick={() => setShowCreate(true)}
-                      className="px-6 py-2.5 rounded-xl bg-yellow-400/20 text-yellow-400 text-sm font-bold hover:bg-yellow-400/30">
-                      Create Session
-                    </button>
-                  </div>
-                ) : (
-                  <div className="space-y-3">
-                    {sessions.map(session => {
-                      const sportIcon = SPORT_ICONS[session.sport] || '\uD83C\uDFC6';
-                      const isActive = session.status === 'active';
-                      return (
-                        <div key={session.id} className="glass-bright rounded-xl p-4">
-                          <div className="flex items-center justify-between mb-2">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xl">{sportIcon}</span>
-                              <span className="text-xs font-bold text-gray-400 uppercase tracking-wider">{session.league}</span>
-                              <span className={`text-[9px] px-2 py-0.5 rounded-full font-bold ${
-                                session.status === 'active' ? 'bg-green-500/20 text-green-400' :
-                                session.status === 'paused' ? 'bg-yellow-500/20 text-yellow-400' :
-                                'bg-gray-500/20 text-gray-400'
-                              }`}>{session.status?.toUpperCase()}</span>
-                            </div>
-                            <div className="flex items-center gap-1.5">
-                              <button onClick={() => toggleSession(session.id, session.status)}
-                                className={`p-1.5 rounded-lg transition-colors ${isActive ? 'bg-yellow-500/20 text-yellow-400 hover:bg-yellow-500/30' : 'bg-green-500/20 text-green-400 hover:bg-green-500/30'}`}
-                                title={isActive ? 'Pause' : 'Resume'}>
-                                {isActive ? <Pause size={14} /> : <Play size={14} />}
-                              </button>
-                              <button onClick={() => deleteSession(session.id)}
-                                className="p-1.5 rounded-lg bg-red-500/20 text-red-400 hover:bg-red-500/30 transition-colors" title="Delete">
-                                <Trash2 size={14} />
-                              </button>
-                            </div>
-                          </div>
-
-                          <div className="flex items-center gap-3 mb-2">
-                            <div className="flex items-center gap-1.5">
-                              {session.awayTeam?.logo && <img src={session.awayTeam.logo} className="w-5 h-5 object-contain" onError={e => e.target.style.display='none'} />}
-                              <span className="text-sm font-bold" style={{color: session.awayTeam?.color || '#fff'}}>{session.awayTeam?.abbreviation}</span>
-                            </div>
-                            <span className="text-xs text-gray-600">vs</span>
-                            <div className="flex items-center gap-1.5">
-                              <span className="text-sm font-bold" style={{color: session.homeTeam?.color || '#fff'}}>{session.homeTeam?.abbreviation}</span>
-                              {session.homeTeam?.logo && <img src={session.homeTeam.logo} className="w-5 h-5 object-contain" onError={e => e.target.style.display='none'} />}
-                            </div>
-                            {session.gameName && <span className="text-[10px] text-gray-600 ml-2 truncate">{session.gameName}</span>}
-                          </div>
-
-                          <div className="flex items-center gap-2 flex-wrap">
-                            {(session.commentators || []).map(c => (
-                              <span key={c.id} className="text-[9px] bg-white/5 text-gray-500 px-1.5 py-0.5 rounded-full flex items-center gap-1">
-                                <Users size={8} /> {c.name} ({c.team})
-                              </span>
-                            ))}
-                            <span className="text-[9px] text-gray-700 ml-auto">ID: {session.id}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      );
-    }
-
-    // ─── MAIN APP ───
     function App() {
-      const [authed, setAuthed] = useState(false);
-      const [checking, setChecking] = useState(true);
-
+      const [authed, setAuthed] = useState(false), [checking, setChecking] = useState(true);
       useEffect(() => {
-        const token = getToken();
-        if (!token) { setChecking(false); return; }
-        api('/api/admin/verify')
-          .then(d => { if (d.ok) setAuthed(true); else clearToken(); })
-          .catch(() => clearToken())
-          .finally(() => setChecking(false));
+        if (!getToken()) { setChecking(false); return; }
+        api('/api/admin/verify').then(d => { if (d.ok) setAuthed(true); }).finally(() => setChecking(false));
       }, []);
-
-      if (checking) {
-        return (
-          <div className="min-h-screen flex items-center justify-center">
-            <Loader2 size={32} className="animate-spin text-yellow-400" />
-          </div>
-        );
-      }
-
-      if (!authed) {
-        return <LoginScreen onLogin={() => setAuthed(true)} />;
-      }
-
-      return <Dashboard onLogout={() => { clearToken(); setAuthed(false); }} />;
+      if (checking) return null;
+      return authed ? <Dashboard onLogout={() => { clearToken(); setAuthed(false); }} /> : <LoginScreen onLogin={() => setAuthed(true)} />;
     }
-
     ReactDOM.createRoot(document.getElementById('root')).render(<App />);
   </script>
 </body>
