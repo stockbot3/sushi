@@ -6,7 +6,6 @@
   <script src="https://cdn.tailwindcss.com"></script>
   <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
-  <script src="https://unpkg.com/lucide-react@0.460.0/dist/umd/lucide-react.min.js"></script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
   <style>
     body { background: #050508; color: #fff; font-family: sans-serif; }
@@ -16,9 +15,11 @@
 </head>
 <body class="p-4">
   <div id="root"></div>
+  <!-- Lucide loaded after React -->
+  <script src="https://unpkg.com/lucide-react@0.460.0/dist/umd/lucide-react.min.js"></script>
   <script type="text/babel">
     const { useState, useEffect, useCallback } = React;
-    const { Lock, Plus, Trash2, Edit2, Upload, X, Save, RefreshCw, Link } = LucideReact;
+    const { Lock, Plus, Trash2, Edit2, Upload, X, Save, RefreshCw, Link } = lucide;
 
     const api = async (p, o = {}) => {
       const t = localStorage.getItem('sushi_token');
@@ -55,7 +56,7 @@
 
       const uploadModel = async (idx, file) => {
         const fd = new FormData(); fd.append('file', file);
-        const d = await api('/api/admin/upload', { method: 'POST', body: fd, headers: {} });
+        const d = await fetch('/api/admin/upload', { method: 'POST', body: fd, headers: { Authorization: `Bearer ${localStorage.getItem('sushi_token')}` } }).then(r => r.json());
         const n = [...edit.commentators]; n[idx].avatarUrl = d.url;
         setEdit({ ...edit, commentators: n });
       };
@@ -74,12 +75,12 @@
         <div className="max-w-3xl mx-auto">
           <div className="flex justify-between items-center mb-8">
             <h1 className="text-2xl font-black text-gradient">SUSHI ADMIN</h1>
-            <button onClick={() => setEdit({ gameName: '', slug: '', settings: { preGameInterval: 45 }, commentators: [{ id: 'A', name: 'Big Mike', voice: 'bryce' }, { id: 'B', name: 'Salty Steve', voice: 'amy' }] })} className="bg-yellow-400 text-black p-3 rounded-full"><Plus/></button>
+            <button onClick={() => setEdit({ sport: 'football', league: 'nfl', gameName: '', slug: '', settings: { preGameInterval: 45 }, commentators: [{ id: 'A', name: 'Big Mike', voice: 'bryce' }, { id: 'B', name: 'Salty Steve', voice: 'amy' }] })} className="bg-yellow-400 text-black p-3 rounded-full"><Plus/></button>
           </div>
 
           {edit && (
             <div className="fixed inset-0 z-50 bg-black/90 p-4 overflow-y-auto">
-              <form onSubmit={saveSession} className="max-w-lg mx-auto glass p-6 rounded-2xl space-y-6">
+              <div className="max-w-lg mx-auto glass p-6 rounded-2xl space-y-6">
                 <div className="flex justify-between font-black">
                   <h2>{edit.id ? 'EDIT SESSION' : 'NEW SESSION'}</h2>
                   <button type="button" onClick={() => setEdit(null)}><X/></button>
@@ -92,15 +93,15 @@
                     <span className="text-gray-500">/</span>
                     <input value={edit.slug} onChange={e => setEdit({ ...edit, slug: e.target.value.toLowerCase() })} className="bg-transparent outline-none flex-1" placeholder="custom-slug" />
                   </div>
-                  {!edit.id && (
-                    <div className="flex gap-2">
-                      <input value={edit.sport} onChange={e => setEdit({ ...edit, sport: e.target.value })} className="flex-1 bg-white/5 p-3 rounded-xl" placeholder="sport (football/basketball)" />
-                      <input value={edit.espnEventId} onChange={e => setEdit({ ...edit, espnEventId: e.target.value })} className="flex-1 bg-white/5 p-3 rounded-xl" placeholder="ESPN Event ID" />
-                    </div>
-                  )}
+                  
+                  <div className="flex gap-2">
+                    <input value={edit.sport} onChange={e => setEdit({ ...edit, sport: e.target.value })} className="flex-1 bg-white/5 p-3 rounded-xl" placeholder="sport (football/basketball)" />
+                    <input value={edit.espnEventId} onChange={e => setEdit({ ...edit, espnEventId: e.target.value })} className="flex-1 bg-white/5 p-3 rounded-xl" placeholder="ESPN Event ID" />
+                  </div>
+                  
                   <div>
                     <label className="text-xs text-gray-500 font-bold uppercase">Pre-Game Interval (seconds)</label>
-                    <input type="number" value={edit.settings.preGameInterval} onChange={e => setEdit({ ...edit, settings: { ...edit.settings, preGameInterval: parseInt(e.target.value) } })} className="w-full bg-white/5 p-3 rounded-xl" />
+                    <input type="number" value={edit.settings?.preGameInterval} onChange={e => setEdit({ ...edit, settings: { ...edit.settings, preGameInterval: parseInt(e.target.value) } })} className="w-full bg-white/5 p-3 rounded-xl" />
                   </div>
 
                   {edit.commentators.map((c, i) => (
@@ -112,17 +113,17 @@
                         <option value="bryce">Male (Bryce)</option>
                       </select>
                       <div className="flex gap-2 items-center">
-                        <input value={c.avatarUrl} className="flex-1 bg-white/5 p-2 rounded-lg text-xs" placeholder="Model URL" />
+                        <input value={c.avatarUrl} onChange={e => { const n = [...edit.commentators]; n[i].avatarUrl = e.target.value; setEdit({ ...edit, commentators: n }); }} className="flex-1 bg-white/5 p-2 rounded-lg text-xs" placeholder="Model URL" />
                         <label className="cursor-pointer p-2 glass rounded-lg"><Upload size={14}/><input type="file" className="hidden" onChange={e => uploadModel(i, e.target.files[0])} /></label>
                       </div>
                     </div>
                   ))}
                 </div>
 
-                <button disabled={loading} className="w-full bg-green-500 text-black font-black p-4 rounded-xl flex items-center justify-center gap-2">
+                <button onClick={saveSession} disabled={loading} className="w-full bg-green-500 text-black font-black p-4 rounded-xl flex items-center justify-center gap-2">
                   {loading ? <RefreshCw className="animate-spin" /> : <Save />} {edit.id ? 'UPDATE' : 'CREATE'}
                 </button>
-              </form>
+              </div>
             </div>
           )}
 

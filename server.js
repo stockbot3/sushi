@@ -10,7 +10,7 @@ const fs = require('fs');
 const app = express();
 const PORT = process.env.PORT || 3007;
 
-// Ensure dirs
+// Ensure upload dir
 const uploadDir = path.join(__dirname, 'public', 'uploads');
 if (!fs.existsSync(uploadDir)) fs.mkdirSync(uploadDir, { recursive: true });
 
@@ -31,7 +31,6 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT) {
 }
 const db = admin.firestore();
 
-// MIDDLEWARE
 app.use(cors());
 app.use(express.json());
 
@@ -64,19 +63,13 @@ app.post('/api/admin/login', async (req, res) => {
 
 // ─── ROUTES ───
 
-// Serve Admin
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 
-// Custom Slug Redirect
 app.get('/:slug', async (req, res, next) => {
   const slug = req.params.slug.toLowerCase();
-  if (['api', 'admin', 'uploads', 'lib', 'voice', 'commentary', 'avatars'].includes(slug)) return next();
-  
+  if (['api', 'admin', 'uploads', 'lib', 'voice', 'commentary', 'avatars', 'avatar.html', 'index.html'].includes(slug)) return next();
   const snap = await db.collection('sessions').where('slug', '==', slug).limit(1).get();
-  if (!snap.empty) {
-    const s = snap.docs[0].data();
-    return res.redirect(`/avatar.html?session=${s.id}`);
-  }
+  if (!snap.empty) return res.redirect(`/avatar.html?session=${snap.docs[0].id}`);
   next();
 });
 
@@ -84,11 +77,8 @@ app.use(express.static(path.join(__dirname, 'public')));
 
 // ─── API ───
 
-app.post('/api/admin/upload', requireAdmin, upload.single('file'), (req, res) => {
-  res.json({ url: `/uploads/${req.file.filename}` });
-});
-
 app.get('/api/admin/verify', requireAdmin, (req, res) => res.json({ ok: true }));
+app.post('/api/admin/upload', requireAdmin, upload.single('file'), (req, res) => res.json({ url: `/uploads/${req.file.filename}` }));
 
 const MODAL_PIPER_URL = 'https://mousears1090--sushi-piper-tts-tts.modal.run';
 const ttsCache = new Map();
@@ -106,17 +96,13 @@ app.post('/api/tts', async (req, res) => {
       body: JSON.stringify({ text, voice: voice || 'amy' }),
     });
     const data = await r.json();
+    if (!data.audio) throw new Error(data.error || 'No audio from Modal');
     const result = { audio: data.audio, format: 'wav' };
-    if (ttsCache.size > 200) ttsCache.delete(ttsCache.keys().next().value);
+    if (ttsCache.size > 500) ttsCache.delete(ttsCache.keys().next().value);
     ttsCache.set(key, result);
     res.json(result);
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
-
-const SPORTS_CONFIG = {
-  football: { name: 'Football', leagues: { nfl: { espnSlug: 'football/nfl' } } },
-  basketball: { name: 'Basketball', leagues: { nba: { espnSlug: 'basketball/nba' } } },
-};
 
 async function fetchCached(key, url, ttl = 8000) {
   if (global.cache?.[key] && (Date.now() - global.cache[key].ts) < ttl) return global.cache[key].data;
@@ -143,7 +129,6 @@ function getRuntime(id) {
   return sessionRuntimes.get(id);
 }
 
-app.get('/api/admin/sports', requireAdmin, (req, res) => res.json(SPORTS_CONFIG));
 app.get('/api/admin/sessions', requireAdmin, async (req, res) => {
   const s = await db.collection('sessions').get();
   res.json(s.docs.map(d => d.data()));
@@ -157,13 +142,13 @@ app.post('/api/admin/sessions', requireAdmin, async (req, res) => {
 });
 
 app.patch('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
-  await db.collection('sessions').doc(req.params.id).update(req.body);
+  await db.collection('sessions').doc(req.params.id).update({ ...req.body, updatedAt: new Date().toISOString() });
   res.json({ ok: true });
 });
 
 app.delete('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
   await db.collection('sessions').doc(req.params.id).delete();
-  res.json({ ok: true });
+  sessionRuntimes.delete(req.params.id); res.json({ ok: true });
 });
 
 app.get('/api/sessions', async (req, res) => {
@@ -181,44 +166,67 @@ app.get('/api/sessions/:id/game', async (req, res) => {
 
 const MODAL_MISTRAL_URL = 'https://mousears1090--claudeapps-mistral-mistralmodel-chat.modal.run';
 
-app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
-  const doc = await db.collection('sessions').doc(req.params.id).get();
-  if (!doc.exists) return res.status(404).send();
-  const s = doc.data();
-  const rt = getRuntime(s.id);
-  const now = Date.now();
-
-  if (rt.cache && (now - rt.ts) < 5000) return res.json(rt.cache);
-
-  const raw = await fetchCached(`sb_${s.espnSlug}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/scoreboard`);
-  const game = parseScoreboard(raw).find(x => x.id === s.espnEventId);
-
-  if (!game || game.status.state !== 'in') {
-    const interval = (s.settings?.preGameInterval || 45) * 1000;
-    if (rt.cache && (now - rt.ts) < interval) return res.json(rt.cache);
-    const prompt = `Argue about ${game?.name || 'the game'}. 3 turns: [A], [B], [A]. No names in lines.`;
-    const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
-    const json = await r.json();
-    const turns = parseCommentary(json.choices[0].message.content, s.commentators[0], s.commentators[1]);
-    rt.cache = { turns, status: 'pre', timestamp: now }; rt.ts = now;
-    return res.json(rt.cache);
-  }
-
-  // Live logic... (simplified for brevity, keeping existing logic)
-  const sumRaw = await fetchCached(`sum_${s.id}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/summary?event=${s.espnEventId}`);
-  // ... parse and generate ...
-  // For now, let's keep it simple to ensure it works
-  const turns = [{ speaker: 'A', name: s.commentators[0].name, text: "Live action!" }];
-  res.json({ turns, status: 'live' });
-});
-
-function parseCommentary(raw, cA, cB) {
-  return raw.split('\n').filter(l => l.includes('[A]') || l.includes('[B]')).map(l => {
-    const isA = l.includes('[A]');
-    const c = isA ? cA : cB;
-    let t = l.replace(/^\[[AB]\]\s*/, '').replace(new RegExp(`^${c.name}[:\\s—]+`, 'i'), '').replace(/^["']|["']$/g, '').trim();
-    return { speaker: isA ? 'A' : 'B', name: c.name, text: t };
-  });
+function strip(text, name) {
+  return text.replace(/🗣️|🎙️/g, '')
+             .replace(new RegExp(`^${name}[:\\s—]+`, 'i'), '')
+             .replace(/^["']|["']$/g, '')
+             .replace(/\bSpeaking\b/gi, '')
+             .trim();
 }
 
-app.listen(PORT, () => console.log(`Sushi on ${PORT}`));
+app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
+  try {
+    const sessionId = req.params.id;
+    const doc = await db.collection('sessions').doc(sessionId).get();
+    if (!doc.exists) return res.status(404).send();
+    const s = doc.data();
+    if (sessionRuntimes.get(sessionId)?.status === 'paused') return res.json({ turns: [] });
+
+    const rt = getRuntime(sessionId);
+    const now = Date.now();
+
+    if (rt.cache && (now - rt.ts) < 5000) return res.json(rt.cache);
+
+    const scoreData = await fetchCached(`sb_${s.espnSlug}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/scoreboard`);
+    const game = parseScoreboard(scoreData).find(e => e.id === s.espnEventId);
+
+    if (!game || game.status?.state !== 'in') {
+      const interval = (s.settings?.preGameInterval || 45) * 1000;
+      if (rt.cache && (now - rt.ts) < interval) return res.json(rt.cache);
+      const prompt = `Argue about ${game?.name || 'the game'}. 3 turns: [A], [B], [A]. No names. No emojis. unhinged.`;
+      const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
+      const json = await r.json();
+      const turns = json.choices[0].message.content.split('\n').filter(l => l.includes('[A]') || l.includes('[B]')).map(l => {
+        const isA = l.includes('[A]');
+        const c = isA ? s.commentators[0] : s.commentators[1];
+        return { speaker: isA ? 'A' : 'B', name: c.name, text: strip(l.replace(/^\[[AB]\]/, ''), c.name) };
+      });
+      rt.cache = { turns, status: 'pre', timestamp: now }; rt.ts = now;
+      return res.json(rt.cache);
+    }
+
+    const summaryData = await fetchCached(`sum_${s.espnEventId}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/summary?event=${s.espnEventId}`);
+    const summary = parseSummary(summaryData);
+    const latestDrive = (summary.drives || []).slice(-1)[0];
+    const latestPlay = (latestDrive?.playList || []).slice(-1)[0] || (summary.plays || []).slice(-1)[0];
+    if (!latestPlay) return res.json({ turns: [] });
+
+    const seq = (summary.drives?.length || 0) * 100 + (latestDrive?.playList?.length || summary.plays?.length || 0);
+    if (seq === rt.lastSeq && (now - rt.ts) < 45000) return res.json(rt.cache);
+
+    const prompt = `Live commentary for ${game.name}. Play: ${latestPlay.text}. 3 turns: [A], [B], [A]. Argue unhinged. No names.`;
+    const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
+    const json = await r.json();
+    const turns = json.choices[0].message.content.split('\n').filter(l => l.includes('[A]') || l.includes('[B]')).map(l => {
+      const isA = l.includes('[A]');
+      const c = isA ? s.commentators[0] : s.commentators[1];
+      return { speaker: isA ? 'A' : 'B', name: c.name, text: strip(l.replace(/^\[[AB]\]/, ''), c.name) };
+    });
+
+    rt.lastSeq = seq;
+    rt.cache = { turns, status: 'live', play: { description: latestPlay.text }, timestamp: now }; rt.ts = now;
+    res.json(rt.cache);
+  } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+app.listen(PORT, '0.0.0.0', () => console.log(`Sushi on ${PORT}`));
