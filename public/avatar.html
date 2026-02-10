@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Sushi - VRM Animation Fix</title>
+    <title>Sushi - VRM Stream</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -14,18 +14,18 @@
         
         .stream-hud {
             position: absolute; top: 0; left: 0; right: 0; z-index: 100;
-            background: linear-gradient(180deg, rgba(0,0,0,0.9) 0%, transparent 100%);
+            background: linear-gradient(180deg, rgba(0,0,0,0.95) 0%, transparent 100%);
             padding: 20px;
         }
         .hud-scores { display: flex; align-items: center; justify-content: center; gap: 20px; }
         .hud-team { display: flex; flex-direction: column; align-items: center; min-width: 80px; }
-        .hud-abbr { font-size: 12px; font-weight: 900; opacity: 0.6; }
-        .hud-pts { font-size: 48px; font-weight: 900; line-height: 1; }
-        .hud-sep { font-size: 24px; opacity: 0.2; }
+        .hud-abbr { font-size: 14px; font-weight: 900; opacity: 0.7; letter-spacing: 1px; }
+        .hud-pts { font-size: 52px; font-weight: 950; line-height: 1; }
+        .hud-sep { font-size: 24px; opacity: 0.2; font-weight: 200; }
 
         .vrm-stage {
             position: absolute; inset: 0; display: flex;
-            background: radial-gradient(circle at 50% 40%, #1a1a2e 0%, #000 100%);
+            background: radial-gradient(circle at 50% 45%, #1a1a2e 0%, #000 100%);
         }
         .vrm-canvas-container { flex: 1; position: relative; }
         .vrm-canvas { width: 100%; height: 100%; display: block; }
@@ -33,29 +33,29 @@
         .subtitle-box {
             position: absolute; bottom: 40px; left: 50%; transform: translateX(-50%);
             width: 90%; max-width: 600px;
-            background: rgba(0,0,0,0.8); backdrop-filter: blur(10px);
-            padding: 20px; border-radius: 15px; border: 1px solid rgba(255,255,255,0.1);
-            text-align: center; z-index: 200;
+            background: rgba(5,5,10,0.9); backdrop-filter: blur(20px);
+            padding: 20px 30px; border-radius: 20px; border: 1px solid rgba(255,255,255,0.1);
+            text-align: center; z-index: 200; box-shadow: 0 20px 50px rgba(0,0,0,0.5);
         }
-        .subtitle-name { font-size: 10px; font-weight: 900; color: #FFB81C; text-transform: uppercase; letter-spacing: 2px; margin-bottom: 5px; }
-        .subtitle-text { font-size: 18px; line-height: 1.4; color: #fff; }
+        .subtitle-name { font-size: 11px; font-weight: 900; color: #FFB81C; text-transform: uppercase; letter-spacing: 3px; margin-bottom: 6px; }
+        .subtitle-text { font-size: 19px; line-height: 1.5; color: #fff; font-weight: 600; }
 
         .loading-screen {
             position: fixed; inset: 0; z-index: 1000;
             background: #000; display: flex; flex-direction: column; align-items: center; justify-content: center;
         }
-        .spinner { width: 40px; height: 40px; border: 3px solid rgba(255,255,255,0.1); border-top-color: #FFB81C; border-radius: 50%; animation: spin 1s linear infinite; }
+        .spinner { width: 50px; height: 50px; border: 4px solid rgba(255,255,255,0.05); border-top-color: #FFB81C; border-radius: 50%; animation: spin 1s linear infinite; }
         @keyframes spin { to { transform: rotate(360deg); } }
         
         .start-overlay {
             position: fixed; inset: 0; z-index: 500;
-            background: rgba(0,0,0,0.9); display: flex; align-items: center; justify-content: center;
+            background: rgba(0,0,0,0.95); display: flex; align-items: center; justify-content: center;
             cursor: pointer;
         }
         .start-btn {
-            padding: 25px 50px; border-radius: 50px;
-            background: #fff; color: #000; font-weight: 900; font-size: 20px;
-            box-shadow: 0 10px 30px rgba(255,255,255,0.2);
+            padding: 28px 56px; border-radius: 60px;
+            background: #fff; color: #000; font-weight: 900; font-size: 22px;
+            box-shadow: 0 10px 40px rgba(255,255,255,0.2); letter-spacing: 1px;
         }
     </style>
 </head>
@@ -88,7 +88,7 @@
     <script type="text/babel">
         const { useState, useEffect, useRef } = React;
         const SAKURA_URL = 'https://raw.githubusercontent.com/pixiv/three-vrm/release/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
-        const YUKI_URL = '/test.glb';
+        const YUKI_URL = '/Avatar.vrm'; // Swapped to user's Avatar.vrm
 
         const events = {
             listeners: [],
@@ -102,14 +102,16 @@
                 if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
                 if (this.ctx.state === 'suspended') await this.ctx.resume();
                 
-                // FORCE AUDIO UNLOCK FOR iOS
-                const b = this.ctx.createBuffer(1, 1, 22050);
-                const s = this.ctx.createBufferSource(); s.buffer = b;
-                s.connect(this.ctx.destination); s.start(0);
-                
-                // FORCE SPEECH UNLOCK
+                // Explicit iOS hardware unlock
+                const oscillator = this.ctx.createOscillator();
+                const gain = this.ctx.createGain();
+                gain.gain.value = 0;
+                oscillator.connect(gain); gain.connect(this.ctx.destination);
+                oscillator.start(0); oscillator.stop(0.1);
+
+                // Unlock WebSpeech for Safari
                 const u = new SpeechSynthesisUtterance(" ");
-                window.speechSynthesis.speak(u);
+                u.volume = 0; window.speechSynthesis.speak(u);
             }
             async speak(text, side, voiceId) {
                 await this.init();
@@ -120,7 +122,7 @@
                         body: JSON.stringify({ text, voiceId })
                     });
                     const data = await res.json();
-                    if (!data.audio) throw new Error();
+                    if (!data.audio) throw new Error("No audio");
                     
                     const bin = atob(data.audio.replace(/\s/g, ''));
                     const buf = new Uint8Array(bin.length);
@@ -139,14 +141,14 @@
                             ana.getByteFrequencyData(dat);
                             let avg = 0; for(let i=0; i<dat.length; i++) avg += dat[i];
                             avg /= dat.length;
-                            events.emit(side, 'vis', { v: avg > 20 ? ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)] : 'sil', vol: avg/255 });
+                            events.emit(side, 'vis', { v: avg > 25 ? ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)] : 'sil', vol: avg/255 });
                             requestAnimationFrame(loop);
                         };
                         src.onended = () => { events.emit(side, 'vis', { v: 'sil', vol: 0 }); resolve(); };
                         src.start(0); loop();
                     });
                 } catch (e) {
-                    console.warn("TTS Failed, using system voice", e);
+                    console.warn("TTS API Fallback", e);
                     return new Promise(r => {
                         const u = new SpeechSynthesisUtterance(text);
                         u.onboundary = (ev) => {
@@ -164,7 +166,6 @@
         function Avatar({ side, modelUrl, activeSpeaker }) {
             const canvasRef = useRef(null);
             const vrmRef = useRef(null);
-            const fallbackBonesRef = useRef({});
             const speakerRef = useRef(activeSpeaker);
             const [loaded, setLoaded] = useState(false);
 
@@ -172,118 +173,116 @@
 
             useEffect(() => {
                 let mounted = true;
-                const init = () => {
+                const init = async () => {
                     const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = window;
                     const scene = new THREE.Scene();
                     const cam = new THREE.PerspectiveCamera(35, canvasRef.current.clientWidth / canvasRef.current.clientHeight, 0.1, 1000);
-                    cam.position.set(0, 1.4, 3.8); cam.lookAt(0, 1.3, 0);
+                    cam.position.set(0, 1.4, 3.5); cam.lookAt(0, 1.3, 0);
+                    
                     const ren = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
                     ren.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
                     ren.setPixelRatio(window.devicePixelRatio);
+                    
                     scene.add(new THREE.AmbientLight(0xffffff, 1.0));
                     const l = new THREE.DirectionalLight(0xffffff, 1.5); l.position.set(1, 2, 3); scene.add(l);
 
                     const loader = new GLTFLoader();
                     loader.register(p => new VRMLoaderPlugin(p));
+                    
                     loader.load(modelUrl, gltf => {
                         if (!mounted) return;
                         const vrm = gltf.userData.vrm;
                         if (vrm) {
-                            vrmRef.current = vrm; VRMUtils.rotateVRM0(vrm); scene.add(vrm.scene);
-                        } else {
-                            // Non-VRM (Standard GLTF like test.glb)
-                            scene.add(gltf.scene);
-                            const bones = {};
-                            gltf.scene.traverse(obj => {
-                                if (obj.isBone || obj.type === 'Group' || obj.type === 'Object3D') {
-                                    const n = obj.name.toLowerCase();
-                                    if (n.includes('leftupperarm') || n.includes('leftarm')) bones.lua = obj;
-                                    if (n.includes('rightupperarm') || n.includes('rightarm')) bones.rua = obj;
-                                    if (n.includes('leftlowerarm') || n.includes('leftforearm')) bones.lla = obj;
-                                    if (n.includes('rightlowerarm') || n.includes('rightforearm')) bones.rla = obj;
-                                    if (n.includes('spine')) bones.spine = obj;
-                                    if (n.includes('head')) bones.head = obj;
-                                }
-                            });
-                            fallbackBonesRef.current = bones;
+                            vrmRef.current = vrm;
+                            VRMUtils.rotateVRM0(vrm);
+                            scene.add(vrm.scene);
+                            // Set initial neutral A-pose
+                            if (vrm.humanoid) {
+                                const lua = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
+                                const rua = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
+                                if (lua) lua.rotation.z = -1.4;
+                                if (rua) rua.rotation.z = 1.4;
+                                vrm.humanoid.update();
+                            }
                         }
                         setLoaded(true);
-                    });
+                    }, undefined, (e) => console.error("VRM Load Error:", e));
 
                     const clock = new THREE.Clock();
                     const animate = () => {
-                        if (!mounted) return; requestAnimationFrame(animate);
-                        const t = clock.getElapsedTime(); const d = clock.getDelta();
+                        if (!mounted) return;
+                        requestAnimationFrame(animate);
                         
-                        let h = null;
-                        let lua, rua, lla, rla, spine, head;
+                        // ─── RULE 6: Clamp Delta ───
+                        const delta = Math.min(clock.getDelta(), 1/30);
+                        const time = clock.getElapsedTime();
 
                         if (vrmRef.current) {
-                            vrmRef.current.update(d);
-                            h = vrmRef.current.humanoid;
+                            const h = vrmRef.current.humanoid;
                             if (h) {
-                                lua = h.getNormalizedBoneNode('leftUpperArm');
-                                rua = h.getNormalizedBoneNode('rightUpperArm');
-                                lla = h.getNormalizedBoneNode('leftLowerArm');
-                                rla = h.getNormalizedBoneNode('rightLowerArm');
-                                spine = h.getNormalizedBoneNode('spine');
-                                head = h.getNormalizedBoneNode('head');
-                            }
-                        } else {
-                            const fb = fallbackBonesRef.current;
-                            lua = fb.lua; rua = fb.rua; lla = fb.lla; rla = fb.rla; spine = fb.spine; head = fb.head;
-                        }
+                                // ─── RULE 4: Use Humanoid Mapping ───
+                                const spine = h.getNormalizedBoneNode('spine');
+                                const head = h.getNormalizedBoneNode('head');
+                                const lua = h.getNormalizedBoneNode('leftUpperArm');
+                                const rua = h.getNormalizedBoneNode('rightUpperArm');
+                                const lla = h.getNormalizedBoneNode('leftLowerArm');
+                                const rla = h.getNormalizedBoneNode('rightLowerArm');
 
-                        // Apply natural pose and animation
-                        if (lua && rua) {
-                            if (speakerRef.current === side) {
-                                // SPEAKING: Bend elbows and move arms naturally
-                                const targetZ = side === 'left' ? -1.1 : 1.1;
-                                lua.rotation.z = THREE.MathUtils.lerp(lua.rotation.z, targetZ + Math.sin(t * 3) * 0.1, 0.1);
-                                rua.rotation.z = THREE.MathUtils.lerp(rua.rotation.z, -targetZ + Math.cos(t * 3) * 0.1, 0.1);
-                                
-                                lua.rotation.x = -0.4 + Math.sin(t * 5) * 0.2;
-                                rua.rotation.x = -0.4 + Math.cos(t * 5) * 0.2;
+                                // ─── RULE 1: Procedural BEFORE Update ───
+                                if (speakerRef.current === side) {
+                                    // Talking motion: Expressive but natural range
+                                    if (lua && rua) {
+                                        // A-pose based movement
+                                        const sideFactor = side === 'left' ? 1 : -1;
+                                        lua.rotation.z = -1.2 + Math.sin(time * 3) * 0.15;
+                                        rua.rotation.z = 1.2 + Math.cos(time * 3) * 0.15;
+                                        lua.rotation.x = -0.4 + Math.sin(time * 4) * 0.2;
+                                        rua.rotation.x = -0.4 + Math.cos(time * 4) * 0.2;
+                                        
+                                        // Elbow bending (Natural)
+                                        if (lla) lla.rotation.x = -0.6 + Math.sin(time * 6) * 0.3;
+                                        if (rla) rla.rotation.x = -0.6 + Math.cos(time * 6) * 0.3;
+                                    }
+                                    if (head) {
+                                        head.rotation.x = Math.sin(time * 12) * 0.06; // Bob
+                                        head.rotation.y = Math.sin(time * 2) * 0.1; // Scan
+                                    }
+                                    if (spine) spine.rotation.x = 0.1; // Lean forward
+                                } else {
+                                    // Idle motion
+                                    if (lua) lua.rotation.z = THREE.MathUtils.lerp(lua.rotation.z, -1.4, 0.1);
+                                    if (rua) rua.rotation.z = THREE.MathUtils.lerp(rua.rotation.z, 1.4, 0.1);
+                                    if (lua) lua.rotation.x = THREE.MathUtils.lerp(lua.rotation.x, 0, 0.1);
+                                    if (rua) rua.rotation.x = THREE.MathUtils.lerp(rua.rotation.x, 0, 0.1);
+                                    if (lla) lla.rotation.x = THREE.MathUtils.lerp(lla.rotation.x, -0.1, 0.1);
+                                    if (rla) rla.rotation.x = THREE.MathUtils.lerp(rla.rotation.x, -0.1, 0.1);
 
-                                // BEND ELBOWS
-                                if (lla) lla.rotation.x = -0.8 + Math.sin(t * 8) * 0.3;
-                                if (rla) rla.rotation.x = -0.8 + Math.cos(t * 8) * 0.3;
-                                
-                                if (head) {
-                                    head.rotation.x = Math.sin(t * 15) * 0.05; // Emphasis bob
-                                    head.rotation.y += Math.sin(t * 2) * 0.02;
-                                }
-                                if (spine) spine.rotation.x = 0.1; // Lean in
-                            } else {
-                                // IDLE / LISTENING: Relaxed A-pose
-                                const relaxZ = side === 'left' ? -1.4 : 1.4;
-                                lua.rotation.z = THREE.MathUtils.lerp(lua.rotation.z, relaxZ, 0.05);
-                                rua.rotation.z = THREE.MathUtils.lerp(rua.rotation.z, -relaxZ, 0.05);
-                                lua.rotation.x = THREE.MathUtils.lerp(lua.rotation.x, 0, 0.05);
-                                rua.rotation.x = THREE.MathUtils.lerp(rua.rotation.x, 0, 0.05);
-                                
-                                // ELBOWS RELAXED
-                                if (lla) lla.rotation.x = THREE.MathUtils.lerp(lla.rotation.x, -0.2, 0.05);
-                                if (rla) rla.rotation.x = THREE.MathUtils.lerp(rla.rotation.x, -0.2, 0.05);
-
-                                if (head) {
-                                    const lookAtPartner = side === 'left' ? 0.4 : -0.4;
-                                    head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, lookAtPartner + Math.sin(t * 0.5) * 0.05, 0.05);
-                                }
-                                if (spine) {
-                                    spine.rotation.x = THREE.MathUtils.lerp(spine.rotation.x, 0, 0.05);
-                                    spine.position.y = Math.sin(t * 1.2) * 0.01; // Breathe
+                                    if (head) {
+                                        const targetY = side === 'left' ? 0.4 : -0.4;
+                                        head.rotation.y = THREE.MathUtils.lerp(head.rotation.y, targetY + Math.sin(time * 0.5) * 0.05, 0.05);
+                                    }
+                                    if (spine) {
+                                        spine.rotation.x = THREE.MathUtils.lerp(spine.rotation.x, 0, 0.1);
+                                        spine.position.y = Math.sin(time * 1.2) * 0.01; // Breathe
+                                    }
                                 }
                             }
+                            
+                            // ─── RULE 2: Correct Update Call ───
+                            vrmRef.current.update(delta);
+                            
+                            // Blinking
+                            const m = vrmRef.current.expressionManager;
+                            if (m) m.setValue('blink', (time % 4 < 0.15) ? 1 : 0);
                         }
-
-                        if (vrmRef.current?.expressionManager) {
-                            vrmRef.current.expressionManager.setValue('blink', (t % 5 < 0.15) ? 1 : 0);
-                        }
-                        
                         ren.render(scene, cam);
                     };
                     animate();
+                    window.addEventListener('resize', () => {
+                        cam.aspect = canvasRef.current.clientWidth / canvasRef.current.clientHeight;
+                        cam.updateProjectionMatrix();
+                        ren.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
+                    });
                 };
                 if (window.modulesLoaded) init(); else window.addEventListener('modulesLoaded', init);
                 return () => mounted = false;
