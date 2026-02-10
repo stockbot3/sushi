@@ -69,21 +69,30 @@ def tts(request: dict):
         # Initialize Piper voice
         voice = PiperVoice.load(model_path, config_path=config_path)
         
-        # Generate audio directly into buffer
+        # Generate audio frames
         wav_buffer = io.BytesIO()
-        voice.synthesize(text, wav_buffer)
+        with wave.open(wav_buffer, 'wb') as wav_file:
+            wav_file.setnchannels(1)  # Mono
+            wav_file.setsampwidth(2)  # 16-bit
+            wav_file.setframerate(voice.config.sample_rate)
+            
+            # Synthesize and write frames
+            for audio_bytes in voice.synthesize_stream(text):
+                wav_file.writeframes(audio_bytes)
         
         # Encode as base64
         wav_buffer.seek(0)
-        audio_base64 = base64.b64encode(wav_buffer.read()).decode('utf-8')
+        audio_data = wav_buffer.read()
+        audio_base64 = base64.b64encode(audio_data).decode('utf-8')
         
         elapsed = time.time() - start_time
-        print(f"Synthesized in {elapsed:.2f}s")
+        print(f"Synthesized {len(audio_data)} bytes in {elapsed:.2f}s")
         
         return {
             "audio": audio_base64,
             "format": "wav",
             "sample_rate": voice.config.sample_rate,
+            "size": len(audio_data),
             "elapsed": elapsed
         }
     except Exception as e:
