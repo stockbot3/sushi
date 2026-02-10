@@ -8,7 +8,7 @@ const multer = require('multer');
 const fs = require('fs');
 
 const app = express();
-const PORT = process.env.PORT || 3007;
+const PORT = process.env.PORT || 3000;
 
 // Uploads
 const uploadDir = path.join(__dirname, 'public', 'uploads');
@@ -19,10 +19,9 @@ const upload = multer({ storage: multer.diskStorage({
 })});
 
 // Firebase
-const firebaseSA = process.env.FIREBASE_SERVICE_ACCOUNT;
-if (firebaseSA) {
+if (process.env.FIREBASE_SERVICE_ACCOUNT) {
   try {
-    const sa = JSON.parse(firebaseSA);
+    const sa = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT);
     admin.initializeApp({ credential: admin.credential.cert(sa), projectId: sa.project_id });
   } catch (e) { admin.initializeApp({ projectId: 'akan-2ed41' }); }
 } else {
@@ -33,51 +32,37 @@ const db = admin.firestore();
 app.use(cors());
 app.use(express.json());
 
-// Auth
+// ─── ADMIN AUTH ───
 const adminTokens = new Set();
 async function getAdmin() {
   const doc = await db.collection('config').doc('admin').get();
   return doc.exists ? doc.data() : null;
 }
+async function setAdminPassword(pw) {
+  const hash = await bcrypt.hash(pw, 10);
+  await db.collection('config').doc('admin').set({ passwordHash: hash });
+}
 function requireAdmin(req, res, next) {
   const t = (req.headers.authorization || '').replace(/^Bearer\s+/i, '');
-  if (!t || !adminTokens.has(t)) return res.status(401).json({ error: 'Auth required' });
+  if (!t || !adminTokens.has(t)) return res.status(401).json({ error: 'Unauthorized' });
   next();
 }
 
 app.post('/api/admin/login', async (req, res) => {
   const { password } = req.body;
-  let adminData = await getAdmin();
-  if (!adminData) {
-    const hash = await bcrypt.hash(password, 10);
-    await db.collection('config').doc('admin').set({ passwordHash: hash });
-    adminData = { passwordHash: hash };
-  }
-  if (await bcrypt.compare(password, adminData.passwordHash)) {
-    const token = crypto.randomBytes(32).toString('hex');
-    adminTokens.add(token);
-    return res.json({ token });
+  let data = await getAdmin();
+  if (!data) { await setAdminPassword(password); data = { passwordHash: await bcrypt.hash(password, 10) }; }
+  if (await bcrypt.compare(password, data.passwordHash)) {
+    const t = crypto.randomBytes(32).toString('hex');
+    adminTokens.add(t); return res.json({ token: t });
   }
   res.status(401).json({ error: 'Invalid' });
 });
 
+// ─── API ROUTES ───
 app.get('/api/admin/verify', requireAdmin, (req, res) => res.json({ ok: true }));
 app.post('/api/admin/upload', requireAdmin, upload.single('file'), (req, res) => res.json({ url: `/uploads/${req.file.filename}` }));
 
-// Routes
-app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
-
-app.get('/:slug', async (req, res, next) => {
-  const slug = req.params.slug.toLowerCase();
-  if (['api', 'admin', 'uploads', 'lib', 'voice', 'commentary', 'avatars', 'avatar.html', 'index.html'].includes(slug)) return next();
-  const snap = await db.collection('sessions').where('slug', '==', slug).limit(1).get();
-  if (!snap.empty) return res.redirect(`/avatar.html?session=${snap.docs[0].id}`);
-  next();
-});
-
-app.use(express.static(path.join(__dirname, 'public')));
-
-// ─── TTS ───
 const MODAL_PIPER_URL = 'https://mousears1090--sushi-piper-tts-tts.modal.run';
 const ttsCache = new Map();
 
@@ -94,7 +79,7 @@ app.post('/api/tts', async (req, res) => {
       body: JSON.stringify({ text, voice: voice || 'amy' }),
     });
     const data = await r.json();
-    if (!data.audio) throw new Error(data.error || 'Modal Error');
+    if (!data.audio) throw new Error('Modal Error');
     const result = { audio: data.audio, format: 'wav' };
     if (ttsCache.size > 1000) ttsCache.delete(ttsCache.keys().next().value);
     ttsCache.set(key, result);
@@ -102,44 +87,7 @@ app.post('/api/tts', async (req, res) => {
   } catch (err) { res.status(502).json({ error: err.message }); }
 });
 
-// ─── DATA FETCHING ───
-const cache = {};
-async function fetchCached(key, url, ttl = 8000) {
-  if (cache[key] && (Date.now() - cache[key].ts) < ttl) return cache[key].data;
-  const res = await fetch(url); const data = await res.json();
-  cache[key] = { data, ts: Date.now() };
-  return data;
-}
-
-function parseScoreboard(data) {
-  return (data.events || []).map(e => {
-    const c = e.competitions[0], h = c.competitors.find(x => x.homeAway === 'home'), a = c.competitors.find(x => x.homeAway === 'away');
-    return {
-      id: e.id, name: e.name, status: c.status.type,
-      home: { abbreviation: h.team.abbreviation, score: h.score, color: h.team.color ? `#${h.team.color}` : null },
-      away: { abbreviation: a.team.abbreviation, score: a.score, color: a.team.color ? `#${a.team.color}` : null }
-    };
-  });
-}
-
-function parseSummary(data) {
-  const drives = data.drives || {};
-  const boxscore = data.boxscore || {};
-  const allDrives = (drives.previous || []).map(d => ({
-    team: d.team?.abbreviation, yards: d.yards,
-    playList: (d.plays || []).map(p => ({ text: p.text, type: p.type?.text }))
-  }));
-  let plays = (data.plays || data.keyEvents || []).map(p => ({ text: p.text, type: p.type?.text || p.type, team: p.team?.abbreviation }));
-  return { teamStats: boxscore.teams, drives: allDrives, plays };
-}
-
-// ─── SESSION MANAGEMENT ───
-const sessionRuntimes = new Map();
-function getRuntime(id) {
-  if (!sessionRuntimes.has(id)) sessionRuntimes.set(id, { lastSeq: -1, cache: null, ts: 0 });
-  return sessionRuntimes.get(id);
-}
-
+// ─── SESSION ADMIN ───
 app.get('/api/admin/sessions', requireAdmin, async (req, res) => {
   const s = await db.collection('sessions').get();
   res.json(s.docs.map(d => d.data()));
@@ -160,84 +108,80 @@ app.patch('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
 
 app.delete('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
   await db.collection('sessions').doc(req.params.id).delete();
-  sessionRuntimes.delete(req.params.id); res.json({ ok: true });
+  res.json({ ok: true });
 });
 
+// ─── PUBLIC API ───
 app.get('/api/sessions', async (req, res) => {
   const s = await db.collection('sessions').where('status', '==', 'active').get();
   res.json(s.docs.map(d => d.data()));
 });
 
-app.get('/api/sessions/:id/game', async (req, res) => {
-  const d = await db.collection('sessions').doc(req.params.id).get();
-  if (!d.exists) return res.status(404).send();
-  const s = d.data();
-  const raw = await fetchCached(`sb_${s.espnSlug}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/scoreboard`);
-  res.json(parseScoreboard(raw).find(x => x.id === s.espnEventId));
-});
-
-// ─── COMMENTARY ───
+// ─── COMMENTARY ENGINE ───
 const MODAL_MISTRAL_URL = 'https://mousears1090--claudeapps-mistral-mistralmodel-chat.modal.run';
+const sessionRuntimes = new Map();
+function getRuntime(id) {
+  if (!sessionRuntimes.has(id)) sessionRuntimes.set(id, { lastSeq: -1, cache: null, ts: 0 });
+  return sessionRuntimes.get(id);
+}
 
 function strip(text, name) {
-  return text.replace(/🗣️|🎙️|🔊/g, '')
-             .replace(new RegExp(`^${name}[:\\s—-]+`, 'i'), '')
-             .replace(/^["']|["']$/g, '')
+  if (!text) return "";
+  return text.replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '') // All emojis
+             .replace(new RegExp(`^${name}[:\\s—-]+`, 'i'), '') // Name prefix
+             .replace(/^\[[AB]\][:\s—-]*/, '') // [A] prefix
+             .replace(/^["']|["']$/g, '') // Quotes
              .replace(/\bSpeaking\b/gi, '')
              .trim();
 }
 
 app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
   try {
-    const sessionId = req.params.id;
-    const doc = await db.collection('sessions').doc(sessionId).get();
+    const doc = await db.collection('sessions').doc(req.params.id).get();
     if (!doc.exists) return res.status(404).send();
     const s = doc.data();
-    const rt = getRuntime(sessionId);
+    const rt = getRuntime(s.id);
     const now = Date.now();
 
     if (rt.cache && (now - rt.ts) < 5000) return res.json(rt.cache);
 
-    const scoreData = await fetchCached(`sb_${s.espnSlug}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/scoreboard`);
-    const game = parseScoreboard(scoreData).find(e => e.id === s.espnEventId);
+    // Dynamic Interval
+    const interval = (s.settings?.preGameInterval || 45) * 1000;
+    if (rt.cache && (now - rt.ts) < interval) return res.json(rt.cache);
 
-    if (!game || game.status?.state !== 'in') {
-      const interval = (s.settings?.preGameInterval || 45) * 1000;
-      if (rt.cache && (now - rt.ts) < interval) return res.json(rt.cache);
-      const prompt = `Argue about ${game?.name || 'the game'}. [A] ${s.commentators[0].name}, [B] ${s.commentators[1].name}. 3 turns: [A], [B], [A]. No names in lines.`;
-      const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
-      const json = await r.json();
-      const turns = json.choices[0].message.content.split('\n').filter(l => l.includes('[A]') || l.includes('[B]')).map(l => {
-        const isA = l.includes('[A]');
-        const c = isA ? s.commentators[0] : s.commentators[1];
-        return { speaker: isA ? 'A' : 'B', name: c.name, text: strip(l.replace(/^\[[AB]\]/, ''), c.name) };
-      });
-      rt.cache = { turns, status: 'pre', play: { description: 'Pre-game Banter', seq: now }, timestamp: now }; rt.ts = now;
-      return res.json(rt.cache);
-    }
-
-    const summaryData = await fetchCached(`sum_${s.espnEventId}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/summary?event=${s.espnEventId}`);
-    const summary = parseSummary(summaryData);
-    const latestDrive = (summary.drives || []).slice(-1)[0];
-    const latestPlay = (latestDrive?.playList || []).slice(-1)[0] || (summary.plays || []).slice(-1)[0];
-    if (!latestPlay) return res.json({ turns: [] });
-
-    const seq = (summary.drives?.length || 0) * 100 + (latestDrive?.playList?.length || summary.plays?.length || 0);
-    if (seq === rt.lastSeq && (now - rt.ts) < 45000) return res.json(rt.cache);
-
-    const prompt = `Live commentary for ${game.name}. Play: ${latestPlay.text}. [A] ${s.commentators[0].name}, [B] ${s.commentators[1].name}. 3 turns: [A], [B], [A]. No names.`;
+    const prompt = `Argue unhinged about ${s.gameName}. [A] ${s.commentators[0].name}, [B] ${s.commentators[1].name}. 3 turns: [A], [B], [A]. NO NAMES. NO EMOJIS.`;
     const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
     const json = await r.json();
-    const turns = json.choices[0].message.content.split('\n').filter(l => l.includes('[A]') || l.includes('[B]')).map(l => {
+    const raw = json.choices[0].message.content;
+    
+    const turns = raw.split('\n').filter(l => l.includes('[A]') || l.includes('[B]')).map(l => {
       const isA = l.includes('[A]');
       const c = isA ? s.commentators[0] : s.commentators[1];
-      return { speaker: isA ? 'A' : 'B', name: c.name, text: strip(l.replace(/^\[[AB]\]/, ''), c.name) };
+      return { speaker: isA ? 'A' : 'B', name: c.name, text: strip(l, c.name) };
     });
 
-    rt.lastSeq = seq;
-    rt.cache = { turns, status: 'live', play: { description: latestPlay.text, seq }, timestamp: now }; rt.ts = now;
+    rt.cache = { turns, status: 'live', timestamp: now };
+    rt.ts = now;
     res.json(rt.cache);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Sushi on ${PORT}`));
+// ─── STATIC & SLUGS ───
+
+// Serve Admin specifically
+app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
+
+// Custom Slug Handler (must be AFTER api routes)
+app.get('/:slug', async (req, res, next) => {
+  const slug = req.params.slug.toLowerCase();
+  // Reserved words
+  if (['api', 'admin', 'uploads', 'lib', 'voice', 'commentary', 'avatars', 'avatar.html', 'index.html'].includes(slug)) return next();
+  
+  const snap = await db.collection('sessions').where('slug', '==', slug).limit(1).get();
+  if (!snap.empty) return res.redirect(`/avatar.html?session=${snap.docs[0].id}`);
+  next();
+});
+
+app.use(express.static(path.join(__dirname, 'public')));
+
+app.listen(PORT, () => console.log(`Sushi on ${PORT}`));
