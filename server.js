@@ -1121,8 +1121,12 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     const runtime = getRuntime(sessionId);
     const now = Date.now();
 
-    if (runtime.commentaryCache.data && (now - runtime.commentaryCache.ts) < COMMENTARY_COOLDOWN) {
-      return res.json(runtime.commentaryCache.data);
+    // ─── 1. GLOBAL CACHE CHECK (Live & Pre-Game) ───
+    if (runtime.commentaryCache.data) {
+      const age = now - runtime.commentaryCache.ts;
+      if (age < COMMENTARY_COOLDOWN) {
+        return res.json(runtime.commentaryCache.data);
+      }
     }
 
     // Get game data
@@ -1131,7 +1135,13 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     const events = parseScoreboard(scoreData);
     const game = events.find(e => e.id === session.espnEventId);
 
+    // ─── 2. HANDLE PRE-GAME / POST-GAME ───
     if (!game || game.status?.state !== 'in') {
+      // Check if we already have a relatively fresh pre-game commentary
+      if (runtime.commentaryCache.data && (now - runtime.commentaryCache.ts) < STALE_COMMENTARY_MAX) {
+        return res.json(runtime.commentaryCache.data);
+      }
+
       const prePayload = buildPreGamePayload(game, session);
       if (!prePayload) {
         return res.json({ turns: [], status: 'waiting', message: 'Waiting for game to start' });
@@ -1149,6 +1159,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
       const result = {
         turns, status: game?.status?.state === 'post' ? 'post' : 'pre',
+        play: { description: game?.status?.state === 'post' ? 'Post-Game Wrap-up' : 'Pre-Game Discussion', seq: now },
         raw: rawText, timestamp: now,
         commentators: { a: commentatorA, b: commentatorB },
       };
@@ -1156,7 +1167,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       return res.json(result);
     }
 
-    // Live game — get summary
+    // ─── 3. LIVE GAME ───
     const summaryUrl = espnSummary(session.espnSlug, session.espnEventId);
     const summaryData = await fetchCached(`summary_${session.espnEventId}`, summaryUrl, CACHE_TTL.summary);
     const summary = parseSummary(summaryData);
@@ -1168,8 +1179,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
     const currentSeq = payload.event.seq;
     const isNewPlay = currentSeq !== runtime.lastCommentarySeq;
-    const commentaryAge = now - runtime.commentaryCache.ts;
-    const isStale = commentaryAge > STALE_COMMENTARY_MAX;
+    const isStale = (now - runtime.commentaryCache.ts) > STALE_COMMENTARY_MAX;
 
     if (!isNewPlay && !isStale && runtime.commentaryCache.data?.turns?.length > 0) {
       return res.json(runtime.commentaryCache.data);

@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-    <title>Sushi - VRM Cinematic</title>
+    <title>Sushi - VRM Cinematic Stream</title>
     <style>
         * { margin: 0; padding: 0; box-sizing: border-box; }
         body {
@@ -12,6 +12,7 @@
         }
         #root { width: 100%; height: 100%; position: relative; }
         
+        /* High-End Stream HUD */
         .stream-hud {
             position: absolute; top: 0; left: 0; right: 0; z-index: 100;
             background: linear-gradient(180deg, rgba(10,10,15,0.98) 0%, rgba(10,10,15,0.8) 100%);
@@ -34,6 +35,7 @@
         .ticker-label { font-size: 12px; font-weight: 900; color: #FFB81C; text-transform: uppercase; letter-spacing: 3px; margin-right: 20px; border: 1px solid #FFB81C; padding: 2px 10px; border-radius: 6px; }
         .ticker-desc { font-size: 16px; font-weight: 600; color: rgba(255,255,255,0.95); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+        /* Stage & Avatars */
         .vrm-stage {
             position: absolute; inset: 0; display: flex;
             background: radial-gradient(circle at center, #1a1a2e 0%, #010103 100%);
@@ -71,6 +73,7 @@
         .subtitle-name { font-size: 13px; font-weight: 900; color: #FFB81C; text-transform: uppercase; margin-bottom: 8px; letter-spacing: 3px; }
         .subtitle-text { font-size: 20px; line-height: 1.6; color: #fff; font-weight: 600; }
 
+        /* Overlays */
         .loading-screen {
             position: fixed; inset: 0; z-index: 1000;
             background: #010103; display: flex; flex-direction: column; align-items: center; justify-content: center;
@@ -86,8 +89,7 @@
         }
         .start-btn {
             padding: 28px 56px; border-radius: 60px;
-            background: linear-gradient(135deg, #FFB81C, #FF6B35);
-            color: #000; font-weight: 950; font-size: 24px;
+            background: #fff; color: #000; font-weight: 900; font-size: 24px;
             box-shadow: 0 20px 50px rgba(255,184,28,0.5);
             letter-spacing: 2px; transition: all 0.3s;
         }
@@ -134,29 +136,40 @@
 
         const noise = (t) => Math.sin(t) + Math.sin(t * 2.5) * 0.5 + Math.sin(t * 0.1) * 2.0;
 
-        const events = {
+        const avatarEvents = {
             listeners: [],
-            sub(fn) { this.listeners.push(fn); return () => this.listeners = this.listeners.filter(l => l !== fn); },
+            subscribe(fn) { this.listeners.push(fn); return () => { this.listeners = this.listeners.filter(l => l !== fn); }; },
             emit(side, type, data) { this.listeners.forEach(l => l(side, type, data)); }
         };
 
-        class VoiceService {
-            constructor() { this.ctx = null; }
-            async init() {
-                if (!this.ctx) this.ctx = new (window.AudioContext || window.webkitAudioContext)();
-                if (this.ctx.state === 'suspended') await this.ctx.resume();
-                
-                const b = this.ctx.createBuffer(1, 1, 22050);
-                const s = this.ctx.createBufferSource(); s.buffer = b;
-                s.connect(this.ctx.destination); s.start(0);
+        class TTSService {
+            constructor() { 
+                this.audioContext = null; 
+                this.isSpeaking = false;
             }
-            async speak(text, side) {
+            async init() {
+                if (!this.audioContext) this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
+                if (this.audioContext.state === 'suspended') await this.audioContext.resume();
+                
+                // Audio hardware unlock for iOS
+                const b = this.audioContext.createBuffer(1, 1, 22050);
+                const s = this.audioContext.createBufferSource(); s.buffer = b;
+                s.connect(this.audioContext.destination); s.start(0);
+                
+                // Unlock Speech
+                const u = new SpeechSynthesisUtterance(" ");
+                u.volume = 0; window.speechSynthesis.speak(u);
+            }
+            async speak(text, side, voiceId) {
+                if (this.isSpeaking) return; // Prevent internal overlap
+                this.isSpeaking = true;
+                
                 await this.init();
                 try {
                     const res = await fetch('/api/tts', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text })
+                        body: JSON.stringify({ text, voiceId })
                     });
                     if (!res.ok) throw new Error("TTS API Error");
                     const data = await res.json();
@@ -165,24 +178,41 @@
                     const buf = new Uint8Array(bin.length);
                     for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
                     
-                    const ad = await this.ctx.decodeAudioData(buf.buffer);
-                    const src = this.ctx.createBufferSource(); src.buffer = ad;
-                    const ana = this.ctx.createAnalyser(); ana.fftSize = 256;
-                    src.connect(ana); ana.connect(this.ctx.destination);
+                    const audioBuffer = await this.audioContext.decodeAudioData(buf.buffer);
+                    const source = this.audioContext.createBufferSource();
+                    source.buffer = audioBuffer;
+                    const analyser = this.audioContext.createAnalyser();
+                    analyser.fftSize = 256;
+                    source.connect(analyser);
+                    analyser.connect(this.audioContext.destination);
                     
-                    const dat = new Uint8Array(ana.frequencyBinCount);
-                    const dur = ad.duration * 1000; const start = Date.now();
+                    const dataArray = new Uint8Array(analyser.frequencyBinCount);
+                    const duration = audioBuffer.duration * 1000;
+                    const start = Date.now();
+
                     return new Promise(resolve => {
+                        let active = true;
                         const loop = () => {
-                            if (Date.now() - start > dur) return;
-                            ana.getByteFrequencyData(dat);
-                            let avg = 0; for(let i=0; i<dat.length; i++) avg += dat[i];
-                            avg /= dat.length;
-                            events.emit(side, 'vis', { v: avg > 20 ? ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)] : 'sil', vol: avg/255 });
+                            if (!active) return;
+                            if (Date.now() - start > duration) {
+                                active = false;
+                                resolve();
+                                return;
+                            }
+                            analyser.getByteFrequencyData(dataArray);
+                            let avg = 0; for(let i=0; i<dataArray.length; i++) avg += dataArray[i];
+                            avg /= dataArray.length;
+                            avatarEvents.emit(side, 'viseme', { viseme: avg > 20 ? ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)] : 'sil', volume: avg/255 });
                             requestAnimationFrame(loop);
                         };
-                        src.onended = () => { events.emit(side, 'vis', { v: 'sil', vol: 0 }); resolve(); };
-                        src.start(0); loop();
+                        source.onended = () => { 
+                            active = false;
+                            this.isSpeaking = false;
+                            avatarEvents.emit(side, 'viseme', { viseme: 'sil', volume: 0 }); 
+                            resolve(); 
+                        };
+                        source.start(0);
+                        loop();
                     });
                 } catch (e) {
                     console.warn("TTS Fallback", e);
@@ -190,11 +220,15 @@
                         const u = new SpeechSynthesisUtterance(text);
                         u.onboundary = (ev) => {
                             if (ev.name === 'word') {
-                                events.emit(side, 'vis', { v: 'aa', vol: 0.5 });
-                                setTimeout(() => events.emit(side, 'vis', { v: 'sil', vol: 0 }), 100);
+                                avatarEvents.emit(side, 'viseme', { viseme: ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)], volume: 0.5 });
+                                setTimeout(() => avatarEvents.emit(side, 'viseme', { viseme: 'sil', volume: 0 }), 100);
                             }
                         };
-                        u.onend = r; window.speechSynthesis.speak(u);
+                        u.onend = () => {
+                            this.isSpeaking = false;
+                            r();
+                        };
+                        window.speechSynthesis.speak(u);
                     });
                 }
             }
@@ -204,6 +238,7 @@
             const canvasRef = useRef(null);
             const vrmRef = useRef(null);
             const speakerRef = useRef(activeSpeaker);
+            const isLoadedRef = useRef(false);
             
             useEffect(() => { speakerRef.current = activeSpeaker; }, [activeSpeaker]);
 
@@ -213,8 +248,7 @@
                     const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = window;
                     const scene = new THREE.Scene();
                     const cam = new THREE.PerspectiveCamera(30, canvasRef.current.clientWidth / canvasRef.current.clientHeight, 0.1, 1000);
-                    cam.position.set(0, 1.35, 2.2); 
-                    cam.lookAt(0, 1.25, 0);
+                    cam.position.set(0, 1.35, 2.2); cam.lookAt(0, 1.25, 0);
                     
                     const ren = new THREE.WebGLRenderer({ canvas: canvasRef.current, alpha: true, antialias: true });
                     ren.setSize(canvasRef.current.clientWidth, canvasRef.current.clientHeight);
@@ -234,82 +268,58 @@
                             if (vrm.humanoid) {
                                 const l = vrm.humanoid.getNormalizedBoneNode('leftUpperArm');
                                 const r = vrm.humanoid.getNormalizedBoneNode('rightUpperArm');
-                                if (l) l.rotation.z = -1.3;
-                                if (r) r.rotation.z = 1.3;
+                                if (l) l.rotation.z = -1.35;
+                                if (r) r.rotation.z = 1.35;
                             }
                         }
+                        isLoadedRef.current = true;
                     });
 
                     const clock = new THREE.Clock();
                     const animate = () => {
                         if (!mounted) return; requestAnimationFrame(animate);
-                        
                         const delta = Math.min(clock.getDelta(), 0.05);
                         const t = clock.getElapsedTime();
 
-                        if (vrmRef.current) {
+                        if (vrmRef.current && isLoadedRef.current) {
                             const h = vrmRef.current.humanoid;
                             if (h) {
-                                const spine = h.getNormalizedBoneNode('spine');
-                                const head = h.getNormalizedBoneNode('head');
-                                const lua = h.getNormalizedBoneNode('leftUpperArm');
-                                const rua = h.getNormalizedBoneNode('rightUpperArm');
-                                const lla = h.getNormalizedBoneNode('leftLowerArm');
-                                const rla = h.getNormalizedBoneNode('rightLowerArm');
+                                const spine = h.getNormalizedBoneNode('spine'), head = h.getNormalizedBoneNode('head');
+                                const lua = h.getNormalizedBoneNode('leftUpperArm'), rua = h.getNormalizedBoneNode('rightUpperArm');
+                                const lla = h.getNormalizedBoneNode('leftLowerArm'), rla = h.getNormalizedBoneNode('rightLowerArm');
 
                                 const isSpeaking = speakerRef.current === side;
-                                
-                                const breath = Math.sin(t * 0.8) * 0.02;
                                 const sway = noise(t * 0.2) * 0.02;
                                 
                                 if (spine) {
-                                    spine.rotation.x = damp(spine.rotation.x, sway, 2, delta);
+                                    spine.rotation.x = damp(spine.rotation.x, isSpeaking ? 0.15 : sway, 2, delta);
                                     spine.rotation.y = damp(spine.rotation.y, sway * 0.5, 2, delta);
-                                    spine.position.y = breath * 0.5;
+                                    spine.position.y = Math.sin(t * 0.8) * 0.01;
                                 }
 
                                 if (head) {
                                     const targetY = isSpeaking ? 0 : (side === 'left' ? 0.3 : -0.3);
                                     const targetX = isSpeaking ? Math.sin(t * 2) * 0.05 : 0;
-                                    
                                     head.rotation.y = damp(head.rotation.y, targetY + sway, 3, delta);
                                     head.rotation.x = damp(head.rotation.x, targetX, 5, delta);
-                                    head.rotation.z = damp(head.rotation.z, sway * 0.5, 2, delta);
                                 }
 
-                                let l_z = -1.35; let r_z = 1.35;
-                                let l_x = 0; let r_x = 0;
-                                let ll_x = -0.1; let rl_x = -0.1;
-
+                                let l_z = -1.35, r_z = 1.35, l_x = 0, r_x = 0, ll_x = -0.1, rl_x = -0.1;
                                 if (isSpeaking) {
-                                    const gesture = noise(t * 1.5); 
-                                    l_z = -1.1 + gesture * 0.1;
-                                    r_z = 1.1 - gesture * 0.1;
-                                    l_x = -0.3 + gesture * 0.2;
-                                    r_x = -0.3 + gesture * 0.2;
-                                    ll_x = -0.8 + gesture * 0.3;
-                                    rl_x = -0.8 + gesture * 0.3;
+                                    const g = noise(t * 1.5); 
+                                    l_z = -1.1 + g * 0.1; r_z = 1.1 - g * 0.1;
+                                    l_x = -0.4 + g * 0.2; r_x = -0.4 + g * 0.2;
+                                    ll_x = -0.8 + g * 0.3; rl_x = -0.8 + g * 0.3;
                                 }
 
-                                if (lua) {
-                                    lua.rotation.z = damp(lua.rotation.z, l_z, 4, delta);
-                                    lua.rotation.x = damp(lua.rotation.x, l_x, 4, delta);
-                                }
-                                if (rua) {
-                                    rua.rotation.z = damp(rua.rotation.z, r_z, 4, delta);
-                                    rua.rotation.x = damp(rua.rotation.x, r_x, 4, delta);
-                                }
+                                if (lua) { lua.rotation.z = damp(lua.rotation.z, l_z, 4, delta); lua.rotation.x = damp(lua.rotation.x, l_x, 4, delta); }
+                                if (rua) { rua.rotation.z = damp(rua.rotation.z, r_z, 4, delta); rua.rotation.x = damp(rua.rotation.x, r_x, 4, delta); }
                                 if (lla) lla.rotation.x = damp(lla.rotation.x, ll_x, 4, delta);
                                 if (rla) rla.rotation.x = damp(rla.rotation.x, rl_x, 4, delta);
                             }
-
                             vrmRef.current.update(delta);
-                            
                             const m = vrmRef.current.expressionManager;
-                            if (m && Math.random() < 0.005) {
-                                m.setValue('blink', 1);
-                                setTimeout(() => m.setValue('blink', 0), 150);
-                            }
+                            if (m && Math.random() < 0.005) { m.setValue('blink', 1); setTimeout(() => m.setValue('blink', 0), 150); }
                         }
                         ren.render(scene, cam);
                     };
@@ -325,16 +335,16 @@
             }, [side, modelUrl]);
 
             useEffect(() => {
-                return events.sub((s, type, data) => {
-                    if (s !== side || !vrmRef.current?.expressionManager) return;
+                return avatarEvents.subscribe((targetSide, type, data) => {
+                    if (targetSide !== side || !vrmRef.current?.expressionManager) return;
                     const m = vrmRef.current.expressionManager, map = m._expressionMap;
-                    if (type === 'vis') {
+                    if (type === 'viseme') {
                         ['aa','ih','ou','E','oh','a','i','u','e','o'].forEach(v => { if (v in map) m.setValue(v, 0); });
-                        if (data.v !== 'sil') {
-                            let t = data.v;
-                            if (!(t in map)) { const f = { 'aa':'a','ih':'i','ou':'u','E':'e','oh':'o' }; t = f[data.v] || data.v[0].toLowerCase(); }
+                        if (data.viseme !== 'sil') {
+                            let t = data.viseme;
+                            if (!(t in map)) { const f = { 'aa':'a','ih':'i','ou':'u','E':'e','oh':'o' }; t = f[data.viseme] || data.viseme[0].toLowerCase(); }
                             if (!(t in map)) t = t.toUpperCase();
-                            if (t in map) m.setValue(t, data.vol * 1.5);
+                            if (t in map) m.setValue(t, data.volume * 2.0);
                         }
                         m.update();
                     }
@@ -345,29 +355,13 @@
         }
 
         function App() {
-            const [started, setStarted] = useState(false);
-            const [game, setGame] = useState(null);
-            const [activeSpeaker, setActiveSpeaker] = useState(null);
-            const [sub, setSub] = useState({ name: "", text: "" });
-            const voice = useRef(new VoiceService());
-            const lastSeq = useRef(-1);
-            const voiced = useRef(new Set());
-
-            const run = async (turns) => {
-                for (const t of turns) {
-                    const side = t.speaker === 'A' ? 'left' : 'right';
-                    const vid = side === 'left' ? '21m00Tcm4TlvDq8ikWAM' : 'ErXwobaYiN019PkySvjV';
-                    setSub({ name: t.name, text: t.text });
-                    setActiveSpeaker(side);
-                    await voice.current.speak(t.text, side, vid);
-                    setActiveSpeaker(null); setSub({ name: "", text: "" });
-                    await new Promise(r => setTimeout(r, 800));
-                }
-            };
+            const [started, setStarted] = useState(false), [game, setGame] = useState(null), [commentary, setCommentary] = useState(null);
+            const [activeSpeaker, setActiveSpeaker] = useState(null), [sub, setSub] = useState({ name: "", text: "" });
+            const voice = useRef(new VoiceService()), queueRef = useRef([]), isProcessingRef = useRef(false), voicedPlaysRef = useRef(new Set());
 
             useEffect(() => {
-                if (!started) return;
                 const sid = new URLSearchParams(window.location.search).get('session');
+                if (!started) return;
                 const poll = async () => {
                     try {
                         const [g, c] = await Promise.all([
@@ -377,31 +371,53 @@
                         setGame(g);
                         const seq = c.play?.seq || c.timestamp;
                         const pid = c.play?.description || c.timestamp;
-                        if (seq !== lastSeq.current && !voiced.current.has(pid)) {
-                            lastSeq.current = seq; voiced.current.add(pid);
-                            run(c.turns);
+                        if (seq !== lastSeq.current && !voicedPlaysRef.current.has(pid)) {
+                            lastSeq.current = seq; voicedPlaysRef.current.add(pid);
+                            setCommentary(c);
+                            queueRef.current = [...c.turns];
+                            processQueue();
                         }
                     } catch (e) {}
                 };
-                poll(); setInterval(poll, 10000);
+                const lastSeq = { current: -1 };
+                poll(); const itv = setInterval(poll, 8000);
+                return () => clearInterval(itv);
             }, [started]);
 
-            if (!started) return <div className="start-overlay" onClick={async () => { await voice.current.init(); setStarted(true); }}><div className="start-btn">START CINEMATIC STREAM</div></div>;
+            const processQueue = async () => {
+                if (isProcessingRef.current || queueRef.current.length === 0) return;
+                isProcessingRef.current = true;
+                while (queueRef.current.length > 0) {
+                    const t = queueRef.current.shift();
+                    const side = t.speaker === 'A' ? 'left' : 'right';
+                    const voiceId = side === 'left' ? '21m00Tcm4TlvDq8ikWAM' : 'ErXwobaYiN019PkySvjV';
+                    setSub({ name: t.name, text: t.text });
+                    setActiveSpeaker(side);
+                    await voice.current.speak(t.text, side, voiceId);
+                    setActiveSpeaker(null); setSub({ name: "", text: "" });
+                    await new Promise(r => setTimeout(r, 1000));
+                }
+                isProcessingRef.current = false;
+            };
+
+            if (!started) return <div className="start-overlay" onClick={async () => { await voice.current.init(); setStarted(true); }}><div className="start-btn">TAP TO START STREAM</div></div>;
 
             return (
                 <div id="root">
                     <div className="stream-hud">
-                        <div className="hud-scores">
-                            <div className="hud-team">
-                                <span className="hud-abbr">{game?.away?.abbreviation}</span>
-                                <span className="hud-pts">{game?.away?.score}</span>
-                            </div>
-                            <span className="hud-sep">VS</span>
-                            <div className="hud-team">
-                                <span className="hud-abbr">{game?.home?.abbreviation}</span>
-                                <span className="hud-pts">{game?.home?.score}</span>
+                        <div className="hud-top">
+                            <div className="hud-scores">
+                                <div className="hud-team"><span className="hud-abbr">{game?.away?.abbreviation}</span><span className="hud-pts">{game?.away?.score}</span></div>
+                                <span className="hud-sep">:</span>
+                                <div className="hud-team"><span className="hud-pts">{game?.home?.score}</span><span className="hud-abbr">{game?.home?.abbreviation}</span></div>
                             </div>
                         </div>
+                        {commentary?.play && (
+                            <div className="play-ticker">
+                                <span className="ticker-label">LIVE</span>
+                                <span className="ticker-desc">{commentary.play.description}</span>
+                            </div>
+                        )}
                     </div>
                     <div className="vrm-stage">
                         <Avatar side="left" modelUrl={SAKURA_URL} activeSpeaker={activeSpeaker} />
