@@ -643,9 +643,12 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       return res.json(rt.cache);
     }
 
+    console.log('[Commentary] LIVE GAME - Fetching play-by-play data');
     const summaryRaw = await fetchCached(`sum_${s.espnEventId}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/summary?event=${s.espnEventId}`);
     const summary = parseSummary(summaryRaw);
     const latestPlay = (summary.plays || []).slice(-1)[0];
+    console.log('[Commentary] Latest play:', latestPlay ? latestPlay.text : 'NO PLAYS FOUND');
+
     const seq = (summary.drives?.length || 0) * 100 + (summary.plays?.length || 0);
     const playKey = [
       latestPlay?.id,
@@ -658,18 +661,34 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
     const noNewPlay = (playKey && rt.lastPlayKey === playKey) || (!playKey && rt.lastSeq === seq);
     const noScoreChange = rt.lastScoreKey === scoreKey;
-    if (noNewPlay && noScoreChange && (now - rt.ts) < 45000) return res.json(rt.cache);
+    const cacheAge = rt.cache ? (now - rt.ts) : 999999;
+
+    console.log('[Commentary] Play check:', {
+      noNewPlay,
+      noScoreChange,
+      cacheAge: `${Math.floor(cacheAge/1000)}s`,
+      willUseCache: (noNewPlay && noScoreChange && cacheAge < 45000)
+    });
+
+    if (noNewPlay && noScoreChange && cacheAge < 45000) {
+      console.log('[Commentary] No new plays, returning cached commentary');
+      return res.json(rt.cache);
+    }
+
+    console.log('[Commentary] NEW PLAY DETECTED! Generating fresh commentary via Modal...');
 
     const aPrompt = s.commentators?.[0]?.prompt ? `A style: ${s.commentators[0].prompt}` : '';
     const bPrompt = s.commentators?.[1]?.prompt ? `B style: ${s.commentators[1].prompt}` : '';
     const prompt = `Live banter. [A] ${s.commentators[0].name} is pro-${game.away.abbreviation} and critical of ${game.home.abbreviation}. [B] ${s.commentators[1].name} is pro-${game.home.abbreviation} and critical of ${game.away.abbreviation}. Play: ${latestPlay?.text || 'Game update'}. Score: ${game.away.abbreviation} ${game.away.score}, ${game.home.abbreviation} ${game.home.score}. ${aPrompt} ${bPrompt} 3 turns: [A], [B], [A]. Snappy. They must disagree. A never concedes; B never concedes. Do not include speaker names, letters, or labels in the text. Never address the other by name. No stage directions or emotion labels.`;
     let raw = '';
     try {
+      console.log('[Commentary] Calling Modal LLM...');
       const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
       const json = await r.json();
       raw = json?.choices?.[0]?.message?.content || '';
+      console.log('[Commentary] Modal response received:', raw ? `${raw.length} chars` : 'EMPTY');
     } catch (e) {
-      console.error('Modal live error:', e);
+      console.error('[Commentary] Modal live error:', e);
     }
     if (!raw) {
       const aName = s.commentators[0].name, bName = s.commentators[1].name;
@@ -698,10 +717,14 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       if (txt) turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
     }
 
+    console.log(`[Commentary] Generated ${turns.length} turns for live game`);
+    turns.forEach((t, i) => console.log(`  [${i+1}] ${t.name}: ${t.text.substring(0, 50)}...`));
+
     rt.lastSeq = seq;
     rt.lastPlayKey = playKey || rt.lastPlayKey;
     rt.lastScoreKey = scoreKey;
     rt.cache = { turns, status: 'live', play: { description: latestPlay?.text || 'Game Update', seq }, timestamp: now }; rt.ts = now;
+    console.log('[Commentary] Returning fresh live commentary to client');
     res.json(rt.cache);
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
