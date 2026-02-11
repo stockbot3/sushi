@@ -410,8 +410,21 @@ app.post('/api/tts', async (req, res) => {
       }
     }
 
-    // Fallback to Piper
-    const piperVoice = voiceKey === 'amy' || voiceKey === 'bryce' ? voiceKey : 'adam';
+    // Fallback to Piper - Piper only supports 'amy' and 'bryce'
+    // Map ElevenLabs voices to Piper equivalents
+    const piperVoiceMap = {
+      // Female voices -> amy
+      rachel: 'amy', domi: 'amy', bella: 'amy', elli: 'amy', emily: 'amy',
+      freya: 'amy', grace: 'amy', nicole: 'amy', sarah: 'amy', amy: 'amy',
+      // Male voices -> bryce
+      adam: 'bryce', antoni: 'bryce', arnold: 'bryce', callum: 'bryce',
+      charlie: 'bryce', clyde: 'bryce', daniel: 'bryce', george: 'bryce',
+      joseph: 'bryce', josh: 'bryce', michael: 'bryce', thomas: 'bryce', bryce: 'bryce'
+    };
+    const piperVoice = piperVoiceMap[voiceKey] || 'bryce';
+
+    console.log(`[TTS] Using Piper fallback: ${voiceKey} -> ${piperVoice}`);
+
     const r = await fetch(MODAL_PIPER_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -496,16 +509,26 @@ function strip(text, name, otherName) {
 
 app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
   try {
+    console.log(`[Commentary] Request for session: ${req.params.id}`);
     const doc = await db.collection('sessions').doc(req.params.id).get();
-    if (!doc.exists) return res.status(404).send();
+    if (!doc.exists) {
+      console.error(`[Commentary] Session not found: ${req.params.id}`);
+      return res.status(404).send();
+    }
     const s = doc.data();
+    console.log(`[Commentary] Session:`, { gameName: s.gameName, sport: s.sport, league: s.league, commentators: s.commentators?.map(c => ({ name: c.name, voice: c.voice })) });
     const rt = getRuntime(s.id);
     const now = Date.now();
 
-    if (rt.cache && (now - rt.ts) < 5000) return res.json(rt.cache);
+    if (rt.cache && (now - rt.ts) < 5000) {
+      console.log('[Commentary] Returning cached response');
+      return res.json(rt.cache);
+    }
 
+    console.log(`[Commentary] Fetching ESPN data: ${s.espnSlug}`);
     const scoreData = await fetchCached(`sb_${s.espnSlug}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/scoreboard`);
     const game = parseScoreboard(scoreData).find(e => e.id === s.espnEventId);
+    console.log(`[Commentary] Game found:`, game ? { name: game.name, status: game.status?.state, score: `${game.away?.score}-${game.home?.score}` } : 'NOT FOUND');
 
     const interval = (s.settings?.preGameInterval || 45) * 1000;
     
