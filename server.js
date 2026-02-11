@@ -369,7 +369,10 @@ const ELEVENLABS_VOICES = {
 app.post('/api/tts', async (req, res) => {
   try {
     const { text, voice } = req.body;
-    if (!text) return res.status(400).send();
+    if (!text) {
+      console.error('[TTS] 400 Error - Empty text received:', { text, voice, body: req.body });
+      return res.status(400).send();
+    }
 
     let voiceKey = voice || 'adam';
 
@@ -648,12 +651,20 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       const turns = [];
 
       // Try numbered format first (1. 2. 3.)
-      const numberedRegex = /(\d+)\.\s*"?([^"\n]+)"?/g;
+      // Match: number, dot, optional space/quote, text (everything until next number or end), optional quote
+      const numberedRegex = /(\d+)\.\s*["']?(.*?)["']?(?=\s*\d+\.|$)/gs;
       let m;
       while ((m = numberedRegex.exec(raw)) !== null) {
         const num = parseInt(m[1]);
-        const txt = m[2].trim().replace(/^["']|["']$/g, ''); // Remove quotes
-        if (txt) {
+        let txt = m[2].trim();
+        // Remove surrounding quotes if present
+        txt = txt.replace(/^["']+|["']+$/g, '');
+        // Clean up any trailing punctuation from regex
+        txt = txt.replace(/["']+\s*$/g, '');
+
+        console.log(`[Commentary] Parsed turn ${num}: "${txt.substring(0, 80)}..."`);
+
+        if (txt && txt.length > 5) { // Ensure meaningful text
           const side = num % 2 === 1 ? 'A' : 'B'; // Odd = A, Even = B
           const c = side === 'A' ? s.commentators[0] : s.commentators[1];
           const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
