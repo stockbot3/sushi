@@ -604,19 +604,26 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
     // Only generate pre-game commentary if game hasn't started AND someone is watching
     if (!game || game.status?.state !== 'in') {
-      if (rt.cache && (now - rt.ts) < interval) return res.json(rt.cache);
+      console.log('[Commentary] PRE-GAME MODE - Game not started or not found');
+      if (rt.cache && (now - rt.ts) < interval) {
+        console.log(`[Commentary] Returning cached pre-game commentary (${Math.round((now - rt.ts) / 1000)}s old, interval: ${interval / 1000}s)`);
+        return res.json(rt.cache);
+      }
       const aPrompt = s.commentators?.[0]?.prompt ? `A style: ${s.commentators[0].prompt}` : '';
       const bPrompt = s.commentators?.[1]?.prompt ? `B style: ${s.commentators[1].prompt}` : '';
       const prompt = `Short unhinged pre-game argument. [A] ${s.commentators[0].name} is pro-${game?.away?.abbreviation || 'away'} and critical of ${game?.home?.abbreviation || 'home'}. [B] ${s.commentators[1].name} is pro-${game?.home?.abbreviation || 'home'} and critical of ${game?.away?.abbreviation || 'away'}. Matchup: ${game?.name || s.gameName}. ${aPrompt} ${bPrompt} 3 turns exactly: [A], [B], [A]. SNAPPY. They must disagree. A never concedes; B never concedes. Do not include speaker names, letters, or labels in the text. Never address the other by name. No stage directions or emotion labels.`;
+      console.log('[Commentary] Calling Modal for pre-game commentary...');
       let raw = '';
       try {
         const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
         const json = await r.json();
         raw = json?.choices?.[0]?.message?.content || '';
+        console.log('[Commentary] Modal pre-game response:', raw ? `${raw.length} chars` : 'EMPTY');
       } catch (e) {
-        console.error('Modal pregame error:', e);
+        console.error('[Commentary] Modal pregame error:', e);
       }
       if (!raw) {
+        console.log('[Commentary] Modal returned empty response, using fallback pre-game commentary');
         const aName = s.commentators[0].name, bName = s.commentators[1].name;
         const away = game?.away?.abbreviation || 'Away';
         const home = game?.home?.abbreviation || 'Home';
@@ -624,7 +631,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
           turns: [
             { speaker: 'A', name: aName, text: `${away} is getting the job done so far. That home crowd is quiet.` },
             { speaker: 'B', name: bName, text: `${home} is right there. This flips fast once we tighten up.` },
-            { speaker: 'A', name: aName, text: `You’ve been saying that all night. ${away} is controlling it.` }
+            { speaker: 'A', name: aName, text: `You've been saying that all night. ${away} is controlling it.` }
           ],
           status: 'pre',
           timestamp: now
@@ -640,6 +647,8 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
         const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
         if (txt) turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
       }
+      console.log(`[Commentary] Generated ${turns.length} pre-game turns`);
+      turns.forEach((t, i) => console.log(`  [${i + 1}] ${t.name}: ${t.text.substring(0, 60)}...`));
       rt.cache = { turns, status: 'pre', timestamp: now }; rt.ts = now;
       return res.json(rt.cache);
     }
