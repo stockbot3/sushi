@@ -363,7 +363,20 @@ app.post('/api/tts', async (req, res) => {
     const { text, voice } = req.body;
     if (!text) return res.status(400).send();
 
-    const voiceKey = voice || 'adam';
+    let voiceKey = voice || 'adam';
+
+    // Handle raw ElevenLabs IDs (legacy/direct IDs from admin panel)
+    const voiceIdMap = Object.entries(ELEVENLABS_VOICES).reduce((acc, [key, val]) => {
+      acc[val.id] = key;
+      return acc;
+    }, {});
+
+    // If voice is a raw ID, convert to key
+    if (voiceIdMap[voiceKey]) {
+      console.log(`[TTS] Converting voice ID ${voiceKey} -> ${voiceIdMap[voiceKey]}`);
+      voiceKey = voiceIdMap[voiceKey];
+    }
+
     const key = `${voiceKey}:${text.trim().toLowerCase().substring(0, 100)}`;
 
     if (ttsCache.has(key)) return res.json(ttsCache.get(key));
