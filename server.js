@@ -394,6 +394,7 @@ app.post('/api/tts', async (req, res) => {
     const isElevenLabs = voiceConfig && !voiceConfig.id.startsWith('piper-');
 
     if (isElevenLabs && ELEVENLABS_API_KEY) {
+      console.log(`[TTS] Using ElevenLabs for voice: ${voiceKey}`);
       // Use ElevenLabs
       try {
         const response = await fetch(`https://api.elevenlabs.io/v1/text-to-speech/${voiceConfig.id}`, {
@@ -432,6 +433,10 @@ app.post('/api/tts', async (req, res) => {
     }
 
     // Fallback to Piper - Piper only supports 'amy' and 'bryce'
+    if (!ELEVENLABS_API_KEY) {
+      console.log(`[TTS] ELEVENLABS_API_KEY not set, using Piper fallback`);
+    }
+    console.log(`[TTS] Using Piper fallback for voice: ${voiceKey}`);
     // Map ElevenLabs voices to Piper equivalents
     const piperVoiceMap = {
       // Female voices -> amy
