@@ -1,0 +1,172 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Sushi Debug Panel</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+</head>
+<body class="bg-gray-900 text-white p-8">
+    <div class="max-w-4xl mx-auto">
+        <h1 class="text-3xl font-bold mb-8">🔧 Sushi Debug Panel</h1>
+
+        <!-- Sessions -->
+        <div class="bg-gray-800 p-6 rounded-lg mb-6">
+            <h2 class="text-xl font-bold mb-4">Active Sessions</h2>
+            <div id="sessions"></div>
+        </div>
+
+        <!-- Test TTS -->
+        <div class="bg-gray-800 p-6 rounded-lg mb-6">
+            <h2 class="text-xl font-bold mb-4">Test TTS</h2>
+            <input id="ttsText" class="bg-gray-700 p-2 rounded w-full mb-2" placeholder="Text to speak" value="This is a test of the voice system" />
+            <select id="ttsVoice" class="bg-gray-700 p-2 rounded w-full mb-2">
+                <option value="adam">Adam (Male)</option>
+                <option value="rachel">Rachel (Female)</option>
+                <option value="josh">Josh (Male - Energetic)</option>
+                <option value="elli">Elli (Female - Expressive)</option>
+            </select>
+            <button onclick="testTTS()" class="bg-blue-500 px-4 py-2 rounded w-full">Test TTS</button>
+            <div id="ttsResult" class="mt-4 text-sm"></div>
+        </div>
+
+        <!-- Test Commentary -->
+        <div class="bg-gray-800 p-6 rounded-lg mb-6">
+            <h2 class="text-xl font-bold mb-4">Test Commentary</h2>
+            <input id="sessionId" class="bg-gray-700 p-2 rounded w-full mb-2" placeholder="Session ID" />
+            <button onclick="testCommentary()" class="bg-green-500 px-4 py-2 rounded w-full">Fetch Commentary</button>
+            <div id="commentaryResult" class="mt-4 text-sm"></div>
+        </div>
+
+        <!-- Logs -->
+        <div class="bg-gray-800 p-6 rounded-lg">
+            <h2 class="text-xl font-bold mb-4">Console Logs</h2>
+            <div id="logs" class="bg-gray-900 p-4 rounded font-mono text-xs h-64 overflow-y-auto"></div>
+        </div>
+    </div>
+
+    <script>
+        let logs = [];
+        function log(msg, type = 'info') {
+            const timestamp = new Date().toLocaleTimeString();
+            const color = {info: 'text-blue-400', error: 'text-red-400', success: 'text-green-400'}[type];
+            logs.push(`<div class="${color}">[${timestamp}] ${msg}</div>`);
+            document.getElementById('logs').innerHTML = logs.slice(-50).join('');
+            document.getElementById('logs').scrollTop = document.getElementById('logs').scrollHeight;
+        }
+
+        async function loadSessions() {
+            try {
+                log('Fetching sessions...');
+                const res = await fetch('/api/sessions');
+                const sessions = await res.json();
+                log(`Found ${sessions.length} sessions`, 'success');
+
+                const html = sessions.map(s => `
+                    <div class="bg-gray-700 p-4 rounded mb-2">
+                        <div class="font-bold">${s.gameName}</div>
+                        <div class="text-sm opacity-75">ID: ${s.id}</div>
+                        <div class="text-sm">Status: ${s.status}</div>
+                        <div class="text-sm">Commentators: ${s.commentators?.map(c => `${c.name} (${c.voice})`).join(', ')}</div>
+                        <button onclick="document.getElementById('sessionId').value='${s.id}'"
+                                class="bg-blue-500 px-3 py-1 rounded mt-2 text-sm">
+                            Test This Session
+                        </button>
+                    </div>
+                `).join('');
+                document.getElementById('sessions').innerHTML = html || '<div class="opacity-50">No active sessions</div>';
+            } catch (err) {
+                log('Error loading sessions: ' + err.message, 'error');
+            }
+        }
+
+        async function testTTS() {
+            const text = document.getElementById('ttsText').value;
+            const voice = document.getElementById('ttsVoice').value;
+
+            log(`Testing TTS: voice=${voice}`);
+            document.getElementById('ttsResult').innerHTML = '<div class="text-yellow-400">Generating audio...</div>';
+
+            try {
+                const start = Date.now();
+                const res = await fetch('/api/tts', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({text, voice})
+                });
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                }
+
+                const data = await res.json();
+                const duration = Date.now() - start;
+
+                log(`TTS Success! ${data.format} from ${data.provider} (${duration}ms)`, 'success');
+
+                // Play audio
+                const audioBlob = Uint8Array.from(atob(data.audio), c => c.charCodeAt(0));
+                const audioUrl = URL.createObjectURL(new Blob([audioBlob], {type: `audio/${data.format}`}));
+                const audio = new Audio(audioUrl);
+                audio.play();
+
+                document.getElementById('ttsResult').innerHTML = `
+                    <div class="text-green-400">✅ Success!</div>
+                    <div>Format: ${data.format}</div>
+                    <div>Provider: ${data.provider}</div>
+                    <div>Latency: ${duration}ms</div>
+                `;
+            } catch (err) {
+                log('TTS Error: ' + err.message, 'error');
+                document.getElementById('ttsResult').innerHTML = `
+                    <div class="text-red-400">❌ Error: ${err.message}</div>
+                `;
+            }
+        }
+
+        async function testCommentary() {
+            const sessionId = document.getElementById('sessionId').value;
+            if (!sessionId) {
+                alert('Enter a session ID first');
+                return;
+            }
+
+            log(`Testing commentary for session: ${sessionId}`);
+            document.getElementById('commentaryResult').innerHTML = '<div class="text-yellow-400">Fetching commentary...</div>';
+
+            try {
+                const res = await fetch(`/api/sessions/${sessionId}/commentary/latest`);
+
+                if (!res.ok) {
+                    throw new Error(`HTTP ${res.status}: ${res.statusText}`);
+                }
+
+                const data = await res.json();
+                log(`Commentary received: ${data.turns?.length || 0} turns`, 'success');
+
+                const html = `
+                    <div class="text-green-400">✅ Success!</div>
+                    <div>Status: ${data.status}</div>
+                    <div>Turns: ${data.turns?.length || 0}</div>
+                    <div class="mt-2 space-y-2">
+                        ${data.turns?.map(t => `
+                            <div class="bg-gray-700 p-2 rounded">
+                                <div class="font-bold">${t.name} (${t.speaker})</div>
+                                <div class="text-sm">${t.text}</div>
+                            </div>
+                        `).join('') || ''}
+                    </div>
+                `;
+                document.getElementById('commentaryResult').innerHTML = html;
+            } catch (err) {
+                log('Commentary Error: ' + err.message, 'error');
+                document.getElementById('commentaryResult').innerHTML = `
+                    <div class="text-red-400">❌ Error: ${err.message}</div>
+                `;
+            }
+        }
+
+        // Load on start
+        loadSessions();
+        log('Debug panel loaded', 'success');
+    </script>
+</body>
+</html>
