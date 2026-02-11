@@ -82,6 +82,7 @@ synthesis.speak(utterance);
 - Chrome/Edge: Full support
 - Safari: Limited voices
 - Firefox: Good support
+- iOS Safari: Requires user gesture to unlock audio; use the Start Stream tap and Mute/Unmute button
 
 ## Lip Sync Integration
 

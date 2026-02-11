@@ -42,6 +42,8 @@ Note the URL: `https://yourusername--sushi-piper-tts-tts.modal.run`
 2. Generate service account key:
    - Settings → Service Accounts → Generate New Private Key
 3. Save JSON (you'll paste this into Railway)
+4. Enable Firestore Database
+5. Enable Firebase Storage (and set rules via `firebase deploy --only storage`)
 
 ## Step 3: Railway Setup
 
@@ -61,6 +63,8 @@ MODAL_MISTRAL_URL=https://yourusername--claudeapps-mistral-mistralmodel-chat.mod
 MODAL_PIPER_URL=https://yourusername--sushi-piper-tts-tts.modal.run
 ADMIN_PASSWORD=your_secure_admin_password
 FIREBASE_SERVICE_ACCOUNT={...paste JSON here...}
+FIREBASE_PROJECT_ID=your-firebase-project-id
+FIREBASE_STORAGE_BUCKET=your-bucket.firebasestorage.app
 ```
 
 ### Deploy
@@ -122,7 +126,9 @@ Should return token.
 | `MODAL_PIPER_URL` | Yes | Modal TTS endpoint URL |
 | `ADMIN_PASSWORD` | Yes | Admin dashboard password |
 | `FIREBASE_SERVICE_ACCOUNT` | No | Firebase service account JSON |
-| `PORT` | No | Server port (default: 3007) |
+| `FIREBASE_PROJECT_ID` | Yes | Firebase project ID (Firestore + Storage) |
+| `FIREBASE_STORAGE_BUCKET` | Yes | Firebase Storage bucket |
+| `PORT` | No | Server port (default: 3000) |
 
 ## Troubleshooting
 
@@ -167,6 +173,7 @@ If using Firebase:
 1. Verify `FIREBASE_SERVICE_ACCOUNT` is valid JSON
 2. Check Firebase project has Firestore enabled
 3. Verify service account has proper permissions
+4. Ensure Firebase Storage rules are deployed (`firebase deploy --only storage`)
 
 ## Cost Estimates
 

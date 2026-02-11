@@ -327,54 +327,98 @@
                                     rhand = h.getNormalizedBoneNode('rightHand');
 
                                 const isSpeaking = speakerRef.current === side;
+
+                                // Base animation layers
                                 const sway = noise(time * 0.35) * 0.02;
                                 const breath = Math.sin(time * 1.2) * 0.015;
-                                const idleNod = Math.sin(time * 0.9 + (side === 'left' ? 0.2 : 1.1)) * 0.015;
-                                const gesture = isSpeaking ? Math.sin(time * 2.8 + (side === 'left' ? 0 : 1.5)) * 0.12 : 0;
+                                const breathSlow = Math.sin(time * 0.7) * 0.01;
 
+                                // Speech-driven gesture system with multiple patterns
+                                const gesturePhase = time * 1.8;
+                                const emphasisCycle = Math.floor(time / 3) % 3; // Cycle through 3 gesture types
+
+                                let gestureL = { shoulder: 0, elbow: 0, hand: 0, lift: 0 };
+                                let gestureR = { shoulder: 0, elbow: 0, hand: 0, lift: 0 };
+
+                                if (isSpeaking) {
+                                    // Alternate between different gesture patterns for variety
+                                    if (emphasisCycle === 0) {
+                                        // Pattern 1: Open gestures (explaining)
+                                        const wave = Math.sin(gesturePhase);
+                                        gestureL = { shoulder: 0.3 + wave * 0.2, elbow: -0.6 + wave * 0.15, hand: wave * 0.08, lift: 0.15 };
+                                        gestureR = { shoulder: -0.3 - wave * 0.2, elbow: -0.6 - wave * 0.15, hand: -wave * 0.08, lift: 0.15 };
+                                    } else if (emphasisCycle === 1) {
+                                        // Pattern 2: Emphatic (one hand up, one down)
+                                        const alt = Math.sin(gesturePhase * 1.3);
+                                        gestureL = { shoulder: 0.4 + alt * 0.25, elbow: -0.5 + alt * 0.2, hand: alt * 0.1, lift: 0.2 + alt * 0.1 };
+                                        gestureR = { shoulder: -0.2 - alt * 0.15, elbow: -0.4 - alt * 0.1, hand: -alt * 0.05, lift: 0.05 };
+                                    } else {
+                                        // Pattern 3: Conversational (subtle, natural)
+                                        const subtle = Math.sin(gesturePhase * 0.9);
+                                        const noise1 = noise(time * 0.8) * 0.1;
+                                        const noise2 = noise(time * 0.8 + 100) * 0.1;
+                                        gestureL = { shoulder: 0.25 + subtle * 0.12 + noise1, elbow: -0.55 + subtle * 0.1, hand: subtle * 0.06, lift: 0.12 };
+                                        gestureR = { shoulder: -0.25 - subtle * 0.12 + noise2, elbow: -0.55 - subtle * 0.1, hand: -subtle * 0.06, lift: 0.12 };
+                                    }
+                                } else {
+                                    // Idle: relaxed arms with organic sway
+                                    const idleWave = noise(time * 0.4) * 0.05;
+                                    const idleWave2 = noise(time * 0.4 + 50) * 0.05;
+                                    gestureL = { shoulder: 0.08 + idleWave, elbow: -0.15 + breathSlow * 2, hand: 0.02, lift: 0 };
+                                    gestureR = { shoulder: -0.08 + idleWave2, elbow: -0.15 - breathSlow * 2, hand: -0.02, lift: 0 };
+                                }
+
+                                // Apply animations with smooth damping
                                 if (spine && basePoseRef.current.spine) {
-                                    spine.rotation.x = damp(spine.rotation.x, basePoseRef.current.spine.x + breath * 0.6 + (isSpeaking ? 0.06 : 0), 3, dt);
+                                    spine.rotation.x = damp(spine.rotation.x, basePoseRef.current.spine.x + breath * 0.6 + (isSpeaking ? 0.04 : 0), 3, dt);
                                     spine.rotation.y = damp(spine.rotation.y, basePoseRef.current.spine.y + sway * 0.3, 3, dt);
                                     spine.rotation.z = damp(spine.rotation.z, basePoseRef.current.spine.z + sway * 0.2, 3, dt);
-                                    spine.position.y = Math.sin(time * 0.8) * 0.008;
+                                    spine.position.y = breathSlow * 0.5;
                                 }
+
                                 if (chest && basePoseRef.current.chest) {
-                                    chest.rotation.x = damp(chest.rotation.x, basePoseRef.current.chest.x + breath * 0.4, 3, dt);
+                                    chest.rotation.x = damp(chest.rotation.x, basePoseRef.current.chest.x + breath * 0.4 + (isSpeaking ? 0.03 : 0), 3, dt);
+                                    chest.rotation.y = damp(chest.rotation.y, basePoseRef.current.chest.y + sway * 0.15, 4, dt);
                                 }
+
                                 if (head && basePoseRef.current.head) {
-                                    const idleTurn = Math.sin(time * 0.6 + (side === 'left' ? 0.4 : 1.0)) * 0.06;
-                                    head.rotation.y = damp(
-                                        head.rotation.y,
-                                        basePoseRef.current.head.y + (isSpeaking ? Math.sin(time * 2.4) * 0.12 : idleTurn) + sway * 0.2,
-                                        4,
-                                        dt
-                                    );
-                                    head.rotation.x = damp(
-                                        head.rotation.x,
-                                        basePoseRef.current.head.x + (isSpeaking ? Math.sin(time * 3.2) * 0.09 : idleNod),
-                                        4,
-                                        dt
-                                    );
+                                    const headTurn = isSpeaking ? Math.sin(time * 1.8) * 0.08 : noise(time * 0.5) * 0.04;
+                                    const headNod = isSpeaking ? Math.sin(time * 2.2) * 0.06 : Math.sin(time * 0.9) * 0.012;
+                                    const headTilt = isSpeaking ? Math.sin(time * 1.5) * 0.04 : noise(time * 0.6 + 20) * 0.02;
+
+                                    head.rotation.y = damp(head.rotation.y, basePoseRef.current.head.y + headTurn + sway * 0.2, 4, dt);
+                                    head.rotation.x = damp(head.rotation.x, basePoseRef.current.head.x + headNod, 4, dt);
+                                    head.rotation.z = damp(head.rotation.z, basePoseRef.current.head.z + headTilt, 4, dt);
                                 }
+
+                                // Left arm - natural bending with shoulder, elbow, hand coordination
                                 if (lua && basePoseRef.current.lua) {
-                                    lua.rotation.z = damp(lua.rotation.z, basePoseRef.current.lua.z + (isSpeaking ? 0.18 + gesture * 0.3 : sway * 0.05), 4, dt);
-                                    lua.rotation.x = damp(lua.rotation.x, basePoseRef.current.lua.x + (isSpeaking ? -0.18 + gesture * 0.2 : -0.04), 4, dt);
-                                }
-                                if (rua && basePoseRef.current.rua) {
-                                    rua.rotation.z = damp(rua.rotation.z, basePoseRef.current.rua.z + (isSpeaking ? -0.18 - gesture * 0.3 : -sway * 0.05), 4, dt);
-                                    rua.rotation.x = damp(rua.rotation.x, basePoseRef.current.rua.x + (isSpeaking ? -0.18 - gesture * 0.2 : -0.04), 4, dt);
+                                    lua.rotation.z = damp(lua.rotation.z, basePoseRef.current.lua.z + gestureL.shoulder, 3.5, dt);
+                                    lua.rotation.x = damp(lua.rotation.x, basePoseRef.current.lua.x - 0.1 + gestureL.lift, 3.5, dt);
+                                    lua.rotation.y = damp(lua.rotation.y, basePoseRef.current.lua.y + sway * 0.3, 4, dt);
                                 }
                                 if (lla && basePoseRef.current.lla) {
-                                    lla.rotation.x = damp(lla.rotation.x, basePoseRef.current.lla.x + (isSpeaking ? -0.45 + gesture * 0.25 : -0.05), 4, dt);
-                                }
-                                if (rla && basePoseRef.current.rla) {
-                                    rla.rotation.x = damp(rla.rotation.x, basePoseRef.current.rla.x + (isSpeaking ? -0.45 - gesture * 0.25 : -0.05), 4, dt);
+                                    lla.rotation.x = damp(lla.rotation.x, basePoseRef.current.lla.x + gestureL.elbow, 3, dt);
+                                    lla.rotation.z = damp(lla.rotation.z, basePoseRef.current.lla.z + gestureL.hand * 0.3, 4, dt);
                                 }
                                 if (lhand && basePoseRef.current.lhand) {
-                                    lhand.rotation.z = damp(lhand.rotation.z, basePoseRef.current.lhand.z + (isSpeaking ? 0.04 + gesture * 0.1 : 0.01), 5, dt);
+                                    lhand.rotation.z = damp(lhand.rotation.z, basePoseRef.current.lhand.z + gestureL.hand, 4.5, dt);
+                                    lhand.rotation.x = damp(lhand.rotation.x, basePoseRef.current.lhand.x + gestureL.hand * 0.2, 5, dt);
+                                }
+
+                                // Right arm - mirror with slight offset for asymmetry
+                                if (rua && basePoseRef.current.rua) {
+                                    rua.rotation.z = damp(rua.rotation.z, basePoseRef.current.rua.z + gestureR.shoulder, 3.5, dt);
+                                    rua.rotation.x = damp(rua.rotation.x, basePoseRef.current.rua.x - 0.1 + gestureR.lift, 3.5, dt);
+                                    rua.rotation.y = damp(rua.rotation.y, basePoseRef.current.rua.y - sway * 0.3, 4, dt);
+                                }
+                                if (rla && basePoseRef.current.rla) {
+                                    rla.rotation.x = damp(rla.rotation.x, basePoseRef.current.rla.x + gestureR.elbow, 3, dt);
+                                    rla.rotation.z = damp(rla.rotation.z, basePoseRef.current.rla.z + gestureR.hand * 0.3, 4, dt);
                                 }
                                 if (rhand && basePoseRef.current.rhand) {
-                                    rhand.rotation.z = damp(rhand.rotation.z, basePoseRef.current.rhand.z + (isSpeaking ? -0.04 - gesture * 0.1 : -0.01), 5, dt);
+                                    rhand.rotation.z = damp(rhand.rotation.z, basePoseRef.current.rhand.z + gestureR.hand, 4.5, dt);
+                                    rhand.rotation.x = damp(rhand.rotation.x, basePoseRef.current.rhand.x + gestureR.hand * 0.2, 5, dt);
                                 }
                             }
                         }

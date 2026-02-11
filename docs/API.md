@@ -168,6 +168,15 @@ Response:
 ### Get News
 
 ```
+
+### Get Uploaded Avatar (Proxy)
+
+```
+GET /api/uploads/:filename
+
+Response:
+Binary VRM file (streamed from Firebase Storage)
+```
 GET /api/sessions/:id/news
 
 Response:
@@ -205,6 +214,25 @@ Response:
 
 ### Login
 
+```
+
+### Presets (Admin)
+
+```
+GET /api/admin/presets
+POST /api/admin/presets
+PATCH /api/admin/presets/:id
+DELETE /api/admin/presets/:id
+```
+
+Preset schema (example):
+```
+{
+  "name": "Darth Vader",
+  "prompt": "Cold, commanding, ominous. Short, cutting remarks.",
+  "voice": "bryce",
+  "avatarUrl": "/api/uploads/1700000000000-vader.vrm"
+}
 ```
 POST /api/admin/login
 Content-Type: application/json

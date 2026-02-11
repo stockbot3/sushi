@@ -9,6 +9,7 @@ The avatar system renders interactive 3D characters that:
 - Show facial expressions (happy, sad, angry, surprised, relaxed)
 - Have idle animations (breathing, blinking)
 - Respond to user interaction
+- Support mute/unmute control in the stream HUD
 
 ## Technical Stack
 
@@ -129,6 +130,7 @@ The avatar viewer is responsive:
 - **Desktop/Landscape**: Side-by-side dual avatars
 - **Mobile Portrait**: Stacked single avatar
 - Touch events for expression buttons
+- **iOS Audio**: Audio is unlocked on the "Start Stream" tap; a Mute/Unmute button is available if audio is blocked
 
 ## Adding New VRM Models
 

@@ -15,6 +15,10 @@ All notable changes to the Sushi project.
 - Facial expression controls (happy, sad, angry, surprised, relaxed)
 - Mobile responsive avatar viewer
 - TTS fallback UI indicator
+- Preset personalities (name, prompt, voice, avatar URL)
+- Firebase Storage uploads for avatar models
+- HUD recent-play ticker in avatar stream
+- Mute/Unmute control for stream audio
 
 ### Fixed
 - T-pose issue - arms now relaxed at sides
@@ -22,11 +26,16 @@ All notable changes to the Sushi project.
 - `drives is not defined` error for non-football sports
 - VRM bone naming compatibility (multiple naming conventions)
 - Modal 502 error handling with Web Speech fallback
+- Stats tab guardrails to prevent crashes on missing data
+- Logo enrichment for sessions missing team logos
+- Commentary update detection on play/clock/score changes
+- Commentator name/emotion tag stripping
 
 ### Changed
 - Commentary engine now sport-aware (different play extraction per sport)
 - Updated parseSummary to include plays array for basketball
 - Improved error handling in TTS service
+- Commentary prompt enforces rivalry and avoids name callouts
 
 ## [1.0.0] - 2024-02-09
 

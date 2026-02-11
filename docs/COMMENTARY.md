@@ -9,6 +9,7 @@ The commentary engine fetches live game data from ESPN and generates AI commenta
 - Provides play-by-play reactions
 - Includes personality-driven banter
 - Supports multiple sports (football, basketball, etc.)
+- Uses saved commentator presets (optional) with custom prompts
 
 ## Architecture
 
@@ -144,6 +145,14 @@ const STALE_COMMENTARY_MAX = 45000;   // 45s max age
 - Same play, <45s old → Return cached
 - Same play, >45s old → Refresh
 
+### Play Change Detection
+
+The system detects changes using multiple signals:
+- Latest play text
+- Play ID/sequence number
+- Clock/period
+- Score changes
+
 ### Data Cache
 
 ```javascript
@@ -191,6 +200,16 @@ Create/manage sessions at `/admin`:
 2. **Configure Commentators** - Choose personalities
 3. **Start Session** - Activate live commentary
 4. **Monitor** - View real-time updates
+
+### Presets
+
+Presets allow reusable commentator configurations:
+- `name`
+- `prompt`
+- `voice`
+- `avatarUrl`
+
+In the Admin panel, you can assign presets to each commentator. Preset data is copied into the session at save time.
 
 ## Multi-Sport Support
 

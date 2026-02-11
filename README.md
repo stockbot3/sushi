@@ -9,7 +9,9 @@ Real-time sports commentary with 3D VRM avatars, AI-generated commentary, and hi
 - **3D Avatars**: VRM anime characters with lip-sync and expressions
 - **High-Quality TTS**: Piper TTS on Modal (Amy voice) with Web Speech fallback
 - **Admin Dashboard**: Create/manage commentary sessions with custom personalities
+- **Preset Personalities**: Save and reuse commentator personalities, voices, and avatars
 - **Mobile Responsive**: Works on desktop and mobile browsers
+- **Firebase Storage Uploads**: Avatar uploads stored in Firebase Storage (served via proxy)
 
 ## Architecture
 
@@ -33,9 +35,11 @@ Real-time sports commentary with 3D VRM avatars, AI-generated commentary, and hi
 npm install
 
 # Set environment variables
-export MODAL_PIPER_URL="https://yourusername--sushi-piper-tts-tts.modal.run"
-export MODAL_MISTRAL_URL="https://yourusername--claudeapps-mistral-mistralmodel-chat.modal.run"
 export FIREBASE_SERVICE_ACCOUNT='{...}'
+export FIREBASE_PROJECT_ID="your-firebase-project-id"
+export FIREBASE_STORAGE_BUCKET="your-bucket.firebasestorage.app"
+
+# Note: MODAL_* URLs are currently hardcoded in server.js
 
 # Run locally
 npm start
@@ -56,6 +60,8 @@ npm start
 │   ├── avatar.html        # VRM avatar viewer
 │   ├── admin.html         # Admin dashboard
 │   └── lib/               # Three.js, VRM libraries
+├── firebase.json          # Firebase Storage rules config
+├── storage.rules          # Firebase Storage rules
 ├── modal-llm/
 │   ├── mistral.py         # Modal LLM endpoint
 │   └── piper/tts.py       # Modal TTS endpoint
@@ -68,6 +74,11 @@ npm start
 - [TTS Setup](docs/TTS.md) - Piper TTS on Modal
 - [Commentary Engine](docs/COMMENTARY.md) - AI commentary system
 - [API Reference](docs/API.md) - REST API endpoints
+
+## Dev Notes
+
+- Git branch in use: `codex`
+- Deploys are run manually with `railway up`
 
 ## License
 
