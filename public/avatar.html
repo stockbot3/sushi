@@ -123,16 +123,32 @@
                 s.connect(this.audioContext.destination); s.start(0);
             }
             async speak(text, side, voice) {
-                if (this.isSpeaking) return; this.isSpeaking = true;
+                if (this.isSpeaking) {
+                    console.log('[TTS] Already speaking, skipping');
+                    return;
+                }
+                this.isSpeaking = true;
                 await this.init();
-                if (this.isMuted) { this.isSpeaking = false; return; }
+                if (this.isMuted) {
+                    console.log('[TTS] Muted, skipping');
+                    this.isSpeaking = false;
+                    return;
+                }
                 try {
+                    console.log('[TTS] Fetching audio:', { text: text.substring(0, 30) + '...', voice });
                     const res = await fetch('/api/tts', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
                         body: JSON.stringify({ text, voice })
                     });
+
+                    if (!res.ok) {
+                        console.error('[TTS] Server error:', res.status, res.statusText);
+                        throw new Error(`TTS API error: ${res.status}`);
+                    }
+
                     const data = await res.json();
+                    console.log('[TTS] Received audio:', { format: data.format, provider: data.provider, hasAudio: !!data.audio });
                     if (!data.audio) throw new Error();
 
                     // Detect audio format - ElevenLabs returns MP3, Piper returns WAV
@@ -144,6 +160,7 @@
                     for (let i = 0; i < bin.length; i++) buf[i] = bin.charCodeAt(i);
                     try {
                         const audioBuffer = await this.audioContext.decodeAudioData(buf.buffer);
+                        console.log('[TTS] Audio decoded, duration:', audioBuffer.duration.toFixed(2) + 's');
                         const source = this.audioContext.createBufferSource();
                         source.buffer = audioBuffer;
                         const analyser = this.audioContext.createAnalyser();
@@ -161,7 +178,8 @@
                                 avatarEvents.emit(side, 'viseme', { viseme: avg > 25 ? ['aa','ih','ou','E','oh'][Math.floor(Math.random()*5)] : 'sil', volume: avg/255 });
                                 requestAnimationFrame(loop);
                             };
-                            source.onended = () => { active = false; this.isSpeaking = false; avatarEvents.emit(side, 'viseme', { viseme: 'sil', volume: 0 }); resolve(); };
+                            source.onended = () => { active = false; this.isSpeaking = false; avatarEvents.emit(side, 'viseme', { viseme: 'sil', volume: 0 }); console.log('[TTS] Audio ended'); resolve(); };
+                            console.log('[TTS] Starting audio playback');
                             source.start(0); loop();
                         });
                     } catch (err) {
@@ -429,12 +447,23 @@
                     const t = queueRef.current.shift();
                     const side = t.speaker === 'A' ? 'left' : 'right';
                     const cMeta = sessionMeta?.commentators?.[t.speaker === 'A' ? 0 : 1];
-                    // Correcting voice assignment: A=Female(Sakura)=Amy, B=Male(Avatar.vrm)=Bryce
-                    const defaultVoice = side === 'left' ? 'amy' : 'bryce';
+                    const defaultVoice = side === 'left' ? 'rachel' : 'adam';
+                    const voiceToUse = cMeta?.voice || defaultVoice;
                     const cleaned = cleanSpeech(t.text);
-                    setSub({ name: t.name, text: cleaned }); setActiveSpeaker(side);
-                    await voiceRef.current.speak(cleaned, side, cMeta?.voice || defaultVoice);
-                    setActiveSpeaker(null); setSub({ name: "", text: "" });
+
+                    console.log(`[TTS] Speaking:`, { side, voice: voiceToUse, text: cleaned.substring(0, 50) + '...' });
+
+                    setSub({ name: t.name, text: cleaned });
+                    setActiveSpeaker(side);
+
+                    try {
+                        await voiceRef.current.speak(cleaned, side, voiceToUse);
+                    } catch (err) {
+                        console.error('[TTS] Error:', err);
+                    }
+
+                    setActiveSpeaker(null);
+                    setSub({ name: "", text: "" });
                     await new Promise(r => setTimeout(r, 1000));
                 }
                 isProcessingRef.current = false;
