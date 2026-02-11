@@ -54,7 +54,7 @@
       const startWizard = async () => {
         const s = await api('/api/admin/sports');
         setSports(s); setWizardStep(1);
-        setEdit({ gameName: '', slug: '', status: 'active', settings: { preGameInterval: 45 }, commentators: [{ id: 'A', name: 'Sakura', voice: 'rachel' }, { id: 'B', name: 'Steve', voice: 'adam' }] });
+        setEdit({ gameName: '', slug: '', status: 'active', settings: { preGameInterval: 45, idleTimeout: 30 }, commentators: [{ id: 'A', name: 'Sakura', voice: 'rachel' }, { id: 'B', name: 'Steve', voice: 'adam' }] });
       };
 
       const browseGames = async (sport, league) => {
@@ -69,7 +69,7 @@
         const method = id ? 'PATCH' : 'POST';
         const url = id ? `/api/admin/sessions/${id}` : '/api/admin/sessions';
         // Ensure settings exists
-        const payload = { ...edit, settings: edit.settings || { preGameInterval: 45 } };
+        const payload = { ...edit, settings: edit.settings || { preGameInterval: 45, idleTimeout: 30 } };
         await api(url, { method, body: JSON.stringify(payload) });
         setEdit(null); setWizardStep(0); fetchSessions(); setLoading(false);
       };
@@ -184,6 +184,13 @@
                     <div>
                       <label className="text-xs text-gray-500 font-bold uppercase">Pre-Game Interval (seconds)</label>
                       <input type="number" value={edit.settings?.preGameInterval || 45} onChange={e => setEdit({ ...edit, settings: { ...edit.settings, preGameInterval: parseInt(e.target.value) } })} className="w-full bg-white/5 p-3 rounded-xl text-white" />
+                      <div className="text-xs text-gray-600 mt-1">How often to rotate to next 3 commentary turns</div>
+                    </div>
+
+                    <div>
+                      <label className="text-xs text-gray-500 font-bold uppercase">Idle Timeout (minutes)</label>
+                      <input type="number" value={edit.settings?.idleTimeout || 30} onChange={e => setEdit({ ...edit, settings: { ...edit.settings, idleTimeout: parseInt(e.target.value) } })} className="w-full bg-white/5 p-3 rounded-xl text-white" />
+                      <div className="text-xs text-gray-600 mt-1">Ask "Still watching?" after X minutes of no activity</div>
                     </div>
 
                     {edit.commentators.map((c, i) => (

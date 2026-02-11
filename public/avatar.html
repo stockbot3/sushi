@@ -461,7 +461,11 @@
             const [activeSpeaker, setActiveSpeaker] = useState(null), [sub, setSub] = useState({ name: "", text: "" });
             const [sessionMeta, setSessionMeta] = useState(null);
             const [muted, setMuted] = useState(false);
+            const [isIdle, setIsIdle] = useState(false);
             const voiceRef = useRef(new TTSService()), queueRef = useRef([]), isProcessingRef = useRef(false), voicedRef = useRef(new Set()), lastSeqRef = useRef(-1);
+            const lastActivityRef = useRef(Date.now());
+            const idleCheckRef = useRef(null);
+            const heartbeatIntervalRef = useRef(null);
 
             useEffect(() => {
                 const sid = new URLSearchParams(window.location.search).get('session');
@@ -470,17 +474,44 @@
                     const s = sessions.find(s => s.id === sid); if (s) setSessionMeta(s);
                 });
 
-                // Send heartbeat ping every 30 seconds to indicate active viewer
+                // Track user activity (mouse, keyboard, touch)
+                const trackActivity = () => {
+                    lastActivityRef.current = Date.now();
+                    console.log('[Activity] User active');
+                };
+                window.addEventListener('mousemove', trackActivity);
+                window.addEventListener('mousedown', trackActivity);
+                window.addEventListener('keydown', trackActivity);
+                window.addEventListener('touchstart', trackActivity);
+                window.addEventListener('scroll', trackActivity);
+
+                // Send heartbeat ping every 30 seconds ONLY if not idle
                 const sendHeartbeat = () => {
-                    fetch(`/api/sessions/${sid}/ping`, { method: 'POST' })
-                        .then(r => r.json())
-                        .then(data => console.log('[Heartbeat] Sent', data))
-                        .catch(e => console.error('[Heartbeat] Error:', e));
+                    if (!isIdle) {
+                        fetch(`/api/sessions/${sid}/ping`, { method: 'POST' })
+                            .then(r => r.json())
+                            .then(data => console.log('[Heartbeat] Sent', data))
+                            .catch(e => console.error('[Heartbeat] Error:', e));
+                    } else {
+                        console.log('[Heartbeat] Skipped (user idle)');
+                    }
                 };
                 sendHeartbeat(); // Send immediately
-                const heartbeatInterval = setInterval(sendHeartbeat, 30000); // Every 30s
+                heartbeatIntervalRef.current = setInterval(sendHeartbeat, 30000); // Every 30s
+
+                // Check for idle every 10 seconds
+                const checkIdle = () => {
+                    const idleTimeout = (sessionMeta?.settings?.idleTimeout || 30) * 60 * 1000; // Default 30 min
+                    const timeSinceActivity = Date.now() - lastActivityRef.current;
+                    if (timeSinceActivity > idleTimeout && !isIdle) {
+                        console.log(`[Idle] User idle for ${Math.round(timeSinceActivity / 1000 / 60)} minutes`);
+                        setIsIdle(true);
+                    }
+                };
+                idleCheckRef.current = setInterval(checkIdle, 10000); // Every 10s
 
                 const poll = async () => {
+                    if (isIdle) return; // Don't poll if idle
                     try {
                         const [g, c] = await Promise.all([ fetch(`/api/sessions/${sid}/game`).then(r => r.json()), fetch(`/api/sessions/${sid}/commentary/latest`).then(r => r.json()) ]);
                         setGame(g);
@@ -498,9 +529,15 @@
                 poll(); const itv = setInterval(poll, 8000);
                 return () => {
                     clearInterval(itv);
-                    clearInterval(heartbeatInterval);
+                    clearInterval(heartbeatIntervalRef.current);
+                    clearInterval(idleCheckRef.current);
+                    window.removeEventListener('mousemove', trackActivity);
+                    window.removeEventListener('mousedown', trackActivity);
+                    window.removeEventListener('keydown', trackActivity);
+                    window.removeEventListener('touchstart', trackActivity);
+                    window.removeEventListener('scroll', trackActivity);
                 };
-            }, [started]);
+            }, [started, isIdle, sessionMeta]);
 
             const processQueue = async () => {
                 if (isProcessingRef.current || queueRef.current.length === 0) return;
@@ -536,6 +573,45 @@
             }, [muted]);
 
             if (!started) return <div className="start-overlay" onClick={async () => { await voiceRef.current.init(); setStarted(true); }}><div className="start-btn">TAP TO ENTER STREAM</div></div>;
+
+            const handleContinueWatching = () => {
+                lastActivityRef.current = Date.now();
+                setIsIdle(false);
+                console.log('[Idle] User resumed watching');
+            };
+
+            if (isIdle) {
+                return (
+                    <div className="start-overlay" style={{ background: 'rgba(0,0,0,0.95)' }}>
+                        <div style={{ textAlign: 'center', padding: '40px' }}>
+                            <div style={{ fontSize: '24px', fontWeight: 'bold', color: '#fff', marginBottom: '20px' }}>
+                                Are you still watching?
+                            </div>
+                            <div style={{ fontSize: '14px', color: '#999', marginBottom: '30px' }}>
+                                No activity detected for {sessionMeta?.settings?.idleTimeout || 30} minutes
+                            </div>
+                            <button
+                                onClick={handleContinueWatching}
+                                style={{
+                                    padding: '15px 40px',
+                                    fontSize: '16px',
+                                    fontWeight: 'bold',
+                                    background: '#FFB81C',
+                                    color: '#000',
+                                    border: 'none',
+                                    borderRadius: '8px',
+                                    cursor: 'pointer',
+                                    transition: 'transform 0.2s'
+                                }}
+                                onMouseEnter={e => e.target.style.transform = 'scale(1.05)'}
+                                onMouseLeave={e => e.target.style.transform = 'scale(1)'}
+                            >
+                                CONTINUE WATCHING
+                            </button>
+                        </div>
+                    </div>
+                );
+            }
 
             const cA = sessionMeta?.commentators?.[0], cB = sessionMeta?.commentators?.[1];
             const recentText = (() => {
