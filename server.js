@@ -646,13 +646,32 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       }
       console.log('[Commentary] Raw Modal response:', raw);
       const turns = [];
-      const turnRegex = /\[([AB])\][:\s—-]*(.*?)(?=\[[AB]\]|$)/gs;
-      let m; while ((m = turnRegex.exec(raw)) !== null) {
-        const side = m[1]; const txt = m[2].trim();
-        const c = side === 'A' ? s.commentators[0] : s.commentators[1];
-        const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
-        if (txt) turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+
+      // Try numbered format first (1. 2. 3.)
+      const numberedRegex = /(\d+)\.\s*"?([^"\n]+)"?/g;
+      let m;
+      while ((m = numberedRegex.exec(raw)) !== null) {
+        const num = parseInt(m[1]);
+        const txt = m[2].trim().replace(/^["']|["']$/g, ''); // Remove quotes
+        if (txt) {
+          const side = num % 2 === 1 ? 'A' : 'B'; // Odd = A, Even = B
+          const c = side === 'A' ? s.commentators[0] : s.commentators[1];
+          const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
+          turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+        }
       }
+
+      // Fallback: try [A] [B] format
+      if (turns.length === 0) {
+        const bracketRegex = /\[([AB])\][:\s—-]*(.*?)(?=\[[AB]\]|$)/gs;
+        while ((m = bracketRegex.exec(raw)) !== null) {
+          const side = m[1]; const txt = m[2].trim();
+          const c = side === 'A' ? s.commentators[0] : s.commentators[1];
+          const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
+          if (txt) turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+        }
+      }
+
       console.log(`[Commentary] Generated ${turns.length} pre-game turns`);
 
       // If parsing failed (0 turns), use fallback
