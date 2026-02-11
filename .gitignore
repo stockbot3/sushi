@@ -5,3 +5,11 @@ build/
 .env.local
 .DS_Store
 .netlify/
+
+# Firebase credentials (sensitive)
+*firebase-adminsdk*.json
+cors.json
+
+# Local config
+firebase.json
+storage.rules
