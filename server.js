@@ -480,6 +480,7 @@ app.get('/api/voices', (req, res) => {
 const MODAL_MISTRAL_URL = 'https://mousears1090--claudeapps-mistral-mistralmodel-chat.modal.run';
 const sessionRuntimes = new Map();
 const sessionViewers = new Map(); // Track active viewers
+const commentaryHistory = new Map(); // Store commentary history per session
 
 function getRuntime(id) {
   if (!sessionRuntimes.has(id)) sessionRuntimes.set(id, { lastSeq: -1, lastPlayKey: null, lastScoreKey: null, cache: null, ts: 0 });
@@ -724,9 +725,26 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     rt.lastPlayKey = playKey || rt.lastPlayKey;
     rt.lastScoreKey = scoreKey;
     rt.cache = { turns, status: 'live', play: { description: latestPlay?.text || 'Game Update', seq }, timestamp: now }; rt.ts = now;
+
+    // Store in history
+    if (!commentaryHistory.has(s.id)) commentaryHistory.set(s.id, []);
+    const history = commentaryHistory.get(s.id);
+    history.push(rt.cache);
+    if (history.length > 50) history.shift(); // Keep last 50
+
     console.log('[Commentary] Returning fresh live commentary to client');
     res.json(rt.cache);
   } catch (err) { res.status(500).json({ error: err.message }); }
+});
+
+// Get commentary history
+app.get('/api/sessions/:id/commentary/history', async (req, res) => {
+  try {
+    const history = commentaryHistory.get(req.params.id) || [];
+    res.json(history);
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
 });
 
 // ─── STATIC & SLUGS ───

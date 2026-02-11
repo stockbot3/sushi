@@ -528,7 +528,9 @@
 
     // ─── STATS TAB ───
     function StatsTab({ summary, game }) {
-      if (!summary?.teamStats?.length && !summary?.playerStats?.length) {
+      const teamStats = summary?.teamStats || [];
+      const playerStats = summary?.playerStats || [];
+      if (!teamStats.length && !playerStats.length) {
         return (
           <div className="glass rounded-xl p-8 text-center animate-slide-up">
             <div className="flex justify-center mb-3 text-gray-600"><BarChart3 size={32} /></div>
@@ -538,15 +540,15 @@
       }
       return (
         <div className="space-y-4 animate-slide-up">
-          {summary.teamStats.length === 2 && (
+          {teamStats.length === 2 && teamStats[0]?.stats && teamStats[1]?.stats && (
             <div className="glass rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3 text-gray-500">
                 <GitCompare size={14} />
                 <h3 className="text-xs font-bold uppercase tracking-wider">Team Stats</h3>
               </div>
               <div className="space-y-3">
-                {summary.teamStats[0].stats.map((stat, i) => {
-                  const homeStat = summary.teamStats[1].stats[i];
+                {teamStats[0].stats.map((stat, i) => {
+                  const homeStat = teamStats[1].stats[i];
                   if (!homeStat) return null;
                   return (
                     <div key={i} className="text-center">
@@ -565,13 +567,17 @@
               </div>
             </div>
           )}
-          {summary.playerStats.map((teamPlayers, ti) => (
+          {playerStats.map((teamPlayers, ti) => {
+            if (!teamPlayers?.categories) return null;
+            return (
             <div key={ti} className="glass rounded-xl p-4">
               <div className="flex items-center gap-2 mb-3 text-gray-500">
                 <Users size={14} />
                 <h3 className="text-xs font-bold uppercase tracking-wider">{teamPlayers.team}</h3>
               </div>
-              {teamPlayers.categories.slice(0, 4).map((cat, ci) => (
+              {teamPlayers.categories.slice(0, 4).map((cat, ci) => {
+                if (!cat?.athletes || !cat?.labels) return null;
+                return (
                 <div key={ci} className="mb-4 last:mb-0">
                   <div className="text-[10px] font-bold text-yellow-400/80 uppercase tracking-wider mb-2">{cat.name}</div>
                   <div className="overflow-x-auto scroll-hidden">
@@ -593,9 +599,11 @@
                     </table>
                   </div>
                 </div>
-              ))}
+                );
+              })}
             </div>
-          ))}
+            );
+          })}
         </div>
       );
     }
