@@ -649,6 +649,26 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
         if (txt) turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
       }
       console.log(`[Commentary] Generated ${turns.length} pre-game turns`);
+
+      // If parsing failed (0 turns), use fallback
+      if (turns.length === 0) {
+        console.log('[Commentary] Parsing failed (0 turns), using fallback pre-game commentary');
+        const aName = s.commentators[0].name, bName = s.commentators[1].name;
+        const away = game?.away?.abbreviation || 'Away';
+        const home = game?.home?.abbreviation || 'Home';
+        rt.cache = {
+          turns: [
+            { speaker: 'A', name: aName, text: `${away} is getting the job done so far. That home crowd is quiet.` },
+            { speaker: 'B', name: bName, text: `${home} is right there. This flips fast once we tighten up.` },
+            { speaker: 'A', name: aName, text: `You've been saying that all night. ${away} is controlling it.` }
+          ],
+          status: 'pre',
+          timestamp: now
+        };
+        rt.ts = now;
+        return res.json(rt.cache);
+      }
+
       turns.forEach((t, i) => console.log(`  [${i + 1}] ${t.name}: ${t.text.substring(0, 60)}...`));
       rt.cache = { turns, status: 'pre', timestamp: now }; rt.ts = now;
       return res.json(rt.cache);
