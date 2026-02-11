@@ -639,6 +639,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
         rt.ts = now;
         return res.json(rt.cache);
       }
+      console.log('[Commentary] Raw Modal response:', raw);
       const turns = [];
       const turnRegex = /\[([AB])\][:\s—-]*(.*?)(?=\[[AB]\]|$)/gs;
       let m; while ((m = turnRegex.exec(raw)) !== null) {
