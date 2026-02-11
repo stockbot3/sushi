@@ -422,6 +422,17 @@
                 fetch('/api/sessions').then(r => r.json()).then(sessions => {
                     const s = sessions.find(s => s.id === sid); if (s) setSessionMeta(s);
                 });
+
+                // Send heartbeat ping every 30 seconds to indicate active viewer
+                const sendHeartbeat = () => {
+                    fetch(`/api/sessions/${sid}/ping`, { method: 'POST' })
+                        .then(r => r.json())
+                        .then(data => console.log('[Heartbeat] Sent', data))
+                        .catch(e => console.error('[Heartbeat] Error:', e));
+                };
+                sendHeartbeat(); // Send immediately
+                const heartbeatInterval = setInterval(sendHeartbeat, 30000); // Every 30s
+
                 const poll = async () => {
                     try {
                         const [g, c] = await Promise.all([ fetch(`/api/sessions/${sid}/game`).then(r => r.json()), fetch(`/api/sessions/${sid}/commentary/latest`).then(r => r.json()) ]);
@@ -437,7 +448,11 @@
                         }
                     } catch (e) {}
                 };
-                poll(); const itv = setInterval(poll, 8000); return () => clearInterval(itv);
+                poll(); const itv = setInterval(poll, 8000);
+                return () => {
+                    clearInterval(itv);
+                    clearInterval(heartbeatInterval);
+                };
             }, [started]);
 
             const processQueue = async () => {

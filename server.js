@@ -214,7 +214,15 @@ app.get('/api/admin/browse/:sport/:league', requireAdmin, async (req, res) => {
     const date = req.query.date || '';
     const url = `https://site.api.espn.com/apis/site/v2/sports/${slug}/scoreboard${date ? `?dates=${date}` : ''}`;
     const data = await fetchCached(`br_${slug}_${date}`, url, 30000);
-    res.json({ events: parseScoreboard(data) });
+    const events = parseScoreboard(data);
+
+    // Add isLive flag for UI
+    const enrichedEvents = events.map(e => ({
+      ...e,
+      isLive: e.status?.state === 'in'
+    }));
+
+    res.json({ events: enrichedEvents });
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
@@ -471,10 +479,48 @@ app.get('/api/voices', (req, res) => {
 // ─── COMMENTARY ENGINE ───
 const MODAL_MISTRAL_URL = 'https://mousears1090--claudeapps-mistral-mistralmodel-chat.modal.run';
 const sessionRuntimes = new Map();
+const sessionViewers = new Map(); // Track active viewers
+
 function getRuntime(id) {
   if (!sessionRuntimes.has(id)) sessionRuntimes.set(id, { lastSeq: -1, lastPlayKey: null, lastScoreKey: null, cache: null, ts: 0 });
   return sessionRuntimes.get(id);
 }
+
+// Check if session has active viewers (pinged within last 5 min)
+function hasActiveViewers(sessionId) {
+  const viewer = sessionViewers.get(sessionId);
+  if (!viewer) return false;
+  const VIEWER_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+  return (Date.now() - viewer.lastPing) < VIEWER_TIMEOUT;
+}
+
+// Viewer heartbeat endpoint
+app.post('/api/sessions/:id/ping', async (req, res) => {
+  const sessionId = req.params.id;
+  sessionViewers.set(sessionId, { lastPing: Date.now(), userAgent: req.headers['user-agent'] });
+  console.log(`[Viewer] Heartbeat for session ${sessionId}`);
+  res.json({ ok: true, activeViewers: sessionViewers.get(sessionId) });
+});
+
+// Get viewer stats
+app.get('/api/admin/viewers', requireAdmin, (req, res) => {
+  const VIEWER_TIMEOUT = 5 * 60 * 1000;
+  const now = Date.now();
+  const activeViewers = [];
+
+  sessionViewers.forEach((viewer, sessionId) => {
+    if ((now - viewer.lastPing) < VIEWER_TIMEOUT) {
+      activeViewers.push({
+        sessionId,
+        lastPing: viewer.lastPing,
+        idleTime: Math.floor((now - viewer.lastPing) / 1000),
+        userAgent: viewer.userAgent
+      });
+    }
+  });
+
+  res.json({ activeViewers, totalActive: activeViewers.length });
+});
 
 function escapeRegExp(input) {
   return input ? input.replace(/[.*+?^${}()|[\]\\]/g, '\\$&') : '';
@@ -538,13 +584,24 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       return res.json(rt.cache);
     }
 
+    // Check if anyone is watching before generating commentary
+    const hasViewers = hasActiveViewers(s.id);
+    console.log(`[Commentary] Active viewers: ${hasViewers ? 'YES' : 'NO'}`);
+
+    // If no viewers and cache exists, return cache (don't waste Modal tokens)
+    if (!hasViewers && rt.cache) {
+      console.log('[Commentary] No active viewers, returning cached response (saving tokens)');
+      return res.json(rt.cache);
+    }
+
     console.log(`[Commentary] Fetching ESPN data: ${s.espnSlug}`);
     const scoreData = await fetchCached(`sb_${s.espnSlug}`, `https://site.api.espn.com/apis/site/v2/sports/${s.espnSlug}/scoreboard`);
     const game = parseScoreboard(scoreData).find(e => e.id === s.espnEventId);
     console.log(`[Commentary] Game found:`, game ? { name: game.name, status: game.status?.state, score: `${game.away?.score}-${game.home?.score}` } : 'NOT FOUND');
 
     const interval = (s.settings?.preGameInterval || 45) * 1000;
-    
+
+    // Only generate pre-game commentary if game hasn't started AND someone is watching
     if (!game || game.status?.state !== 'in') {
       if (rt.cache && (now - rt.ts) < interval) return res.json(rt.cache);
       const aPrompt = s.commentators?.[0]?.prompt ? `A style: ${s.commentators[0].prompt}` : '';

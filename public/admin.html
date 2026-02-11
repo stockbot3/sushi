@@ -162,9 +162,11 @@
                         : Object.entries(sports?.[edit.sport]?.leagues || {}).map(([id, l]) => ({ id, ...l }));
                       const leagueCfg = leaguesArr.find(x => x.id === edit.league);
                       return (
-                      <button key={g.id} onClick={() => { setEdit({...edit, espnEventId: g.id, gameName: g.name || g.shortName, espnSlug: leagueCfg?.espnSlug || '', homeTeam: g.home, awayTeam: g.away}); setWizardStep(4); }} className="w-full p-4 glass rounded-xl text-left hover:border-yellow-400/50 transition-all text-white">
+                      <button key={g.id} onClick={() => { setEdit({...edit, espnEventId: g.id, gameName: g.name || g.shortName, espnSlug: leagueCfg?.espnSlug || '', homeTeam: g.home, awayTeam: g.away}); setWizardStep(4); }} className={`w-full p-4 glass rounded-xl text-left hover:border-yellow-400/50 transition-all text-white relative ${g.isLive ? 'border-2 border-green-500' : ''}`}>
+                        {g.isLive && <div className="absolute top-2 right-2 flex items-center gap-1 bg-green-500 text-black px-2 py-1 rounded-full text-xs font-black"><span className="animate-pulse">●</span> LIVE</div>}
                         <div className="text-[10px] opacity-30 font-black mb-1">{g.status.detail}</div>
                         <div className="font-bold">{g.away.abbreviation} @ {g.home.abbreviation}</div>
+                        <div className="text-xs opacity-50 mt-1">{g.away.score} - {g.home.score}</div>
                       </button>
                     )})}
                     <button onClick={() => setWizardStep(2)} className="w-full text-xs opacity-50">BACK</button>
