@@ -226,6 +226,101 @@ app.get('/api/admin/browse/:sport/:league', requireAdmin, async (req, res) => {
   } catch (err) { res.status(500).json({ error: err.message }); }
 });
 
+// Generate batch of pre-game commentary (15-30 turns) with team/player context
+async function generatePreGameBatch(sessionId, session) {
+  try {
+    console.log(`[PreGame Batch] Generating for session ${sessionId}`);
+
+    // Fetch game data
+    const scoreData = await fetchCached(`score_${session.espnEventId}`, `https://site.api.espn.com/apis/site/v2/sports/${session.espnSlug}/scoreboard`);
+    const game = parseScoreboard(scoreData).find(e => e.id === session.espnEventId);
+
+    if (!game) {
+      console.error(`[PreGame Batch] Game not found: ${session.espnEventId}`);
+      return;
+    }
+
+    // Fetch detailed stats
+    const summaryData = await fetchCached(`sum_${session.espnEventId}`, `https://site.api.espn.com/apis/site/v2/sports/${session.espnSlug}/summary?event=${session.espnEventId}`);
+    const summary = parseSummary(summaryData);
+
+    // Build context for AI
+    const context = `
+MATCHUP: ${game.away.name} @ ${game.home.name}
+AWAY TEAM: ${game.away.name} (${game.away.abbreviation})
+HOME TEAM: ${game.home.name} (${game.home.abbreviation})
+${game.odds ? `SPREAD: ${game.odds.spread}, O/U: ${game.odds.overUnder}` : ''}
+${summary.teamStats && summary.teamStats.length === 2 ? `
+AWAY STATS: ${summary.teamStats[0].stats.map(s => `${s.label}: ${s.displayValue}`).join(', ')}
+HOME STATS: ${summary.teamStats[1].stats.map(s => `${s.label}: ${s.displayValue}`).join(', ')}
+` : ''}
+${summary.playerStats && summary.playerStats[0]?.categories?.[0] ? `
+TOP AWAY PLAYERS: ${summary.playerStats[0].categories[0].athletes.slice(0, 3).map(a => a.name).join(', ')}
+TOP HOME PLAYERS: ${summary.playerStats[1]?.categories?.[0]?.athletes.slice(0, 3).map(a => a.name).join(', ')}
+` : ''}
+    `.trim();
+
+    const prompt = `Generate 30 unique pre-game commentary turns as an intense argument between two sports commentators about this matchup.
+
+${context}
+
+[A] ${session.commentators[0].name} is pro-${game.away.abbreviation} and very critical of ${game.home.abbreviation}.
+[B] ${session.commentators[1].name} is pro-${game.home.abbreviation} and very critical of ${game.away.abbreviation}.
+
+Requirements:
+- 30 numbered lines (1-30)
+- Alternate speakers: odd numbers = [A], even numbers = [B]
+- Reference actual team stats, players, matchup details
+- HEATED debate - they strongly disagree
+- Be specific: mention player names, stats, team strengths/weaknesses
+- SNAPPY and SHORT (1-2 sentences each)
+- NO speaker names/labels in the text itself
+- NO stage directions
+
+Format: Just numbered lines like:
+1. "text"
+2. "text"
+3. "text"
+...`;
+
+    console.log(`[PreGame Batch] Calling Modal with context...`);
+    const response = await fetch(MODAL_MISTRAL_URL, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] })
+    });
+
+    const json = await response.json();
+    const raw = json?.choices?.[0]?.message?.content || '';
+
+    console.log(`[PreGame Batch] Modal returned ${raw.length} chars`);
+
+    // Parse numbered commentary
+    const turns = [];
+    const numberedRegex = /(\d+)\.\s*["']?(.*?)["']?(?=\s*\d+\.|$)/gs;
+    let m;
+    while ((m = numberedRegex.exec(raw)) !== null) {
+      const num = parseInt(m[1]);
+      let txt = m[2].trim().replace(/^["']+|["']+$/g, '').replace(/["']+\s*$/g, '');
+      if (txt && txt.length > 5) {
+        const side = num % 2 === 1 ? 'A' : 'B';
+        const c = side === 'A' ? session.commentators[0] : session.commentators[1];
+        const other = side === 'A' ? session.commentators[1]?.name : session.commentators[0]?.name;
+        turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+      }
+    }
+
+    console.log(`[PreGame Batch] Generated ${turns.length} turns`);
+
+    // Store in Firebase
+    await db.collection('sessions').doc(sessionId).update({ preGameCommentary: turns });
+    console.log(`[PreGame Batch] Saved to Firebase`);
+
+  } catch (err) {
+    console.error(`[PreGame Batch] Error for session ${sessionId}:`, err);
+  }
+}
+
 app.get('/api/admin/sessions', requireAdmin, async (req, res) => {
   try {
     const s = await db.collection('sessions').get();
@@ -245,9 +340,15 @@ app.post('/api/admin/sessions', requireAdmin, async (req, res) => {
         { id: 'A', name: 'Sakura', voice: 'rachel', avatarUrl: null },
         { id: 'B', name: 'Steve', voice: 'adam', avatarUrl: null }
       ],
-      createdAt: new Date().toISOString()
+      createdAt: new Date().toISOString(),
+      preGameCommentary: [], // Will be populated
+      preGameIndex: 0 // Track which commentary to show next
     };
     await db.collection('sessions').doc(id).set(session);
+
+    // Generate batch pre-game commentary in background
+    generatePreGameBatch(id, session).catch(e => console.error('[PreGame] Batch generation error:', e));
+
     res.json(session);
   } catch (err) {
     console.error('Create session error:', err);
@@ -610,102 +711,66 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
     const interval = (s.settings?.preGameInterval || 45) * 1000;
 
-    // Only generate pre-game commentary if game hasn't started AND someone is watching
+    // Pre-game: cycle through batch commentary
     if (!game || game.status?.state !== 'in') {
       console.log('[Commentary] PRE-GAME MODE - Game not started or not found');
+
+      // Check if we have batch commentary
+      if (!s.preGameCommentary || s.preGameCommentary.length === 0) {
+        console.log('[Commentary] No pre-game batch yet, generating fallback...');
+        // Trigger batch generation if not done yet
+        generatePreGameBatch(s.id, s).catch(e => console.error(e));
+      }
+
+      // Use cache if recent enough
       if (rt.cache && (now - rt.ts) < interval) {
         console.log(`[Commentary] Returning cached pre-game commentary (${Math.round((now - rt.ts) / 1000)}s old, interval: ${interval / 1000}s)`);
         return res.json(rt.cache);
       }
-      const aPrompt = s.commentators?.[0]?.prompt ? `A style: ${s.commentators[0].prompt}` : '';
-      const bPrompt = s.commentators?.[1]?.prompt ? `B style: ${s.commentators[1].prompt}` : '';
-      const prompt = `Short unhinged pre-game argument. [A] ${s.commentators[0].name} is pro-${game?.away?.abbreviation || 'away'} and critical of ${game?.home?.abbreviation || 'home'}. [B] ${s.commentators[1].name} is pro-${game?.home?.abbreviation || 'home'} and critical of ${game?.away?.abbreviation || 'away'}. Matchup: ${game?.name || s.gameName}. ${aPrompt} ${bPrompt} 3 turns exactly: [A], [B], [A]. SNAPPY. They must disagree. A never concedes; B never concedes. Do not include speaker names, letters, or labels in the text. Never address the other by name. No stage directions or emotion labels.`;
-      console.log('[Commentary] Calling Modal for pre-game commentary...');
-      let raw = '';
-      try {
-        const r = await fetch(MODAL_MISTRAL_URL, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }) });
-        const json = await r.json();
-        raw = json?.choices?.[0]?.message?.content || '';
-        console.log('[Commentary] Modal pre-game response:', raw ? `${raw.length} chars` : 'EMPTY');
-      } catch (e) {
-        console.error('[Commentary] Modal pregame error:', e);
-      }
-      if (!raw) {
-        console.log('[Commentary] Modal returned empty response, using fallback pre-game commentary');
-        const aName = s.commentators[0].name, bName = s.commentators[1].name;
-        const away = game?.away?.abbreviation || 'Away';
-        const home = game?.home?.abbreviation || 'Home';
-        rt.cache = {
-          turns: [
-            { speaker: 'A', name: aName, text: `${away} is getting the job done so far. That home crowd is quiet.` },
-            { speaker: 'B', name: bName, text: `${home} is right there. This flips fast once we tighten up.` },
-            { speaker: 'A', name: aName, text: `You've been saying that all night. ${away} is controlling it.` }
-          ],
-          status: 'pre',
-          timestamp: now
-        };
-        rt.ts = now;
-        return res.json(rt.cache);
-      }
-      console.log('[Commentary] Raw Modal response:', raw);
-      const turns = [];
 
-      // Try numbered format first (1. 2. 3.)
-      // Match: number, dot, optional space/quote, text (everything until next number or end), optional quote
-      const numberedRegex = /(\d+)\.\s*["']?(.*?)["']?(?=\s*\d+\.|$)/gs;
-      let m;
-      while ((m = numberedRegex.exec(raw)) !== null) {
-        const num = parseInt(m[1]);
-        let txt = m[2].trim();
-        // Remove surrounding quotes if present
-        txt = txt.replace(/^["']+|["']+$/g, '');
-        // Clean up any trailing punctuation from regex
-        txt = txt.replace(/["']+\s*$/g, '');
+      // Get next 3 turns from batch
+      if (s.preGameCommentary && s.preGameCommentary.length >= 3) {
+        const currentIndex = s.preGameIndex || 0;
+        const nextIndex = (currentIndex + 3) % s.preGameCommentary.length;
 
-        console.log(`[Commentary] Parsed turn ${num}: "${txt.substring(0, 80)}..."`);
-
-        if (txt && txt.length > 5) { // Ensure meaningful text
-          const side = num % 2 === 1 ? 'A' : 'B'; // Odd = A, Even = B
-          const c = side === 'A' ? s.commentators[0] : s.commentators[1];
-          const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
-          turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+        // Get 3 turns
+        let selectedTurns = [];
+        if (currentIndex + 3 <= s.preGameCommentary.length) {
+          selectedTurns = s.preGameCommentary.slice(currentIndex, currentIndex + 3);
+        } else {
+          // Wrap around
+          selectedTurns = [
+            ...s.preGameCommentary.slice(currentIndex),
+            ...s.preGameCommentary.slice(0, 3 - (s.preGameCommentary.length - currentIndex))
+          ];
         }
-      }
 
-      // Fallback: try [A] [B] format
-      if (turns.length === 0) {
-        const bracketRegex = /\[([AB])\][:\s—-]*(.*?)(?=\[[AB]\]|$)/gs;
-        while ((m = bracketRegex.exec(raw)) !== null) {
-          const side = m[1]; const txt = m[2].trim();
-          const c = side === 'A' ? s.commentators[0] : s.commentators[1];
-          const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
-          if (txt) turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
-        }
-      }
+        console.log(`[Commentary] Using batch turns ${currentIndex}-${currentIndex + 2} (${s.preGameCommentary.length} total)`);
+        selectedTurns.forEach((t, i) => console.log(`  [${i + 1}] ${t.name}: ${t.text.substring(0, 60)}...`));
 
-      console.log(`[Commentary] Generated ${turns.length} pre-game turns`);
+        // Update index for next time
+        await db.collection('sessions').doc(s.id).update({ preGameIndex: nextIndex });
 
-      // If parsing failed (0 turns), use fallback
-      if (turns.length === 0) {
-        console.log('[Commentary] Parsing failed (0 turns), using fallback pre-game commentary');
-        const aName = s.commentators[0].name, bName = s.commentators[1].name;
-        const away = game?.away?.abbreviation || 'Away';
-        const home = game?.home?.abbreviation || 'Home';
-        rt.cache = {
-          turns: [
-            { speaker: 'A', name: aName, text: `${away} is getting the job done so far. That home crowd is quiet.` },
-            { speaker: 'B', name: bName, text: `${home} is right there. This flips fast once we tighten up.` },
-            { speaker: 'A', name: aName, text: `You've been saying that all night. ${away} is controlling it.` }
-          ],
-          status: 'pre',
-          timestamp: now
-        };
+        rt.cache = { turns: selectedTurns, status: 'pre', timestamp: now };
         rt.ts = now;
         return res.json(rt.cache);
       }
 
-      turns.forEach((t, i) => console.log(`  [${i + 1}] ${t.name}: ${t.text.substring(0, 60)}...`));
-      rt.cache = { turns, status: 'pre', timestamp: now }; rt.ts = now;
+      // Ultimate fallback if batch still not ready
+      console.log('[Commentary] Using basic fallback (batch not ready yet)');
+      const aName = s.commentators[0].name, bName = s.commentators[1].name;
+      const away = game?.away?.abbreviation || 'Away';
+      const home = game?.home?.abbreviation || 'Home';
+      rt.cache = {
+        turns: [
+          { speaker: 'A', name: aName, text: `${away} looking strong for this matchup.` },
+          { speaker: 'B', name: bName, text: `${home} has what it takes to win this.` },
+          { speaker: 'A', name: aName, text: `We'll see about that.` }
+        ],
+        status: 'pre',
+        timestamp: now
+      };
+      rt.ts = now;
       return res.json(rt.cache);
     }
 
