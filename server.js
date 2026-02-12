@@ -286,20 +286,21 @@ ${context}
 Focus on: ${focus}
 
 Requirements:
-- EXACTLY 15 numbered lines (1-15)
-- Alternate speakers: odd numbers = [A], even numbers = [B]
+- EXACTLY 15 turns alternating between speakers
+- Odd turns (1,3,5...) = speaker A, Even turns (2,4,6...) = speaker B
 - Reference actual team stats, players, matchup details
 - HEATED debate - they strongly disagree
 - Be specific: mention player names, stats, team strengths/weaknesses
 - SNAPPY and SHORT (1-2 sentences each)
 - NO speaker names/labels in the text itself
-- NO stage directions
+- NO stage directions or parentheticals
 
-Format: Just numbered lines like:
-1. "text"
-2. "text"
-...
-15. "text"`;
+Return ONLY a JSON array (no markdown, no code blocks):
+[
+  {"speaker":"A","text":"commentary here"},
+  {"speaker":"B","text":"commentary here"},
+  ...
+]`;
 
       try {
         console.log(`[PreGame Batch ${i+1}/2] Sending request to Modal...`);
@@ -339,32 +340,51 @@ Format: Just numbered lines like:
         let raw = json?.choices?.[0]?.message?.content || '';
         console.log(`[PreGame Batch ${i+1}/2] Got ${raw.length} chars from Modal`);
 
-        // Safety check for excessive response size
-        if (raw.length > 50000) {
-          console.error(`[PreGame Batch ${i+1}/2] Response text too long (${raw.length} chars), truncating`);
-          raw = raw.substring(0, 50000);
-        }
-
         lastRawResponse = raw; // Save for error reporting
 
-        // Parse numbered commentary
-        const numberedRegex = /(\d+)\.\s*["']?(.*?)["']?(?=\s*\d+\.|$)/gs;
-        let m;
-        let parseCount = 0;
-        while ((m = numberedRegex.exec(raw)) !== null) {
-          const num = parseInt(m[1]);
-          let txt = m[2].trim().replace(/^["']+|["']+$/g, '').replace(/["']+\s*$/g, '');
-          if (txt && txt.length > 5) {
-            const side = num % 2 === 1 ? 'A' : 'B';
-            const c = side === 'A' ? session.commentators[0] : session.commentators[1];
-            const other = side === 'A' ? session.commentators[1]?.name : session.commentators[0]?.name;
-            console.log(`[PreGame Batch ${i+1}/2] Parsing turn ${num}: "${txt.substring(0, 30)}..."`);
-            allTurns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
-            parseCount++;
+        // Parse JSON array from response
+        let parsedTurns = [];
+        try {
+          // Remove markdown code blocks if present
+          let cleanJson = raw.trim();
+          if (cleanJson.startsWith('```')) {
+            cleanJson = cleanJson.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?```\s*$/i, '');
+          }
+
+          parsedTurns = JSON.parse(cleanJson);
+          console.log(`[PreGame Batch ${i+1}/2] Parsed ${parsedTurns.length} turns from JSON`);
+
+          // Add to allTurns with commentator names
+          parsedTurns.forEach((turn, idx) => {
+            const c = turn.speaker === 'A' ? session.commentators[0] : session.commentators[1];
+            allTurns.push({
+              speaker: turn.speaker,
+              name: c.name,
+              text: turn.text.trim()
+            });
+          });
+
+        } catch (parseErr) {
+          console.error(`[PreGame Batch ${i+1}/2] JSON parse failed, trying fallback regex:`, parseErr.message);
+          console.log(`[PreGame Batch ${i+1}/2] Raw response: ${raw.substring(0, 200)}`);
+
+          // Fallback: try to extract JSON array from anywhere in the response
+          const jsonMatch = raw.match(/\[\s*\{[\s\S]*\}\s*\]/);
+          if (jsonMatch) {
+            try {
+              parsedTurns = JSON.parse(jsonMatch[0]);
+              parsedTurns.forEach(turn => {
+                const c = turn.speaker === 'A' ? session.commentators[0] : session.commentators[1];
+                allTurns.push({ speaker: turn.speaker, name: c.name, text: turn.text.trim() });
+              });
+              console.log(`[PreGame Batch ${i+1}/2] Fallback parse succeeded: ${parsedTurns.length} turns`);
+            } catch (e) {
+              console.error(`[PreGame Batch ${i+1}/2] Fallback also failed:`, e.message);
+            }
           }
         }
 
-        console.log(`[PreGame Batch ${i+1}/2] Parsed ${parseCount} turns (total now: ${allTurns.length})`);
+        console.log(`[PreGame Batch ${i+1}/2] Total turns now: ${allTurns.length}`);
 
         // Small delay between requests
         if (i === 0) await new Promise(r => setTimeout(r, 2000));
