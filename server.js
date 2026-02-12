@@ -860,7 +860,27 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
     const aPrompt = s.commentators?.[0]?.prompt ? `A style: ${s.commentators[0].prompt}` : '';
     const bPrompt = s.commentators?.[1]?.prompt ? `B style: ${s.commentators[1].prompt}` : '';
-    const prompt = `Live banter. [A] ${s.commentators[0].name} is pro-${game.away.name} and critical of ${game.home.name}. [B] ${s.commentators[1].name} is pro-${game.home.name} and critical of ${game.away.name}. Play: ${latestPlay?.text || 'Game update'}. Score: ${game.away.name} ${game.away.score}, ${game.home.name} ${game.home.score}. ${aPrompt} ${bPrompt} 3 turns: [A], [B], [A]. Snappy. They must disagree. A never concedes; B never concedes. Do not include speaker names, letters, or labels in the text. Never address the other by name. No stage directions or emotion labels.`;
+    const prompt = `Generate 3 commentary turns as JSON array. [A] ${s.commentators[0].name} is pro-${game.away.name} and critical of ${game.home.name}. [B] ${s.commentators[1].name} is pro-${game.home.name} and critical of ${game.away.name}.
+
+Play: ${latestPlay?.text || 'Game update'}
+Score: ${game.away.name} ${game.away.score}, ${game.home.name} ${game.home.score}
+
+${aPrompt} ${bPrompt}
+
+Return ONLY valid JSON array with exactly 3 objects in this format:
+[
+  {"speaker": "A", "text": "first comment here"},
+  {"speaker": "B", "text": "response here"},
+  {"speaker": "A", "text": "rebuttal here"}
+]
+
+Requirements:
+- Snappy, short comments (1-2 sentences)
+- They must disagree
+- Reference the play and score
+- Use full team names (${game.away.name}, ${game.home.name})
+- NO speaker names, labels, or stage directions in the text
+- ONLY return the JSON array, nothing else`;
     let raw = '';
     try {
       console.log('[Commentary] Calling Modal LLM...');
@@ -890,24 +910,40 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       rt.ts = now;
       return res.json(rt.cache);
     }
-    const turns = [];
+    // Parse JSON response from Modal
+    let turns = [];
+    try {
+      // Try to extract JSON array from response (Modal might wrap it in markdown code blocks)
+      let jsonStr = raw.trim();
+      if (jsonStr.startsWith('```')) {
+        jsonStr = jsonStr.replace(/^```(?:json)?\s*/, '').replace(/```\s*$/, '').trim();
+      }
 
-    // Parse numbered format (1: text or 1. text) - assume alternating speakers
-    // LIMIT TO 3 TURNS to prevent wasting credits on long responses
-    const numberedRegex = /(\d+)[:\.]?\s*["']?(.*?)["']?(?=\s*\d+[:\.]|$)/gs;
-    let m;
-    while ((m = numberedRegex.exec(raw)) !== null && turns.length < 3) {
-      const num = parseInt(m[1]);
-      const txt = m[2].trim().replace(/^["']+|["']+$/g, '').replace(/["']+\s*$/g, '');
-      if (txt && txt.length > 5) {
-        const side = num % 2 === 1 ? 'A' : 'B'; // Odd = A, Even = B
-        const c = side === 'A' ? s.commentators[0] : s.commentators[1];
-        const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
-        turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+      const parsed = JSON.parse(jsonStr);
+      if (Array.isArray(parsed)) {
+        turns = parsed.slice(0, 3).map(t => ({
+          speaker: t.speaker,
+          name: t.speaker === 'A' ? s.commentators[0].name : s.commentators[1].name,
+          text: t.text.trim()
+        }));
+      }
+    } catch (parseErr) {
+      console.error('[Commentary] JSON parse failed, trying fallback regex:', parseErr.message);
+      // Fallback to old regex parsing if JSON fails
+      const numberedRegex = /(\d+)[:\.]?\s*["']?(.*?)["']?(?=\s*\d+[:\.]|$)/gs;
+      let m;
+      while ((m = numberedRegex.exec(raw)) !== null && turns.length < 3) {
+        const num = parseInt(m[1]);
+        const txt = m[2].trim().replace(/^["']+|["']+$/g, '');
+        if (txt && txt.length > 5) {
+          const side = num % 2 === 1 ? 'A' : 'B';
+          const c = side === 'A' ? s.commentators[0] : s.commentators[1];
+          turns.push({ speaker: side, name: c.name, text: txt });
+        }
       }
     }
 
-    console.log(`[Commentary] Generated ${turns.length} turns for live game (limited to 3)`);
+    console.log(`[Commentary] Generated ${turns.length} turns for live game`);
     turns.forEach((t, i) => console.log(`  [${i+1}] ${t.name}: ${t.text.substring(0, 50)}...`));
 
     rt.lastSeq = seq;
