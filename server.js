@@ -719,13 +719,10 @@ function strip(text, name, otherName) {
     .replace(/(^|\n)\s*(?:\d+[\).\]]|[-•])\s*/g, '$1')
     // Remove lone speaker letters or labels on their own lines
     .replace(/(^|\n)\s*[AB]\s*(?=\n|$)/gi, '$1')
-    // Remove stage directions like "(Doubting):", "[Smiling]" and short labels like "Doubting:"
+    // Remove stage directions like "(Doubting):", "[Smiling]"
     .replace(/^\s*[\(\[][^)\]]+[\)\]]\s*:?\s*/g, '')
-    .replace(/^\s*[A-Za-z][\w\s-]{0,20}\s*:\s*/g, (m) => {
-      const w = m.replace(':', '').trim();
-      if (w.length <= 20) return '';
-      return m;
-    })
+    // Remove single-word speaker labels only (e.g. "John:" but not "Balanced scoring:")
+    .replace(/^\s*[A-Z][a-z]+\s*:\s*/g, '')
     .replace(/[\u{1F600}-\u{1F64F}\u{1F300}-\u{1F5FF}\u{1F680}-\u{1F6FF}\u{2600}-\u{26FF}\u{2700}-\u{27BF}]/gu, '')
     .replace(/^\[[AB]\][:\s—-]*/i, '')
     .replace(/^[AB][:\s—-]+/i, '')
