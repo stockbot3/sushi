@@ -829,12 +829,20 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       noNewPlay,
       noScoreChange,
       cacheAge: `${Math.floor(cacheAge/1000)}s`,
-      willUseCache: (noNewPlay && noScoreChange && cacheAge < 45000)
+      hasCache: !!rt.cache
     });
 
-    if (noNewPlay && noScoreChange && cacheAge < 45000) {
-      console.log('[Commentary] No new plays, returning cached commentary');
-      return res.json(rt.cache);
+    // ONLY generate commentary when there's an ACTUAL NEW PLAY
+    // Don't regenerate every 45s if play hasn't changed
+    if (noNewPlay && noScoreChange) {
+      if (rt.cache) {
+        console.log('[Commentary] No new plays, returning cached commentary');
+        return res.json(rt.cache);
+      } else {
+        // No cache and no new play - return empty/silent
+        console.log('[Commentary] No new plays and no cache - staying silent');
+        return res.json({ turns: [], status: 'live', timestamp: now });
+      }
     }
 
     console.log('[Commentary] NEW PLAY DETECTED! Generating fresh commentary via Modal...');
