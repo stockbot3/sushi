@@ -605,10 +605,10 @@
                     const s = sessions.find(s => s.id === sid); if (s) setSessionMeta(s);
                 });
 
-                // Track user activity (mouse, keyboard, touch)
+                // Track user activity (mouse, keyboard, touch) - silently update timestamp
                 const trackActivity = () => {
                     lastActivityRef.current = Date.now();
-                    console.log('[Activity] User active');
+                    // Don't log on every mouse movement - too spammy
                 };
                 window.addEventListener('mousemove', trackActivity);
                 window.addEventListener('mousedown', trackActivity);
@@ -708,7 +708,6 @@
             const handleContinueWatching = () => {
                 lastActivityRef.current = Date.now();
                 setIsIdle(false);
-                console.log('[Idle] User resumed watching');
             };
 
             if (isIdle) {
