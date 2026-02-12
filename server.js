@@ -291,6 +291,8 @@ ${context}
 Focus on: ${focus}
 
 IMPORTANT RULES:
+- This is SPOKEN AUDIO - spell out ALL abbreviations fully
+- Use "points per game" NOT "ppg", "rebounds per game" NOT "rpg", "assists per game" NOT "apg"
 - Use FULL team names (${game.away.name}, ${game.home.name}) NOT abbreviations (${game.away.abbreviation}, ${game.home.abbreviation})
 - Use team nicknames like "Lakers", "Mavs", "Celtics" when natural
 - EXACTLY 10 turns alternating speakers (A,B,A,B,A,B,A,B,A,B)
