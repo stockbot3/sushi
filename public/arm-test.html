@@ -8,9 +8,9 @@
   <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
   <script>window.react = window.React;</script>
   <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-  <script src="https://unpkg.com/three@0.169.0/build/three.module.js" type="module"></script>
-  <script src="https://unpkg.com/three@0.169.0/examples/jsm/loaders/GLTFLoader.js" type="module"></script>
-  <script src="https://unpkg.com/@pixiv/three-vrm@3.1.5/lib/three-vrm.module.js" type="module"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.169.0/build/three.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/three@0.169.0/examples/js/loaders/GLTFLoader.js"></script>
+  <script src="https://unpkg.com/@pixiv/three-vrm@3/lib/three-vrm.js"></script>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body { background: #0a0a0a; color: #fff; font-family: system-ui, sans-serif; overflow: hidden; }
@@ -89,17 +89,6 @@
   <canvas id="canvas"></canvas>
   <div id="ui-root"></div>
 
-  <script type="module">
-    import * as THREE from 'https://unpkg.com/three@0.169.0/build/three.module.js';
-    import { GLTFLoader } from 'https://unpkg.com/three@0.169.0/examples/jsm/loaders/GLTFLoader.js';
-    import { VRMLoaderPlugin, VRMUtils } from 'https://unpkg.com/@pixiv/three-vrm@3.1.5/lib/three-vrm.module.js';
-
-    window.THREE = THREE;
-    window.GLTFLoader = GLTFLoader;
-    window.VRMLoaderPlugin = VRMLoaderPlugin;
-    window.VRMUtils = VRMUtils;
-  </script>
-
   <script type="text/babel">
     const { useState, useEffect, useRef } = React;
 
@@ -119,7 +108,6 @@
 
       useEffect(() => {
         const canvas = document.getElementById('canvas');
-        const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = window;
 
         const scene = new THREE.Scene();
         const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 1000);
@@ -135,14 +123,14 @@
         key.position.set(-1, 2, 3);
         scene.add(key);
 
-        const loader = new GLTFLoader();
-        loader.register((parser) => new VRMLoaderPlugin(parser));
+        const loader = new THREE.GLTFLoader();
+        loader.register((parser) => new VRM.VRMLoaderPlugin(parser));
 
         // Load default VRM
         const modelUrl = '/avatars/sakura.vrm';
         loader.load(modelUrl, (gltf) => {
           const vrm = gltf.userData.vrm;
-          VRMUtils.removeUnnecessaryJoints(gltf.scene);
+          VRM.VRMUtils.removeUnnecessaryJoints(gltf.scene);
           scene.add(vrm.scene);
           vrmRef.current = vrm;
 
