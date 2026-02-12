@@ -259,7 +259,7 @@ MATCHUP: ${game.away.name} @ ${game.home.name}
 AWAY TEAM: ${game.away.name} (${game.away.abbreviation})
 HOME TEAM: ${game.home.name} (${game.home.abbreviation})
 ${game.odds ? `SPREAD: ${game.odds.spread}, O/U: ${game.odds.overUnder}` : ''}
-${summary.teamStats && summary.teamStats.length === 2 ? `
+${summary.teamStats && summary.teamStats.length === 2 && summary.teamStats[0]?.stats && summary.teamStats[1]?.stats ? `
 AWAY STATS: ${summary.teamStats[0].stats.map(s => `${s.label}: ${s.displayValue}`).join(', ')}
 HOME STATS: ${summary.teamStats[1].stats.map(s => `${s.label}: ${s.displayValue}`).join(', ')}
 ` : ''}
