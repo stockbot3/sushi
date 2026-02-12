@@ -293,16 +293,25 @@ Format: Just numbered lines like:
 ...`;
 
     console.log(`[PreGame Batch] Calling Modal with context...`);
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+
     const response = await fetch(MODAL_MISTRAL_URL, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] })
+      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+      signal: controller.signal
     });
+    clearTimeout(timeout);
+
+    if (!response.ok) {
+      throw new Error(`Modal returned ${response.status}: ${response.statusText}`);
+    }
 
     const json = await response.json();
     const raw = json?.choices?.[0]?.message?.content || '';
 
-    console.log(`[PreGame Batch] Modal returned ${raw.length} chars`);
+    console.log(`[PreGame Batch] Modal returned ${raw.length} chars, parsed ${json?.choices?.length || 0} choices`);
 
     // Parse numbered commentary
     const turns = [];
@@ -321,9 +330,14 @@ Format: Just numbered lines like:
 
     console.log(`[PreGame Batch] Generated ${turns.length} turns`);
 
+    if (turns.length === 0) {
+      console.error(`[PreGame Batch] No turns parsed from Modal response. Raw response: ${raw.substring(0, 500)}`);
+      throw new Error('Failed to parse any turns from Modal response');
+    }
+
     // Store in Firebase
-    await db.collection('sessions').doc(sessionId).update({ preGameCommentary: turns });
-    console.log(`[PreGame Batch] Saved to Firebase`);
+    await db.collection('sessions').doc(sessionId).update({ preGameCommentary: turns, preGameIndex: 0 });
+    console.log(`[PreGame Batch] Saved ${turns.length} turns to Firebase`);
 
   } catch (err) {
     console.error(`[PreGame Batch] Error for session ${sessionId}:`, err);
