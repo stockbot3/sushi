@@ -387,6 +387,7 @@ app.post('/api/admin/sessions', requireAdmin, async (req, res) => {
       preGameIndex: 0 // Track which commentary to show next
     };
     await db.collection('sessions').doc(id).set(session);
+    console.log(`[Session Created] ID: ${id}, espnEventId: ${session.espnEventId}, triggering batch...`);
 
     // Generate batch pre-game commentary in background
     generatePreGameBatch(id, session).catch(e => console.error('[PreGame] Batch generation error:', e));
