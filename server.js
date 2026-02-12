@@ -841,7 +841,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
     const aPrompt = s.commentators?.[0]?.prompt ? `A style: ${s.commentators[0].prompt}` : '';
     const bPrompt = s.commentators?.[1]?.prompt ? `B style: ${s.commentators[1].prompt}` : '';
-    const prompt = `Live banter. [A] ${s.commentators[0].name} is pro-${game.away.abbreviation} and critical of ${game.home.abbreviation}. [B] ${s.commentators[1].name} is pro-${game.home.abbreviation} and critical of ${game.away.abbreviation}. Play: ${latestPlay?.text || 'Game update'}. Score: ${game.away.abbreviation} ${game.away.score}, ${game.home.abbreviation} ${game.home.score}. ${aPrompt} ${bPrompt} 3 turns: [A], [B], [A]. Snappy. They must disagree. A never concedes; B never concedes. Do not include speaker names, letters, or labels in the text. Never address the other by name. No stage directions or emotion labels.`;
+    const prompt = `Live banter. [A] ${s.commentators[0].name} is pro-${game.away.name} and critical of ${game.home.name}. [B] ${s.commentators[1].name} is pro-${game.home.name} and critical of ${game.away.name}. Play: ${latestPlay?.text || 'Game update'}. Score: ${game.away.name} ${game.away.score}, ${game.home.name} ${game.home.score}. ${aPrompt} ${bPrompt} 3 turns: [A], [B], [A]. Snappy. They must disagree. A never concedes; B never concedes. Do not include speaker names, letters, or labels in the text. Never address the other by name. No stage directions or emotion labels.`;
     let raw = '';
     try {
       console.log('[Commentary] Calling Modal LLM...');
