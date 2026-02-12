@@ -663,8 +663,20 @@
                 const poll = async () => {
                     if (isIdle) return; // Don't poll if idle
                     try {
-                        const [g, c] = await Promise.all([ fetch(`/api/sessions/${sid}/game`).then(r => r.json()), fetch(`/api/sessions/${sid}/commentary/latest`).then(r => r.json()) ]);
+                        const [g, c, sessions] = await Promise.all([
+                            fetch(`/api/sessions/${sid}/game`).then(r => r.json()),
+                            fetch(`/api/sessions/${sid}/commentary/latest`).then(r => r.json()),
+                            fetch('/api/sessions').then(r => r.json())
+                        ]);
                         setGame(g);
+
+                        // Update sessionMeta to pick up voice changes
+                        const s = sessions.find(s => s.id === sid);
+                        if (s) {
+                            setSessionMeta(s);
+                            sessionMetaRef.current = s;
+                        }
+
                         if (c && Array.isArray(c.turns)) {
                             const seq = c.timestamp;
                             if (seq !== lastSeqRef.current) {
