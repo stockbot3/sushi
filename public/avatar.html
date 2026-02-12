@@ -615,14 +615,19 @@
 
             useEffect(() => {
                 const sid = new URLSearchParams(window.location.search).get('session');
+                console.log('[SessionMeta] Initial load - sid:', sid, 'started:', started);
                 if (!started || !sid) return;
                 fetch('/api/sessions').then(r => r.json()).then(sessions => {
+                    console.log('[SessionMeta] Fetched sessions:', sessions.length);
                     const s = sessions.find(s => s.id === sid);
                     if (s) {
+                        console.log('[SessionMeta] Found session:', s);
                         setSessionMeta(s);
                         sessionMetaRef.current = s; // Store in ref for use in intervals
+                    } else {
+                        console.error('[SessionMeta] Session not found in list!');
                     }
-                });
+                }).catch(e => console.error('[SessionMeta] Initial load error:', e));
 
                 // Track user activity (mouse, keyboard, touch) - silently update timestamp
                 const trackActivity = () => {
@@ -673,8 +678,11 @@
                         // Update sessionMeta to pick up voice changes
                         const s = sessions.find(s => s.id === sid);
                         if (s) {
+                            console.log('[SessionMeta] Poll refresh - updating sessionMeta');
                             setSessionMeta(s);
                             sessionMetaRef.current = s;
+                        } else {
+                            console.error('[SessionMeta] Poll - session not found!');
                         }
 
                         if (c && Array.isArray(c.turns)) {
@@ -686,7 +694,9 @@
                                 processQueue();
                             }
                         }
-                    } catch (e) {}
+                    } catch (e) {
+                        console.error('[Poll] Error:', e);
+                    }
                 };
                 poll(); const itv = setInterval(poll, 30000); // Poll every 30s instead of 8s
                 return () => {
