@@ -873,26 +873,18 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     }
     const turns = [];
 
-    // Try multiple regex patterns to match different Modal response formats
-    const patterns = [
-      /\[([AB])\][:\s—-]*(.*?)(?=\[[AB]\]|$)/gs,  // [A] text [B] text
-      /([AB]):\s*["']?(.*?)["']?(?=\s*[AB]:|$)/gs, // A: text B: text
-      /(\d+)\.\s*\[?([AB])\]?\s*[:\s—-]*(.*?)(?=\s*\d+\.|$)/gs // 1. [A] text 2. [B] text
-    ];
-
-    for (const regex of patterns) {
-      regex.lastIndex = 0; // Reset regex
-      let m;
-      while ((m = regex.exec(raw)) !== null) {
-        const side = m.length === 3 ? m[1] : m[2]; // Handle different capture groups
-        const txt = (m.length === 3 ? m[2] : m[3]).trim().replace(/^["']+|["']+$/g, '');
-        if (txt && txt.length > 3 && (side === 'A' || side === 'B')) {
-          const c = side === 'A' ? s.commentators[0] : s.commentators[1];
-          const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
-          turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
-        }
+    // Parse numbered format (1: text or 1. text) - assume alternating speakers
+    const numberedRegex = /(\d+)[:\.]?\s*["']?(.*?)["']?(?=\s*\d+[:\.]|$)/gs;
+    let m;
+    while ((m = numberedRegex.exec(raw)) !== null) {
+      const num = parseInt(m[1]);
+      const txt = m[2].trim().replace(/^["']+|["']+$/g, '').replace(/["']+\s*$/g, '');
+      if (txt && txt.length > 5) {
+        const side = num % 2 === 1 ? 'A' : 'B'; // Odd = A, Even = B
+        const c = side === 'A' ? s.commentators[0] : s.commentators[1];
+        const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
+        turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
       }
-      if (turns.length > 0) break; // Stop if we found matches
     }
 
     console.log(`[Commentary] Generated ${turns.length} turns for live game`);
