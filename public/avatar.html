@@ -111,8 +111,9 @@
         };
 
         class TTSService {
-            constructor() { this.audioContext = null; this.isSpeaking = false; this.isMuted = false; }
+            constructor() { this.audioContext = null; this.isSpeaking = false; this.isMuted = false; this.isPreGame = false; }
             setMuted(m) { this.isMuted = !!m; }
+            setPreGame(p) { this.isPreGame = !!p; }
             async init() {
                 if (!this.audioContext) this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 if (this.audioContext.state === 'suspended') {
@@ -135,11 +136,11 @@
                     return;
                 }
                 try {
-                    console.log('[TTS] Fetching audio:', { text: text.substring(0, 30) + '...', voice });
+                    console.log('[TTS] Fetching audio:', { text: text.substring(0, 30) + '...', voice, isPreGame: this.isPreGame });
                     const res = await fetch('/api/tts', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text, voice })
+                        body: JSON.stringify({ text, voice, isPreGame: this.isPreGame })
                     });
 
                     if (!res.ok) {
@@ -767,40 +768,29 @@
                     const side = t.speaker === 'A' ? 'left' : 'right';
                     const cleaned = cleanSpeech(t.text);
 
-                    // PRE-GAME: Subtitles only, no TTS (saves ElevenLabs credits)
+                    // Set pre-game flag for TTS caching
                     const isPreGame = commentary?.status === 'pre';
+                    voiceRef.current.setPreGame(isPreGame);
 
-                    if (isPreGame) {
-                        console.log(`[Pre-Game] Showing subtitle only (no TTS):`, cleaned.substring(0, 50) + '...');
-                        setSub({ name: t.name, text: cleaned });
-                        await new Promise(r => setTimeout(r, 4000)); // Show for 4s
-                        setSub({ name: "", text: "" });
-                        await new Promise(r => setTimeout(r, 1000)); // Pause between
-                    } else {
-                        // LIVE GAME: Full TTS + subtitles
-                        // Use sessionMetaRef instead of sessionMeta to avoid stale closure
-                        const cMeta = sessionMetaRef.current?.commentators?.[t.speaker === 'A' ? 0 : 1];
-                        const defaultVoice = side === 'left' ? 'rachel' : 'adam';
-                        const voiceToUse = cMeta?.voice || defaultVoice;
+                    // Use sessionMetaRef instead of sessionMeta to avoid stale closure
+                    const cMeta = sessionMetaRef.current?.commentators?.[t.speaker === 'A' ? 0 : 1];
+                    const defaultVoice = side === 'left' ? 'rachel' : 'adam';
+                    const voiceToUse = cMeta?.voice || defaultVoice;
 
-                        console.log(`[TTS] DEBUG sessionMetaRef:`, sessionMetaRef.current);
-                        console.log(`[TTS] DEBUG cMeta:`, cMeta);
-                        console.log(`[TTS] DEBUG speaker:`, t.speaker, 'index:', t.speaker === 'A' ? 0 : 1);
-                        console.log(`[TTS] Speaking:`, { side, voice: voiceToUse, text: cleaned.substring(0, 50) + '...' });
+                    console.log(`[TTS] Speaking (${isPreGame ? 'PRE-GAME' : 'LIVE'}):`, { side, voice: voiceToUse, text: cleaned.substring(0, 50) + '...' });
 
-                        setSub({ name: t.name, text: cleaned });
-                        setActiveSpeaker(side);
+                    setSub({ name: t.name, text: cleaned });
+                    setActiveSpeaker(side);
 
-                        try {
-                            await voiceRef.current.speak(cleaned, side, voiceToUse);
-                        } catch (err) {
-                            console.error('[TTS] Error:', err);
-                        }
-
-                        setActiveSpeaker(null);
-                        setSub({ name: "", text: "" });
-                        await new Promise(r => setTimeout(r, 1000));
+                    try {
+                        await voiceRef.current.speak(cleaned, side, voiceToUse);
+                    } catch (err) {
+                        console.error('[TTS] Error:', err);
                     }
+
+                    setActiveSpeaker(null);
+                    setSub({ name: "", text: "" });
+                    await new Promise(r => setTimeout(r, 1000));
                 }
                 isProcessingRef.current = false;
             };

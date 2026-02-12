@@ -538,7 +538,7 @@ const ELEVENLABS_VOICES = {
 
 app.post('/api/tts', async (req, res) => {
   try {
-    const { text, voice } = req.body;
+    const { text, voice, isPreGame } = req.body;
     if (!text) {
       console.error('[TTS] 400 Error - Empty text received:', { text, voice, body: req.body });
       return res.status(400).send();
@@ -560,7 +560,24 @@ app.post('/api/tts', async (req, res) => {
 
     const key = `${voiceKey}:${text.trim().toLowerCase().substring(0, 100)}`;
 
+    // Check in-memory cache first
     if (ttsCache.has(key)) return res.json(ttsCache.get(key));
+
+    // For pre-game, check disk cache
+    if (isPreGame) {
+      const hash = crypto.createHash('md5').update(`${voiceKey}:${text}`).digest('hex');
+      const audioDir = path.join(__dirname, 'uploads', 'pregame-audio');
+      const audioPath = path.join(audioDir, `${hash}.mp3`);
+
+      if (fs.existsSync(audioPath)) {
+        console.log(`[TTS] Using cached pre-game audio: ${hash}.mp3`);
+        const audioBuffer = fs.readFileSync(audioPath);
+        const base64Audio = audioBuffer.toString('base64');
+        const result = { audio: base64Audio, format: 'mp3', provider: 'elevenlabs-cached' };
+        ttsCache.set(key, result);
+        return res.json(result);
+      }
+    }
 
     // Check if using ElevenLabs voice
     const voiceConfig = ELEVENLABS_VOICES[voiceKey];
@@ -595,6 +612,16 @@ app.post('/api/tts', async (req, res) => {
 
         const audioBuffer = await response.arrayBuffer();
         const base64Audio = Buffer.from(audioBuffer).toString('base64');
+
+        // Save pre-game audio to disk for reuse
+        if (isPreGame) {
+          const hash = crypto.createHash('md5').update(`${voiceKey}:${text}`).digest('hex');
+          const audioDir = path.join(__dirname, 'uploads', 'pregame-audio');
+          if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true });
+          const audioPath = path.join(audioDir, `${hash}.mp3`);
+          fs.writeFileSync(audioPath, Buffer.from(audioBuffer));
+          console.log(`[TTS] Saved pre-game audio to disk: ${hash}.mp3`);
+        }
 
         const result = { audio: base64Audio, format: 'mp3', provider: 'elevenlabs' };
         if (ttsCache.size > 1000) ttsCache.delete(ttsCache.keys().next().value);
