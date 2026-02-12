@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Arm Position Test</title>
+    <style>
+        * { margin: 0; padding: 0; box-sizing: border-box; }
+        body { background: #0a0a0a; color: #fff; font-family: system-ui, sans-serif; overflow: hidden; }
+        #canvas { width: 100vw; height: 100vh; display: block; }
+        .controls {
+            position: fixed; left: 20px; top: 20px; background: rgba(0,0,0,0.95);
+            border: 1px solid rgba(255,255,255,0.2); border-radius: 12px; padding: 20px;
+            width: 350px; max-height: calc(100vh - 40px); overflow-y: auto; z-index: 100;
+        }
+        h1 { font-size: 16px; font-weight: 800; margin-bottom: 20px; letter-spacing: 1px; }
+        .bone { margin-bottom: 20px; padding-bottom: 16px; border-bottom: 1px solid rgba(255,255,255,0.1); }
+        .bone-title { color: #60a5fa; font-weight: 700; margin-bottom: 12px; font-size: 13px; }
+        .axis { margin-bottom: 8px; }
+        .axis-label { display: flex; justify-content: space-between; margin-bottom: 4px; font-size: 11px; }
+        .axis-label span:first-child { text-transform: uppercase; opacity: 0.7; }
+        .axis-label span:last-child { font-family: monospace; color: #fbbf24; font-weight: 600; }
+        input[type="range"] { width: 100%; accent-color: #60a5fa; }
+        button { width: 100%; padding: 12px; background: #3b82f6; border: none; border-radius: 8px;
+                 color: white; font-weight: 700; cursor: pointer; font-size: 12px; letter-spacing: 0.5px; margin-top: 10px; }
+        button:hover { background: #2563eb; }
+    </style>
+    <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
+    <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <script type="importmap">
+        {
+            "imports": {
+                "three": "https://cdn.jsdelivr.net/npm/three@0.160.0/build/three.module.js",
+                "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.160.0/examples/jsm/",
+                "@pixiv/three-vrm": "https://cdn.jsdelivr.net/npm/@pixiv/three-vrm@3/lib/three-vrm.module.min.js"
+            }
+        }
+    </script>
+    <script type="module">
+        import * as THREE from 'three';
+        import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+        import { VRMLoaderPlugin, VRMUtils } from '@pixiv/three-vrm';
+        window.THREE = THREE;
+        window.GLTFLoader = GLTFLoader;
+        window.VRMLoaderPlugin = VRMLoaderPlugin;
+        window.VRMUtils = VRMUtils;
+    </script>
+</head>
+<body>
+    <canvas id="canvas"></canvas>
+    <div id="ui"></div>
+
+    <script type="text/babel">
+        const { useState, useEffect, useRef } = React;
+
+        function App() {
+            const [values, setValues] = useState({
+                lua: { x: 0.15, y: 0.1, z: -1.3 },
+                rua: { x: 0.15, y: -0.1, z: 1.3 },
+                lla: { x: -0.6, y: 0.05, z: 0 },
+                rla: { x: -0.6, y: -0.05, z: 0 },
+                lh: { x: 0, y: 0, z: 0 },
+                rh: { x: 0, y: 0, z: 0 }
+            });
+
+            const vrmRef = useRef(null);
+            const bonesRef = useRef(null);
+
+            useEffect(() => {
+                const canvas = document.getElementById('canvas');
+                const { THREE, GLTFLoader, VRMLoaderPlugin, VRMUtils } = window;
+
+                const scene = new THREE.Scene();
+                const camera = new THREE.PerspectiveCamera(30, window.innerWidth / window.innerHeight, 0.1, 1000);
+                camera.position.set(0, 1.35, 2.2);
+                camera.lookAt(0, 1.25, 0);
+
+                const renderer = new THREE.WebGLRenderer({ canvas, alpha: true, antialias: true });
+                renderer.setSize(window.innerWidth, window.innerHeight);
+                renderer.setPixelRatio(window.devicePixelRatio);
+
+                scene.add(new THREE.AmbientLight(0xffffff, 0.6));
+                const light = new THREE.DirectionalLight(0xffffff, 1.5);
+                light.position.set(-1, 2, 3);
+                scene.add(light);
+
+                const loader = new GLTFLoader();
+                loader.register((parser) => new VRMLoaderPlugin(parser));
+
+                loader.load('/avatars/sakura.vrm', (gltf) => {
+                    const vrm = gltf.userData.vrm;
+                    VRMUtils.removeUnnecessaryJoints(gltf.scene);
+                    scene.add(vrm.scene);
+                    vrmRef.current = vrm;
+
+                    const h = vrm.humanoid;
+                    bonesRef.current = {
+                        lua: h.getNormalizedBoneNode('leftUpperArm'),
+                        rua: h.getNormalizedBoneNode('rightUpperArm'),
+                        lla: h.getNormalizedBoneNode('leftLowerArm'),
+                        rla: h.getNormalizedBoneNode('rightLowerArm'),
+                        lh: h.getNormalizedBoneNode('leftHand'),
+                        rh: h.getNormalizedBoneNode('rightHand')
+                    };
+                });
+
+                function animate() {
+                    requestAnimationFrame(animate);
+
+                    const bones = bonesRef.current;
+                    if (bones) {
+                        if (bones.lua) {
+                            bones.lua.rotation.x = values.lua.x;
+                            bones.lua.rotation.y = values.lua.y;
+                            bones.lua.rotation.z = values.lua.z;
+                        }
+                        if (bones.rua) {
+                            bones.rua.rotation.x = values.rua.x;
+                            bones.rua.rotation.y = values.rua.y;
+                            bones.rua.rotation.z = values.rua.z;
+                        }
+                        if (bones.lla) {
+                            bones.lla.rotation.x = values.lla.x;
+                            bones.lla.rotation.y = values.lla.y;
+                            bones.lla.rotation.z = values.lla.z;
+                        }
+                        if (bones.rla) {
+                            bones.rla.rotation.x = values.rla.x;
+                            bones.rla.rotation.y = values.rla.y;
+                            bones.rla.rotation.z = values.rla.z;
+                        }
+                        if (bones.lh) {
+                            bones.lh.rotation.x = values.lh.x;
+                            bones.lh.rotation.y = values.lh.y;
+                            bones.lh.rotation.z = values.lh.z;
+                        }
+                        if (bones.rh) {
+                            bones.rh.rotation.x = values.rh.x;
+                            bones.rh.rotation.y = values.rh.y;
+                            bones.rh.rotation.z = values.rh.z;
+                        }
+                    }
+
+                    if (vrmRef.current) vrmRef.current.update(0.016);
+                    renderer.render(scene, camera);
+                }
+                animate();
+
+                const handleResize = () => {
+                    camera.aspect = window.innerWidth / window.innerHeight;
+                    camera.updateProjectionMatrix();
+                    renderer.setSize(window.innerWidth, window.innerHeight);
+                };
+                window.addEventListener('resize', handleResize);
+
+                return () => {
+                    window.removeEventListener('resize', handleResize);
+                };
+            }, [values]);
+
+            const bones = [
+                { key: 'lua', label: 'Left Upper Arm' },
+                { key: 'rua', label: 'Right Upper Arm' },
+                { key: 'lla', label: 'Left Elbow' },
+                { key: 'rla', label: 'Right Elbow' },
+                { key: 'lh', label: 'Left Hand' },
+                { key: 'rh', label: 'Right Hand' }
+            ];
+
+            return (
+                <div className="controls">
+                    <h1>🦾 ARM POSITION TEST</h1>
+                    {bones.map(bone => (
+                        <div key={bone.key} className="bone">
+                            <div className="bone-title">{bone.label}</div>
+                            {['x', 'y', 'z'].map(axis => (
+                                <div key={axis} className="axis">
+                                    <div className="axis-label">
+                                        <span>{axis}</span>
+                                        <span>{values[bone.key][axis].toFixed(2)}</span>
+                                    </div>
+                                    <input
+                                        type="range"
+                                        min="-3"
+                                        max="3"
+                                        step="0.05"
+                                        value={values[bone.key][axis]}
+                                        onChange={(e) => setValues(prev => ({
+                                            ...prev,
+                                            [bone.key]: { ...prev[bone.key], [axis]: parseFloat(e.target.value) }
+                                        }))}
+                                    />
+                                </div>
+                            ))}
+                        </div>
+                    ))}
+                    <button onClick={() => {
+                        navigator.clipboard.writeText(JSON.stringify(values, null, 2));
+                        alert('Copied to clipboard!');
+                    }}>
+                        📋 COPY VALUES
+                    </button>
+                </div>
+            );
+        }
+
+        ReactDOM.createRoot(document.getElementById('ui')).render(<App />);
+    </script>
+</body>
+</html>
