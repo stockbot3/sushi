@@ -269,14 +269,19 @@ TOP HOME PLAYERS: ${summary.playerStats[1]?.categories?.[0]?.athletes.slice(0, 3
 ` : ''}
     `.trim();
 
-    // Make 2 requests for variety (15 turns each = 30 total)
-    console.log(`[PreGame Batch] Generating 2 batches of 15 turns each...`);
+    // Make 3 requests for variety (10 turns each = 30 total)
+    console.log(`[PreGame Batch] Generating 3 batches of 10 turns each...`);
     const allTurns = [];
     let lastRawResponse = ''; // Track last response for error reporting
 
-    for (let i = 0; i < 2; i++) {
-      const focus = i === 0 ? 'team strengths, weaknesses, and key player matchups' : 'coaching strategies, recent form, and game predictions';
-      const prompt = `Generate 15 unique pre-game commentary turns as an intense argument between two sports commentators about this matchup.
+    for (let i = 0; i < 3; i++) {
+      const focuses = [
+        'team strengths, weaknesses, and key player matchups',
+        'coaching strategies and recent form',
+        'game predictions and betting insights'
+      ];
+      const focus = focuses[i];
+      const prompt = `Generate 10 unique pre-game commentary turns as an intense argument between two sports commentators about this matchup.
 
 ${context}
 
@@ -286,24 +291,21 @@ ${context}
 Focus on: ${focus}
 
 Requirements:
-- EXACTLY 15 turns alternating between speakers
-- Odd turns (1,3,5...) = speaker A, Even turns (2,4,6...) = speaker B
+- EXACTLY 10 turns alternating between speakers (A,B,A,B,A,B,A,B,A,B)
+- Start with speaker A, then B, then A, etc.
 - Reference actual team stats, players, matchup details
 - HEATED debate - they strongly disagree
 - Be specific: mention player names, stats, team strengths/weaknesses
-- SNAPPY and SHORT (1-2 sentences each)
+- SNAPPY and SHORT (1-2 sentences each, max 100 chars per turn)
 - NO speaker names/labels in the text itself
 - NO stage directions or parentheticals
+- Keep responses BRIEF to avoid truncation
 
-Return ONLY a JSON array (no markdown, no code blocks):
-[
-  {"speaker":"A","text":"commentary here"},
-  {"speaker":"B","text":"commentary here"},
-  ...
-]`;
+Return ONLY valid JSON array. NO markdown blocks, NO extra text:
+[{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"},{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"},{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"},{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"},{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"}]`;
 
       try {
-        console.log(`[PreGame Batch ${i+1}/2] Sending request to Modal...`);
+        console.log(`[PreGame Batch ${i+1}/3] Sending request to Modal...`);
         const controller = new AbortController();
         const timeout = setTimeout(() => controller.abort(), 300000); // 5 minutes for Modal cold start
 
@@ -315,30 +317,30 @@ Return ONLY a JSON array (no markdown, no code blocks):
         });
         clearTimeout(timeout);
 
-        console.log(`[PreGame Batch ${i+1}/2] Modal responded with status: ${response.status}`);
+        console.log(`[PreGame Batch ${i+1}/3] Modal responded with status: ${response.status}`);
 
         if (!response.ok) {
           const errorText = await response.text();
-          console.error(`[PreGame Batch ${i+1}/2] Modal error ${response.status}: ${errorText.substring(0, 200)}`);
+          console.error(`[PreGame Batch ${i+1}/3] Modal error ${response.status}: ${errorText.substring(0, 200)}`);
           continue;
         }
 
-        console.log(`[PreGame Batch ${i+1}/2] Parsing JSON response...`);
+        console.log(`[PreGame Batch ${i+1}/3] Parsing JSON response...`);
 
         // Get content-length to check response size
         const contentLength = response.headers.get('content-length');
         if (contentLength) {
           const sizeMB = parseInt(contentLength) / (1024 * 1024);
-          console.log(`[PreGame Batch ${i+1}/2] Response size: ${sizeMB.toFixed(2)}MB`);
+          console.log(`[PreGame Batch ${i+1}/3] Response size: ${sizeMB.toFixed(2)}MB`);
           if (sizeMB > 10) {
-            console.error(`[PreGame Batch ${i+1}/2] Response too large (${sizeMB.toFixed(2)}MB), skipping`);
+            console.error(`[PreGame Batch ${i+1}/3] Response too large (${sizeMB.toFixed(2)}MB), skipping`);
             continue;
           }
         }
 
         const json = await response.json();
         let raw = json?.choices?.[0]?.message?.content || '';
-        console.log(`[PreGame Batch ${i+1}/2] Got ${raw.length} chars from Modal`);
+        console.log(`[PreGame Batch ${i+1}/3] Got ${raw.length} chars from Modal`);
 
         lastRawResponse = raw; // Save for error reporting
 
@@ -352,7 +354,7 @@ Return ONLY a JSON array (no markdown, no code blocks):
           }
 
           parsedTurns = JSON.parse(cleanJson);
-          console.log(`[PreGame Batch ${i+1}/2] Parsed ${parsedTurns.length} turns from JSON`);
+          console.log(`[PreGame Batch ${i+1}/3] Parsed ${parsedTurns.length} turns from JSON`);
 
           // Add to allTurns with commentator names
           parsedTurns.forEach((turn, idx) => {
@@ -365,8 +367,8 @@ Return ONLY a JSON array (no markdown, no code blocks):
           });
 
         } catch (parseErr) {
-          console.error(`[PreGame Batch ${i+1}/2] JSON parse failed, trying fallback regex:`, parseErr.message);
-          console.log(`[PreGame Batch ${i+1}/2] Raw response: ${raw.substring(0, 200)}`);
+          console.error(`[PreGame Batch ${i+1}/3] JSON parse failed, trying fallback regex:`, parseErr.message);
+          console.log(`[PreGame Batch ${i+1}/3] Raw response: ${raw.substring(0, 200)}`);
 
           // Fallback: try to extract JSON array from anywhere in the response
           const jsonMatch = raw.match(/\[\s*\{[\s\S]*\}\s*\]/);
@@ -377,28 +379,28 @@ Return ONLY a JSON array (no markdown, no code blocks):
                 const c = turn.speaker === 'A' ? session.commentators[0] : session.commentators[1];
                 allTurns.push({ speaker: turn.speaker, name: c.name, text: turn.text.trim() });
               });
-              console.log(`[PreGame Batch ${i+1}/2] Fallback parse succeeded: ${parsedTurns.length} turns`);
+              console.log(`[PreGame Batch ${i+1}/3] Fallback parse succeeded: ${parsedTurns.length} turns`);
             } catch (e) {
-              console.error(`[PreGame Batch ${i+1}/2] Fallback also failed:`, e.message);
+              console.error(`[PreGame Batch ${i+1}/3] Fallback also failed:`, e.message);
             }
           }
         }
 
-        console.log(`[PreGame Batch ${i+1}/2] Total turns now: ${allTurns.length}`);
+        console.log(`[PreGame Batch ${i+1}/3] Total turns now: ${allTurns.length}`);
 
         // Small delay between requests
-        if (i === 0) await new Promise(r => setTimeout(r, 2000));
+        if (i < 2) await new Promise(r => setTimeout(r, 2000));
 
       } catch (err) {
-        console.error(`[PreGame Batch ${i+1}/2] Error: ${err.message}`);
+        console.error(`[PreGame Batch ${i+1}/3] Error: ${err.message}`);
         if (err.name === 'AbortError') {
-          console.error(`[PreGame Batch ${i+1}/2] Request timed out after 5 minutes (Modal cold start took too long)`);
+          console.error(`[PreGame Batch ${i+1}/3] Request timed out after 5 minutes (Modal cold start took too long)`);
         }
       }
     }
 
     const turns = allTurns;
-    console.log(`[PreGame Batch] Generated ${turns.length} total turns from 2 requests`);
+    console.log(`[PreGame Batch] Generated ${turns.length} total turns from 3 requests`);
 
     if (turns.length === 0) {
       console.error(`[PreGame Batch] No turns parsed from Modal response. Last raw response: ${lastRawResponse.substring(0, 500)}`);
