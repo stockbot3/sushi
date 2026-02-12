@@ -226,11 +226,13 @@
             }
         }
 
-        function Avatar({ side, modelUrl, activeSpeaker }) {
+        function Avatar({ side, modelUrl, activeSpeaker, debugArms }) {
             const canvasRef = useRef(null), vrmRef = useRef(null), speakerRef = useRef(activeSpeaker), isLoadedRef = useRef(false);
             const basePoseRef = useRef(null);
             const blinkTimerRef = useRef(null);
+            const debugArmsRef = useRef(debugArms);
             useEffect(() => { speakerRef.current = activeSpeaker; }, [activeSpeaker]);
+            useEffect(() => { debugArmsRef.current = debugArms; }, [debugArms]);
 
             useEffect(() => {
                 basePoseRef.current = null;
@@ -294,40 +296,41 @@
                         if (bones.lshoulder) { bones.lshoulder.rotation.z = 0; bones.lshoulder.rotation.x = 0; }
                         if (bones.rshoulder) { bones.rshoulder.rotation.z = 0; bones.rshoulder.rotation.x = 0; }
 
-                        // Upper arms: Bring DOWN from T-pose + slight forward angle
-                        if (bones.lua) {
-                            bones.lua.rotation.z = -1.3;  // -75° brings left arm down
-                            bones.lua.rotation.x = 0.15;   // Slight forward
-                            bones.lua.rotation.y = 0.1;    // Slight inward
+                        // Use debug values for arm positions (adjustable with D key)
+                        const dbg = debugArmsRef.current;
+                        if (bones.lua && dbg) {
+                            bones.lua.rotation.x = dbg.lua.x;
+                            bones.lua.rotation.y = dbg.lua.y;
+                            bones.lua.rotation.z = dbg.lua.z;
                         }
-                        if (bones.rua) {
-                            bones.rua.rotation.z = 1.3;    // +75° brings right arm down (mirror)
-                            bones.rua.rotation.x = 0.15;   // Slight forward
-                            bones.rua.rotation.y = -0.1;   // Slight inward
-                        }
-
-                        // Lower arms: Natural elbow bend (increased for visibility)
-                        if (bones.lla) {
-                            bones.lla.rotation.x = -0.6;   // Bend elbow more visibly
-                            bones.lla.rotation.y = 0.05;   // Slight twist
-                            bones.lla.rotation.z = 0;
-                        }
-                        if (bones.rla) {
-                            bones.rla.rotation.x = -0.6;   // Bend elbow more visibly
-                            bones.rla.rotation.y = -0.05;  // Slight twist
-                            bones.rla.rotation.z = 0;
+                        if (bones.rua && dbg) {
+                            bones.rua.rotation.x = dbg.rua.x;
+                            bones.rua.rotation.y = dbg.rua.y;
+                            bones.rua.rotation.z = dbg.rua.z;
                         }
 
-                        // Hands: Natural relaxed position
-                        if (bones.lhand) {
-                            bones.lhand.rotation.z = 0.15;  // Slight curl
-                            bones.lhand.rotation.x = -0.1;  // Natural wrist angle
-                            bones.lhand.rotation.y = 0.05;  // Slight turn
+                        // Lower arms (elbows)
+                        if (bones.lla && dbg) {
+                            bones.lla.rotation.x = dbg.lla.x;
+                            bones.lla.rotation.y = dbg.lla.y;
+                            bones.lla.rotation.z = dbg.lla.z;
                         }
-                        if (bones.rhand) {
-                            bones.rhand.rotation.z = -0.15; // Slight curl
-                            bones.rhand.rotation.x = -0.1;  // Natural wrist angle
-                            bones.rhand.rotation.y = -0.05; // Slight turn
+                        if (bones.rla && dbg) {
+                            bones.rla.rotation.x = dbg.rla.x;
+                            bones.rla.rotation.y = dbg.rla.y;
+                            bones.rla.rotation.z = dbg.rla.z;
+                        }
+
+                        // Hands
+                        if (bones.lhand && dbg) {
+                            bones.lhand.rotation.x = dbg.lh.x;
+                            bones.lhand.rotation.y = dbg.lh.y;
+                            bones.lhand.rotation.z = dbg.lh.z;
+                        }
+                        if (bones.rhand && dbg) {
+                            bones.rhand.rotation.x = dbg.rh.x;
+                            bones.rhand.rotation.y = dbg.rh.y;
+                            bones.rhand.rotation.z = dbg.rh.z;
                         }
 
                         // Body: Natural posture
@@ -607,11 +610,31 @@
             const [sessionMeta, setSessionMeta] = useState(null);
             const [muted, setMuted] = useState(false);
             const [isIdle, setIsIdle] = useState(false);
+            const [debugOpen, setDebugOpen] = useState(false);
+            const [debugArms, setDebugArms] = useState({
+                lua: { x: 0.15, y: 0.1, z: -1.3 },
+                rua: { x: 0.15, y: -0.1, z: 1.3 },
+                lla: { x: -0.6, y: 0.05, z: 0 },
+                rla: { x: -0.6, y: -0.05, z: 0 },
+                lh: { x: 0, y: 0, z: 0 },
+                rh: { x: 0, y: 0, z: 0 }
+            });
             const voiceRef = useRef(new TTSService()), queueRef = useRef([]), isProcessingRef = useRef(false), voicedRef = useRef(new Set()), lastSeqRef = useRef(-1);
             const lastActivityRef = useRef(Date.now());
             const idleCheckRef = useRef(null);
             const heartbeatIntervalRef = useRef(null);
             const sessionMetaRef = useRef(null);
+
+            // Toggle debug panel with 'D' key
+            useEffect(() => {
+                const handleKey = (e) => {
+                    if (e.key.toLowerCase() === 'd' && !e.ctrlKey && !e.metaKey) {
+                        setDebugOpen(prev => !prev);
+                    }
+                };
+                window.addEventListener('keydown', handleKey);
+                return () => window.removeEventListener('keydown', handleKey);
+            }, []);
 
             useEffect(() => {
                 // Support both ?session=xxx and /:slug URLs
@@ -860,10 +883,67 @@
                     {muted ? 'UNMUTE' : 'MUTE'}
                 </button>
                 <div className="vrm-stage">
-                        <Avatar side="left" modelUrl={cA?.avatarUrl} activeSpeaker={activeSpeaker} />
-                        <Avatar side="right" modelUrl={cB?.avatarUrl} activeSpeaker={activeSpeaker} />
+                        <Avatar side="left" modelUrl={cA?.avatarUrl} activeSpeaker={activeSpeaker} debugArms={debugArms} />
+                        <Avatar side="right" modelUrl={cB?.avatarUrl} activeSpeaker={activeSpeaker} debugArms={debugArms} />
                     </div>
                     {sub.text && ( <div className="subtitle-box"> <div className="subtitle-name">{sub.name}</div> <div className="subtitle-text">{sub.text}</div> </div> )}
+
+                    {debugOpen && (
+                        <div style={{
+                            position: 'fixed', right: 16, top: 130, zIndex: 200,
+                            background: 'rgba(0,0,0,0.95)', backdropFilter: 'blur(10px)',
+                            border: '1px solid rgba(255,255,255,0.2)', borderRadius: 12,
+                            padding: 16, width: 320, maxHeight: 'calc(100vh - 150px)',
+                            overflowY: 'auto', fontSize: 11, color: '#fff'
+                        }}>
+                            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+                                <div style={{ fontWeight: 800, fontSize: 13, letterSpacing: 1 }}>ARM DEBUG (Press D to close)</div>
+                                <button onClick={() => {
+                                    const values = JSON.stringify(debugArms, null, 2);
+                                    navigator.clipboard.writeText(values);
+                                    alert('Values copied to clipboard!');
+                                }} style={{ padding: '4px 8px', background: 'rgba(255,255,255,0.1)', border: '1px solid rgba(255,255,255,0.3)', borderRadius: 6, color: '#fff', fontSize: 10 }}>
+                                    COPY VALUES
+                                </button>
+                            </div>
+
+                            {['lua', 'rua', 'lla', 'rla', 'lh', 'rh'].map(bone => {
+                                const labels = {
+                                    lua: 'Left Upper Arm',
+                                    rua: 'Right Upper Arm',
+                                    lla: 'Left Lower Arm (Elbow)',
+                                    rla: 'Right Lower Arm (Elbow)',
+                                    lh: 'Left Hand',
+                                    rh: 'Right Hand'
+                                };
+                                return (
+                                    <div key={bone} style={{ marginBottom: 16, paddingBottom: 12, borderBottom: '1px solid rgba(255,255,255,0.1)' }}>
+                                        <div style={{ fontWeight: 700, marginBottom: 8, color: '#60a5fa' }}>{labels[bone]}</div>
+                                        {['x', 'y', 'z'].map(axis => (
+                                            <div key={axis} style={{ marginBottom: 6 }}>
+                                                <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 2 }}>
+                                                    <span style={{ textTransform: 'uppercase', opacity: 0.7 }}>{axis}</span>
+                                                    <span style={{ fontFamily: 'monospace', color: '#fbbf24' }}>{debugArms[bone][axis].toFixed(2)}</span>
+                                                </div>
+                                                <input
+                                                    type="range"
+                                                    min="-3"
+                                                    max="3"
+                                                    step="0.05"
+                                                    value={debugArms[bone][axis]}
+                                                    onChange={(e) => setDebugArms(prev => ({
+                                                        ...prev,
+                                                        [bone]: { ...prev[bone], [axis]: parseFloat(e.target.value) }
+                                                    }))}
+                                                    style={{ width: '100%', accentColor: '#60a5fa' }}
+                                                />
+                                            </div>
+                                        ))}
+                                    </div>
+                                );
+                            })}
+                        </div>
+                    )}
                 </div>
             );
         }
