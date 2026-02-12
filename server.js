@@ -874,9 +874,10 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
     const turns = [];
 
     // Parse numbered format (1: text or 1. text) - assume alternating speakers
+    // LIMIT TO 3 TURNS to prevent wasting credits on long responses
     const numberedRegex = /(\d+)[:\.]?\s*["']?(.*?)["']?(?=\s*\d+[:\.]|$)/gs;
     let m;
-    while ((m = numberedRegex.exec(raw)) !== null) {
+    while ((m = numberedRegex.exec(raw)) !== null && turns.length < 3) {
       const num = parseInt(m[1]);
       const txt = m[2].trim().replace(/^["']+|["']+$/g, '').replace(/["']+\s*$/g, '');
       if (txt && txt.length > 5) {
@@ -887,7 +888,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       }
     }
 
-    console.log(`[Commentary] Generated ${turns.length} turns for live game`);
+    console.log(`[Commentary] Generated ${turns.length} turns for live game (limited to 3)`);
     turns.forEach((t, i) => console.log(`  [${i+1}] ${t.name}: ${t.text.substring(0, 50)}...`));
 
     rt.lastSeq = seq;
