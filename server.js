@@ -272,6 +272,7 @@ TOP HOME PLAYERS: ${summary.playerStats[1]?.categories?.[0]?.athletes.slice(0, 3
     // Make 2 requests for variety (15 turns each = 30 total)
     console.log(`[PreGame Batch] Generating 2 batches of 15 turns each...`);
     const allTurns = [];
+    let lastRawResponse = ''; // Track last response for error reporting
 
     for (let i = 0; i < 2; i++) {
       const focus = i === 0 ? 'team strengths, weaknesses, and key player matchups' : 'coaching strategies, recent form, and game predictions';
@@ -303,7 +304,7 @@ Format: Just numbered lines like:
       try {
         console.log(`[PreGame Batch ${i+1}/2] Sending request to Modal...`);
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 60000); // Increased to 60s
+        const timeout = setTimeout(() => controller.abort(), 300000); // 5 minutes for Modal cold start
 
         const response = await fetch(MODAL_MISTRAL_URL, {
           method: 'POST',
@@ -316,16 +317,40 @@ Format: Just numbered lines like:
         console.log(`[PreGame Batch ${i+1}/2] Modal responded with status: ${response.status}`);
 
         if (!response.ok) {
-          console.error(`[PreGame Batch ${i+1}/2] Modal error ${response.status}: ${await response.text()}`);
+          const errorText = await response.text();
+          console.error(`[PreGame Batch ${i+1}/2] Modal error ${response.status}: ${errorText.substring(0, 200)}`);
           continue;
         }
 
+        console.log(`[PreGame Batch ${i+1}/2] Parsing JSON response...`);
+
+        // Get content-length to check response size
+        const contentLength = response.headers.get('content-length');
+        if (contentLength) {
+          const sizeMB = parseInt(contentLength) / (1024 * 1024);
+          console.log(`[PreGame Batch ${i+1}/2] Response size: ${sizeMB.toFixed(2)}MB`);
+          if (sizeMB > 10) {
+            console.error(`[PreGame Batch ${i+1}/2] Response too large (${sizeMB.toFixed(2)}MB), skipping`);
+            continue;
+          }
+        }
+
         const json = await response.json();
-        const raw = json?.choices?.[0]?.message?.content || '';
+        let raw = json?.choices?.[0]?.message?.content || '';
+        console.log(`[PreGame Batch ${i+1}/2] Got ${raw.length} chars from Modal`);
+
+        // Safety check for excessive response size
+        if (raw.length > 50000) {
+          console.error(`[PreGame Batch ${i+1}/2] Response text too long (${raw.length} chars), truncating`);
+          raw = raw.substring(0, 50000);
+        }
+
+        lastRawResponse = raw; // Save for error reporting
 
         // Parse numbered commentary
         const numberedRegex = /(\d+)\.\s*["']?(.*?)["']?(?=\s*\d+\.|$)/gs;
         let m;
+        let parseCount = 0;
         while ((m = numberedRegex.exec(raw)) !== null) {
           const num = parseInt(m[1]);
           let txt = m[2].trim().replace(/^["']+|["']+$/g, '').replace(/["']+\s*$/g, '');
@@ -333,11 +358,13 @@ Format: Just numbered lines like:
             const side = num % 2 === 1 ? 'A' : 'B';
             const c = side === 'A' ? session.commentators[0] : session.commentators[1];
             const other = side === 'A' ? session.commentators[1]?.name : session.commentators[0]?.name;
+            console.log(`[PreGame Batch ${i+1}/2] Parsing turn ${num}: "${txt.substring(0, 30)}..."`);
             allTurns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+            parseCount++;
           }
         }
 
-        console.log(`[PreGame Batch ${i+1}/2] Generated ${allTurns.length - (i * 15)} turns`);
+        console.log(`[PreGame Batch ${i+1}/2] Parsed ${parseCount} turns (total now: ${allTurns.length})`);
 
         // Small delay between requests
         if (i === 0) await new Promise(r => setTimeout(r, 2000));
@@ -345,7 +372,7 @@ Format: Just numbered lines like:
       } catch (err) {
         console.error(`[PreGame Batch ${i+1}/2] Error: ${err.message}`);
         if (err.name === 'AbortError') {
-          console.error(`[PreGame Batch ${i+1}/2] Request timed out after 60 seconds`);
+          console.error(`[PreGame Batch ${i+1}/2] Request timed out after 5 minutes (Modal cold start took too long)`);
         }
       }
     }
@@ -354,7 +381,7 @@ Format: Just numbered lines like:
     console.log(`[PreGame Batch] Generated ${turns.length} total turns from 2 requests`);
 
     if (turns.length === 0) {
-      console.error(`[PreGame Batch] No turns parsed from Modal response. Raw response: ${raw.substring(0, 500)}`);
+      console.error(`[PreGame Batch] No turns parsed from Modal response. Last raw response: ${lastRawResponse.substring(0, 500)}`);
       throw new Error('Failed to parse any turns from Modal response');
     }
 
@@ -363,7 +390,8 @@ Format: Just numbered lines like:
     console.log(`[PreGame Batch] Saved ${turns.length} turns to Firebase`);
 
   } catch (err) {
-    console.error(`[PreGame Batch] Error for session ${sessionId}:`, err);
+    console.error(`[PreGame Batch] CRITICAL ERROR for session ${sessionId}:`, err.message);
+    console.error(`[PreGame Batch] Stack:`, err.stack);
   } finally {
     batchGenerating.delete(sessionId);
   }
@@ -418,7 +446,26 @@ app.patch('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
 
 app.delete('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
   try {
-    await db.collection('sessions').doc(req.params.id).delete();
+    const sessionId = req.params.id;
+
+    // Delete from Firestore
+    await db.collection('sessions').doc(sessionId).delete();
+
+    // Delete pre-game audio from Firebase Storage
+    try {
+      const bucket = admin.storage().bucket();
+      const prefix = `pregame-audio/${sessionId}/`;
+      const [files] = await bucket.getFiles({ prefix });
+
+      if (files.length > 0) {
+        await Promise.all(files.map(file => file.delete()));
+        console.log(`[Session Delete] Deleted ${files.length} audio files for session ${sessionId}`);
+      }
+    } catch (storageErr) {
+      console.error('[Session Delete] Storage cleanup error:', storageErr.message);
+      // Continue even if storage cleanup fails
+    }
+
     res.json({ ok: true });
   } catch (err) {
     console.error('Delete session error:', err);
@@ -538,8 +585,8 @@ const ELEVENLABS_VOICES = {
 
 app.post('/api/tts', async (req, res) => {
   try {
-    const { text, voice, isPreGame } = req.body;
-    console.log('[TTS] Request received:', { voice, isPreGame, textLength: text?.length });
+    const { text, voice, isPreGame, sessionId } = req.body;
+    console.log('[TTS] Request received:', { voice, isPreGame, sessionId, textLength: text?.length });
     if (!text) {
       console.error('[TTS] 400 Error - Empty text received:', { text, voice, body: req.body });
       return res.status(400).send();
@@ -564,19 +611,27 @@ app.post('/api/tts', async (req, res) => {
     // Check in-memory cache first
     if (ttsCache.has(key)) return res.json(ttsCache.get(key));
 
-    // For pre-game, check disk cache
-    if (isPreGame) {
+    // For pre-game, check Firebase Storage cache
+    if (isPreGame && sessionId) {
       const hash = crypto.createHash('md5').update(`${voiceKey}:${text}`).digest('hex');
-      const audioDir = path.join(__dirname, 'uploads', 'pregame-audio');
-      const audioPath = path.join(audioDir, `${hash}.mp3`);
+      const storagePath = `pregame-audio/${sessionId}/${hash}.mp3`;
 
-      if (fs.existsSync(audioPath)) {
-        console.log(`[TTS] Using cached pre-game audio: ${hash}.mp3`);
-        const audioBuffer = fs.readFileSync(audioPath);
-        const base64Audio = audioBuffer.toString('base64');
-        const result = { audio: base64Audio, format: 'mp3', provider: 'elevenlabs-cached' };
-        ttsCache.set(key, result);
-        return res.json(result);
+      try {
+        const bucket = admin.storage().bucket();
+        const file = bucket.file(storagePath);
+        const [exists] = await file.exists();
+
+        if (exists) {
+          console.log(`[TTS] Using cached Firebase pre-game audio: ${storagePath}`);
+          const [audioBuffer] = await file.download();
+          const base64Audio = audioBuffer.toString('base64');
+          const result = { audio: base64Audio, format: 'mp3', provider: 'elevenlabs-cached' };
+          ttsCache.set(key, result);
+          return res.json(result);
+        }
+      } catch (storageErr) {
+        console.error('[TTS] Firebase Storage check error:', storageErr.message);
+        // Continue to generate if cache check fails
       }
     }
 
@@ -614,14 +669,26 @@ app.post('/api/tts', async (req, res) => {
         const audioBuffer = await response.arrayBuffer();
         const base64Audio = Buffer.from(audioBuffer).toString('base64');
 
-        // Save pre-game audio to disk for reuse
-        if (isPreGame) {
+        // Save pre-game audio to Firebase Storage for reuse
+        if (isPreGame && sessionId) {
           const hash = crypto.createHash('md5').update(`${voiceKey}:${text}`).digest('hex');
-          const audioDir = path.join(__dirname, 'uploads', 'pregame-audio');
-          if (!fs.existsSync(audioDir)) fs.mkdirSync(audioDir, { recursive: true });
-          const audioPath = path.join(audioDir, `${hash}.mp3`);
-          fs.writeFileSync(audioPath, Buffer.from(audioBuffer));
-          console.log(`[TTS] Saved pre-game audio to disk: ${hash}.mp3`);
+          const storagePath = `pregame-audio/${sessionId}/${hash}.mp3`;
+
+          try {
+            const bucket = admin.storage().bucket();
+            const file = bucket.file(storagePath);
+            await file.save(Buffer.from(audioBuffer), {
+              contentType: 'audio/mpeg',
+              resumable: false,
+              metadata: {
+                cacheControl: 'public, max-age=31536000'
+              }
+            });
+            console.log(`[TTS] Saved pre-game audio to Firebase Storage: ${storagePath}`);
+          } catch (storageErr) {
+            console.error('[TTS] Firebase Storage save error:', storageErr.message);
+            // Continue even if save fails
+          }
         }
 
         const result = { audio: base64Audio, format: 'mp3', provider: 'elevenlabs' };

@@ -111,9 +111,10 @@
         };
 
         class TTSService {
-            constructor() { this.audioContext = null; this.isSpeaking = false; this.isMuted = false; this.isPreGame = false; }
+            constructor() { this.audioContext = null; this.isSpeaking = false; this.isMuted = false; this.isPreGame = false; this.sessionId = null; }
             setMuted(m) { this.isMuted = !!m; }
             setPreGame(p) { this.isPreGame = !!p; }
+            setSessionId(s) { this.sessionId = s; }
             async init() {
                 if (!this.audioContext) this.audioContext = new (window.AudioContext || window.webkitAudioContext)();
                 if (this.audioContext.state === 'suspended') {
@@ -136,11 +137,11 @@
                     return;
                 }
                 try {
-                    console.log('[TTS] Fetching audio:', { text: text.substring(0, 30) + '...', voice, isPreGame: this.isPreGame });
+                    console.log('[TTS] Fetching audio:', { text: text.substring(0, 30) + '...', voice, isPreGame: this.isPreGame, sessionId: this.sessionId });
                     const res = await fetch('/api/tts', {
                         method: 'POST',
                         headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ text, voice, isPreGame: this.isPreGame })
+                        body: JSON.stringify({ text, voice, isPreGame: this.isPreGame, sessionId: this.sessionId })
                     });
 
                     if (!res.ok) {
@@ -677,6 +678,9 @@
                 }).catch(e => console.error('[SessionMeta] Initial load error:', e));
 
                 const initializeSession = (sid) => {
+                // Set session ID for TTS caching
+                voiceRef.current.setSessionId(sid);
+
                 // Track user activity (mouse, keyboard, touch) - silently update timestamp
                 const trackActivity = () => {
                     lastActivityRef.current = Date.now();
