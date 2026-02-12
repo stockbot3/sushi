@@ -849,6 +849,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       const json = await r.json();
       raw = json?.choices?.[0]?.message?.content || '';
       console.log('[Commentary] Modal response received:', raw ? `${raw.length} chars` : 'EMPTY');
+      if (raw) console.log('[Commentary] Raw Modal response:', raw);
     } catch (e) {
       console.error('[Commentary] Modal live error:', e);
     }
@@ -871,12 +872,27 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
       return res.json(rt.cache);
     }
     const turns = [];
-    const turnRegex = /\[([AB])\][:\s—-]*(.*?)(?=\[[AB]\]|$)/gs;
-    let m; while ((m = turnRegex.exec(raw)) !== null) {
-      const side = m[1]; const txt = m[2].trim();
-      const c = side === 'A' ? s.commentators[0] : s.commentators[1];
-      const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
-      if (txt) turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+
+    // Try multiple regex patterns to match different Modal response formats
+    const patterns = [
+      /\[([AB])\][:\s—-]*(.*?)(?=\[[AB]\]|$)/gs,  // [A] text [B] text
+      /([AB]):\s*["']?(.*?)["']?(?=\s*[AB]:|$)/gs, // A: text B: text
+      /(\d+)\.\s*\[?([AB])\]?\s*[:\s—-]*(.*?)(?=\s*\d+\.|$)/gs // 1. [A] text 2. [B] text
+    ];
+
+    for (const regex of patterns) {
+      regex.lastIndex = 0; // Reset regex
+      let m;
+      while ((m = regex.exec(raw)) !== null) {
+        const side = m.length === 3 ? m[1] : m[2]; // Handle different capture groups
+        const txt = (m.length === 3 ? m[2] : m[3]).trim().replace(/^["']+|["']+$/g, '');
+        if (txt && txt.length > 3 && (side === 'A' || side === 'B')) {
+          const c = side === 'A' ? s.commentators[0] : s.commentators[1];
+          const other = side === 'A' ? s.commentators[1]?.name : s.commentators[0]?.name;
+          turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+        }
+      }
+      if (turns.length > 0) break; // Stop if we found matches
     }
 
     console.log(`[Commentary] Generated ${turns.length} turns for live game`);
