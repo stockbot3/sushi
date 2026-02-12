@@ -879,8 +879,18 @@ Requirements:
 - They must disagree
 - Reference the play and score
 - Use full team names (${game.away.name}, ${game.home.name})
-- NO speaker names, labels, or stage directions in the text
-- ONLY return the JSON array, nothing else`;
+- CRITICAL: speaker field MUST be "A" or "B" (not empty, not names)
+- CRITICAL: Text MUST NOT contain commentator names (no "Sakura says", "Steve groans", etc)
+- NO speaker names, labels, stage directions, or action descriptions in the text
+- Just the spoken words themselves
+- ONLY return the JSON array, nothing else
+
+Example good response:
+[
+  {"speaker": "A", "text": "The Knicks are dominating this game with incredible defense."},
+  {"speaker": "B", "text": "Defense? The 76ers are just having an off night with their shooting."},
+  {"speaker": "A", "text": "Off night? This is a systematic breakdown by Philadelphia's coaching."}
+]`;
     let raw = '';
     try {
       console.log('[Commentary] Calling Modal LLM...');
@@ -922,12 +932,25 @@ Requirements:
       const parsed = JSON.parse(jsonStr);
       if (Array.isArray(parsed)) {
         turns = parsed.slice(0, 3).map((t, idx) => {
-          // Use speaker from JSON if provided, otherwise assign by index (0=A, 1=B, 2=A)
-          const speaker = t.speaker || (idx % 2 === 0 ? 'A' : 'B');
+          // Use speaker from JSON if provided and valid, otherwise assign by index (0=A, 1=B, 2=A)
+          const speaker = (t.speaker === 'A' || t.speaker === 'B') ? t.speaker : (idx % 2 === 0 ? 'A' : 'B');
+
+          // Clean text: remove commentator names if they appear
+          let cleanText = t.text.trim();
+          const nameA = s.commentators[0].name;
+          const nameB = s.commentators[1].name;
+
+          // Remove "Sakura says", "Sakura:", "Steve groans", etc from start
+          cleanText = cleanText
+            .replace(new RegExp(`^\\s*${nameA}\\s+(says|cheers|groans|responds|argues|counters)[\\s:,]+`, 'i'), '')
+            .replace(new RegExp(`^\\s*${nameB}\\s+(says|cheers|groans|responds|argues|counters)[\\s:,]+`, 'i'), '')
+            .replace(new RegExp(`^\\s*${nameA}[\\s:,]+`, 'i'), '')
+            .replace(new RegExp(`^\\s*${nameB}[\\s:,]+`, 'i'), '');
+
           return {
             speaker: speaker,
-            name: speaker === 'A' ? s.commentators[0].name : s.commentators[1].name,
-            text: t.text.trim()
+            name: speaker === 'A' ? nameA : nameB,
+            text: cleanText
           };
         });
       }
