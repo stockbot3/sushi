@@ -234,6 +234,12 @@ async function generatePreGameBatch(sessionId, session) {
     return;
   }
 
+  // Skip if pre-game commentary already exists
+  if (session.preGameCommentary && session.preGameCommentary.length > 0) {
+    console.log(`[PreGame Batch] Session ${sessionId} already has ${session.preGameCommentary.length} pre-game turns, skipping`);
+    return;
+  }
+
   batchGenerating.add(sessionId);
 
   try {
