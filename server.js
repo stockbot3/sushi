@@ -921,11 +921,15 @@ Requirements:
 
       const parsed = JSON.parse(jsonStr);
       if (Array.isArray(parsed)) {
-        turns = parsed.slice(0, 3).map(t => ({
-          speaker: t.speaker,
-          name: t.speaker === 'A' ? s.commentators[0].name : s.commentators[1].name,
-          text: t.text.trim()
-        }));
+        turns = parsed.slice(0, 3).map((t, idx) => {
+          // Use speaker from JSON if provided, otherwise assign by index (0=A, 1=B, 2=A)
+          const speaker = t.speaker || (idx % 2 === 0 ? 'A' : 'B');
+          return {
+            speaker: speaker,
+            name: speaker === 'A' ? s.commentators[0].name : s.commentators[1].name,
+            text: t.text.trim()
+          };
+        });
       }
     } catch (parseErr) {
       console.error('[Commentary] JSON parse failed, trying fallback regex:', parseErr.message);
