@@ -616,7 +616,7 @@
                 window.addEventListener('touchstart', trackActivity);
                 window.addEventListener('scroll', trackActivity);
 
-                // Send heartbeat ping every 30 seconds ONLY if not idle
+                // Send heartbeat ping every 2 minutes ONLY if not idle
                 const sendHeartbeat = () => {
                     if (!isIdle) {
                         fetch(`/api/sessions/${sid}/ping`, { method: 'POST' })
@@ -628,7 +628,7 @@
                     }
                 };
                 sendHeartbeat(); // Send immediately
-                heartbeatIntervalRef.current = setInterval(sendHeartbeat, 30000); // Every 30s
+                heartbeatIntervalRef.current = setInterval(sendHeartbeat, 120000); // Every 2 minutes
 
                 // Check for idle every 10 seconds
                 const checkIdle = () => {

@@ -437,7 +437,7 @@ const ttsCache = new Map();
 
 // ElevenLabs voice options
 const ELEVENLABS_VOICES = {
-  // MALE VOICES
+  // MALE VOICES - ENGLISH
   adam: { id: 'pNInz6obpgDQGcFmaJgB', name: 'Adam (Deep, Middle-aged)' },
   antoni: { id: 'ErXwobaYiN019PkySvjV', name: 'Antoni (Young, Energetic)' },
   arnold: { id: 'VR6AewLTigWG4xSOukaG', name: 'Arnold (Strong, Crisp)' },
@@ -451,7 +451,12 @@ const ELEVENLABS_VOICES = {
   michael: { id: 'flq6f7yk4E4fJM5XTYuZ', name: 'Michael (Smooth, Professional)' },
   thomas: { id: 'GBv7mTt0atIp3Br8iCZE', name: 'Thomas (Calm, British)' },
 
-  // FEMALE VOICES
+  // MALE VOICES - ACCENTED
+  matias: { id: 'XB0fDUnXU5powFXDhCwa', name: 'Matias (Spanish Accent, Warm)' },
+  diego: { id: 'GJfmRNURTTecIrxz2YQY', name: 'Diego (Spanish Accent, Deep)' },
+  omar: { id: 'pqHfZKP75CvOlQylNhV4', name: 'Omar (Arabic Accent, Deep)' },
+
+  // FEMALE VOICES - ENGLISH
   rachel: { id: '21m00Tcm4TlvDq8ikWAM', name: 'Rachel (Calm, Young)' },
   domi: { id: 'AZnzlk1XvdvUeBnXmlld', name: 'Domi (Strong, Confident)' },
   bella: { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Bella (Soft, American)' },
@@ -461,6 +466,11 @@ const ELEVENLABS_VOICES = {
   grace: { id: 'oWAxZDx7w5VEj9dCyTzz', name: 'Grace (Southern, Smooth)' },
   nicole: { id: 'piTKgcLEGmPE4e6mEKli', name: 'Nicole (Whisper, Expressive)' },
   sarah: { id: 'EXAVITQu4vr4xnSDxMaL', name: 'Sarah (Soft, News Anchor)' },
+
+  // FEMALE VOICES - ACCENTED
+  valentina: { id: 'Szoijfe6rqv9vDH0mYqU', name: 'Valentina (Spanish Accent)' },
+  serena: { id: 'z9fAnlkpzviPz146aGWa', name: 'Serena (Italian Accent)' },
+  layla: { id: 'gvKjg3wqXNEOPBQlPgRU', name: 'Layla (Arabic Accent)' },
 
   // PIPER FALLBACK
   amy: { id: 'piper-amy', name: 'Amy (Piper - Female)' },
@@ -545,11 +555,13 @@ app.post('/api/tts', async (req, res) => {
     const piperVoiceMap = {
       // Female voices -> amy
       rachel: 'amy', domi: 'amy', bella: 'amy', elli: 'amy', emily: 'amy',
-      freya: 'amy', grace: 'amy', nicole: 'amy', sarah: 'amy', amy: 'amy',
+      freya: 'amy', grace: 'amy', nicole: 'amy', sarah: 'amy', valentina: 'amy',
+      serena: 'amy', layla: 'amy', amy: 'amy',
       // Male voices -> bryce
       adam: 'bryce', antoni: 'bryce', arnold: 'bryce', callum: 'bryce',
       charlie: 'bryce', clyde: 'bryce', daniel: 'bryce', george: 'bryce',
-      joseph: 'bryce', josh: 'bryce', michael: 'bryce', thomas: 'bryce', bryce: 'bryce'
+      joseph: 'bryce', josh: 'bryce', michael: 'bryce', thomas: 'bryce',
+      matias: 'bryce', diego: 'bryce', omar: 'bryce', bryce: 'bryce'
     };
     const piperVoice = piperVoiceMap[voiceKey] || 'bryce';
 
@@ -577,10 +589,10 @@ app.post('/api/tts', async (req, res) => {
 app.get('/api/voices', (req, res) => {
   res.json({
     male: Object.entries(ELEVENLABS_VOICES)
-      .filter(([k]) => ['adam', 'antoni', 'arnold', 'callum', 'charlie', 'clyde', 'daniel', 'george', 'joseph', 'josh', 'michael', 'thomas', 'bryce'].includes(k))
+      .filter(([k]) => ['adam', 'antoni', 'arnold', 'callum', 'charlie', 'clyde', 'daniel', 'george', 'joseph', 'josh', 'michael', 'thomas', 'matias', 'diego', 'omar', 'bryce'].includes(k))
       .map(([k, v]) => ({ id: k, ...v })),
     female: Object.entries(ELEVENLABS_VOICES)
-      .filter(([k]) => ['rachel', 'domi', 'bella', 'elli', 'emily', 'freya', 'grace', 'nicole', 'sarah', 'amy'].includes(k))
+      .filter(([k]) => ['rachel', 'domi', 'bella', 'elli', 'emily', 'freya', 'grace', 'nicole', 'sarah', 'valentina', 'serena', 'layla', 'amy'].includes(k))
       .map(([k, v]) => ({ id: k, ...v }))
   });
 });
@@ -722,13 +734,7 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
         generatePreGameBatch(s.id, s).catch(e => console.error(e));
       }
 
-      // Use cache if recent enough
-      if (rt.cache && (now - rt.ts) < interval) {
-        console.log(`[Commentary] Returning cached pre-game commentary (${Math.round((now - rt.ts) / 1000)}s old, interval: ${interval / 1000}s)`);
-        return res.json(rt.cache);
-      }
-
-      // Get next 3 turns from batch
+      // Get next 3 turns from batch (cycle through without caching to avoid repetition)
       if (s.preGameCommentary && s.preGameCommentary.length >= 3) {
         const currentIndex = s.preGameIndex || 0;
         const nextIndex = (currentIndex + 3) % s.preGameCommentary.length;
@@ -745,15 +751,14 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
           ];
         }
 
-        console.log(`[Commentary] Using batch turns ${currentIndex}-${currentIndex + 2} (${s.preGameCommentary.length} total)`);
+        console.log(`[Commentary] Cycling batch turns ${currentIndex}-${currentIndex + 2} (${s.preGameCommentary.length} total)`);
         selectedTurns.forEach((t, i) => console.log(`  [${i + 1}] ${t.name}: ${t.text.substring(0, 60)}...`));
 
-        // Update index for next time
+        // Update index for NEXT request (cycle immediately, no caching)
         await db.collection('sessions').doc(s.id).update({ preGameIndex: nextIndex });
 
-        rt.cache = { turns: selectedTurns, status: 'pre', timestamp: now };
-        rt.ts = now;
-        return res.json(rt.cache);
+        // Return fresh turns each time, timestamp changes to trigger frontend update
+        return res.json({ turns: selectedTurns, status: 'pre', timestamp: now });
       }
 
       // Ultimate fallback if batch still not ready
