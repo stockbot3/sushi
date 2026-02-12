@@ -539,6 +539,7 @@ const ELEVENLABS_VOICES = {
 app.post('/api/tts', async (req, res) => {
   try {
     const { text, voice, isPreGame } = req.body;
+    console.log('[TTS] Request received:', { voice, isPreGame, textLength: text?.length });
     if (!text) {
       console.error('[TTS] 400 Error - Empty text received:', { text, voice, body: req.body });
       return res.status(400).send();
