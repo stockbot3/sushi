@@ -420,6 +420,16 @@ app.delete('/api/admin/sessions/:id', requireAdmin, async (req, res) => {
 });
 
 // ─── PUBLIC API ───
+app.get('/api/sessions/by-slug/:slug', async (req, res) => {
+  try {
+    const snap = await db.collection('sessions').where('slug', '==', req.params.slug.toLowerCase()).limit(1).get();
+    if (snap.empty) return res.status(404).json({ error: 'Session not found' });
+    res.json(snap.docs[0].data());
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+});
+
 app.get('/api/sessions', async (req, res) => {
   try {
     const s = await db.collection('sessions').where('status', '==', 'active').get();
@@ -1019,9 +1029,9 @@ app.get('/api/sessions/:id/commentary/history', async (req, res) => {
 app.get('/admin', (req, res) => res.sendFile(path.join(__dirname, 'public', 'admin.html')));
 app.get('/:slug', async (req, res, next) => {
   const slug = req.params.slug.toLowerCase();
-  if (['api', 'admin', 'uploads', 'lib', 'voice', 'commentary', 'avatars', 'avatar.html', 'index.html'].includes(slug)) return next();
+  if (['api', 'admin', 'uploads', 'lib', 'voice', 'commentary', 'avatars', 'avatar.html', 'avatar', 'index.html'].includes(slug)) return next();
   const snap = await db.collection('sessions').where('slug', '==', slug).limit(1).get();
-  if (!snap.empty) return res.redirect(`/avatar.html?session=${snap.docs[0].id}`);
+  if (!snap.empty) return res.sendFile(path.join(__dirname, 'public', 'avatar.html'));
   next();
 });
 

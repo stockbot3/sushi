@@ -614,21 +614,45 @@
             const sessionMetaRef = useRef(null);
 
             useEffect(() => {
-                const sid = new URLSearchParams(window.location.search).get('session');
-                console.log('[SessionMeta] Initial load - sid:', sid, 'started:', started);
-                if (!started || !sid) return;
-                fetch('/api/sessions').then(r => r.json()).then(sessions => {
-                    console.log('[SessionMeta] Fetched sessions:', sessions.length);
-                    const s = sessions.find(s => s.id === sid);
-                    if (s) {
-                        console.log('[SessionMeta] Found session:', s);
-                        setSessionMeta(s);
-                        sessionMetaRef.current = s; // Store in ref for use in intervals
+                // Support both ?session=xxx and /:slug URLs
+                let sessionId = new URLSearchParams(window.location.search).get('session');
+                const slug = sessionId ? null : window.location.pathname.substring(1); // Remove leading /
+
+                console.log('[SessionMeta] Initial load - sessionId:', sessionId, 'slug:', slug, 'started:', started);
+                if (!started || (!sessionId && !slug)) return;
+
+                // Fetch session by ID or slug
+                const fetchUrl = sessionId
+                    ? '/api/sessions'
+                    : `/api/sessions/by-slug/${slug}`;
+
+                fetch(fetchUrl).then(r => r.json()).then(data => {
+                    let session;
+                    if (sessionId) {
+                        // Query param mode: find session by ID
+                        console.log('[SessionMeta] Fetched sessions:', data.length);
+                        session = data.find(s => s.id === sessionId);
+                        if (!session) {
+                            console.error('[SessionMeta] Session not found in list!');
+                            return;
+                        }
                     } else {
-                        console.error('[SessionMeta] Session not found in list!');
+                        // Slug mode: direct session response
+                        console.log('[SessionMeta] Found session by slug:', data);
+                        session = data;
+                        sessionId = session.id; // Get session ID from response
                     }
+
+                    console.log('[SessionMeta] Found session:', session);
+                    setSessionMeta(session);
+                    sessionMetaRef.current = session;
+
+                    // Use sessionId for all API calls
+                    const sid = sessionId;
+                    initializeSession(sid);
                 }).catch(e => console.error('[SessionMeta] Initial load error:', e));
 
+                const initializeSession = (sid) => {
                 // Track user activity (mouse, keyboard, touch) - silently update timestamp
                 const trackActivity = () => {
                     lastActivityRef.current = Date.now();
@@ -709,6 +733,7 @@
                     window.removeEventListener('touchstart', trackActivity);
                     window.removeEventListener('scroll', trackActivity);
                 };
+                }; // End initializeSession
             }, [started, isIdle]); // Removed sessionMeta to prevent interval duplication
 
             const processQueue = async () => {
