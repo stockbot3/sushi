@@ -730,11 +730,12 @@
                         await new Promise(r => setTimeout(r, 1000)); // Pause between
                     } else {
                         // LIVE GAME: Full TTS + subtitles
-                        const cMeta = sessionMeta?.commentators?.[t.speaker === 'A' ? 0 : 1];
+                        // Use sessionMetaRef instead of sessionMeta to avoid stale closure
+                        const cMeta = sessionMetaRef.current?.commentators?.[t.speaker === 'A' ? 0 : 1];
                         const defaultVoice = side === 'left' ? 'rachel' : 'adam';
                         const voiceToUse = cMeta?.voice || defaultVoice;
 
-                        console.log(`[TTS] DEBUG sessionMeta:`, sessionMeta);
+                        console.log(`[TTS] DEBUG sessionMetaRef:`, sessionMetaRef.current);
                         console.log(`[TTS] DEBUG cMeta:`, cMeta);
                         console.log(`[TTS] DEBUG speaker:`, t.speaker, 'index:', t.speaker === 'A' ? 0 : 1);
                         console.log(`[TTS] Speaking:`, { side, voice: voiceToUse, text: cleaned.substring(0, 50) + '...' });
