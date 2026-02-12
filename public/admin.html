@@ -19,7 +19,7 @@
   <script src="https://unpkg.com/lucide-react@0.460.0/dist/umd/lucide-react.min.js"></script>
   <script type="text/babel">
     const { useState, useEffect, useCallback } = React;
-    const { Lock, Plus, Trash2, Edit2, Upload, X, Save, RefreshCw, Link, ChevronRight, Calendar, Users } = LucideReact;
+    const { Lock, Plus, Trash2, Edit2, Upload, X, Save, RefreshCw, Link, ChevronRight, Calendar, Users, Copy } = LucideReact;
 
     const api = async (p, o = {}) => {
       const t = localStorage.getItem('sushi_token');
@@ -265,11 +265,23 @@
           <div className="space-y-4">
             {sessions.map(s => (
               <div key={s.id} className="glass p-4 rounded-2xl flex justify-between items-center">
-                <div>
+                <div className="flex-1">
                   <div className="font-black text-lg">{s.gameName}</div>
-                  <div className="text-[10px] opacity-50 font-bold uppercase tracking-widest flex gap-2">
+                  <div className="text-[10px] opacity-50 font-bold uppercase tracking-widest mb-2">
                     <span>{s.id}</span>
-                    {s.slug && <span className="text-yellow-400">/{s.slug}</span>}
+                  </div>
+                  <div className="flex items-center gap-2 bg-white/5 p-2 rounded-lg">
+                    <Link size={14} className="text-blue-400" />
+                    <a href={`/avatar?session=${s.id}`} target="_blank" className="text-blue-400 text-xs hover:underline flex-1">
+                      {window.location.origin}/avatar?session={s.id}
+                    </a>
+                    <button
+                      onClick={() => { navigator.clipboard.writeText(`${window.location.origin}/avatar?session=${s.id}`); alert('Link copied!'); }}
+                      className="p-1 bg-white/10 rounded hover:bg-white/20 text-white"
+                      title="Copy link"
+                    >
+                      <Copy size={14}/>
+                    </button>
                   </div>
                 </div>
                 <div className="flex gap-2">

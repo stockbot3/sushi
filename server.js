@@ -610,14 +610,14 @@ app.post('/api/tts', async (req, res) => {
   }
 });
 
-// Get available voices
+// Get available voices - only return verified working ElevenLabs voices
 app.get('/api/voices', (req, res) => {
   res.json({
     male: Object.entries(ELEVENLABS_VOICES)
-      .filter(([k]) => ['adam', 'antoni', 'arnold', 'callum', 'charlie', 'clyde', 'daniel', 'george', 'joseph', 'josh', 'michael', 'thomas', 'matias', 'diego', 'omar', 'bryce'].includes(k))
+      .filter(([k]) => ['adam', 'antoni', 'callum', 'charlie', 'clyde', 'daniel', 'george', 'joseph', 'josh', 'michael', 'thomas'].includes(k))
       .map(([k, v]) => ({ id: k, ...v })),
     female: Object.entries(ELEVENLABS_VOICES)
-      .filter(([k]) => ['rachel', 'domi', 'bella', 'elli', 'emily', 'freya', 'grace', 'nicole', 'sarah', 'valentina', 'serena', 'layla', 'amy'].includes(k))
+      .filter(([k]) => ['rachel', 'domi', 'bella', 'elli', 'emily', 'freya', 'grace', 'nicole', 'sarah'].includes(k))
       .map(([k, v]) => ({ id: k, ...v }))
   });
 });
