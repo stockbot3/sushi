@@ -742,7 +742,8 @@
                             if (seq !== lastSeqRef.current) {
                                 lastSeqRef.current = seq;
                                 setCommentary(c);
-                                queueRef.current = [...c.turns];
+                                // Add status to each turn for TTS caching
+                                queueRef.current = c.turns.map(t => ({ ...t, status: c.status }));
                                 processQueue();
                             }
                         }
@@ -772,8 +773,8 @@
                     const side = t.speaker === 'A' ? 'left' : 'right';
                     const cleaned = cleanSpeech(t.text);
 
-                    // Set pre-game flag for TTS caching
-                    const isPreGame = commentary?.status === 'pre';
+                    // Set pre-game flag for TTS caching (from turn, not stale state)
+                    const isPreGame = t.status === 'pre';
                     voiceRef.current.setPreGame(isPreGame);
 
                     // Use sessionMetaRef instead of sessionMeta to avoid stale closure
