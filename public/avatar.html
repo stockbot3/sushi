@@ -287,18 +287,50 @@
                         console.log('[BODY] Head (raw):', bones.head ? `X:${bones.head.rotation.x.toFixed(3)} Y:${bones.head.rotation.y.toFixed(3)} Z:${bones.head.rotation.z.toFixed(3)}` : 'null');
                         console.log('================================================================');
 
-                        // Natural resting pose - arms hanging naturally at sides
-                        if (bones.lshoulder) bones.lshoulder.rotation.z = 0;
-                        if (bones.rshoulder) bones.rshoulder.rotation.z = 0;
-                        // Upper arms: straight down with slight forward rotation
-                        if (bones.lua) { bones.lua.rotation.z = 0; bones.lua.rotation.x = 0.1; bones.lua.rotation.y = 0.05; }
-                        if (bones.rua) { bones.rua.rotation.z = 0; bones.rua.rotation.x = 0.1; bones.rua.rotation.y = -0.05; }
-                        // Lower arms: slight natural bend at elbow
-                        if (bones.lla) { bones.lla.rotation.x = -0.2; bones.lla.rotation.y = 0; bones.lla.rotation.z = 0; }
-                        if (bones.rla) { bones.rla.rotation.x = -0.2; bones.rla.rotation.y = 0; bones.rla.rotation.z = 0; }
-                        // Hands: relaxed, slightly cupped
-                        if (bones.lhand) { bones.lhand.rotation.z = 0.05; bones.lhand.rotation.x = -0.05; }
-                        if (bones.rhand) { bones.rhand.rotation.z = -0.05; bones.rhand.rotation.x = -0.05; }
+                        // FIXED: Model is in T-pose (Z:0), bring arms down naturally
+                        // Research: Need -1.2 to -1.4 radians (~-70° to -80°) to bring arms from T-pose to sides
+
+                        // Shoulders: neutral
+                        if (bones.lshoulder) { bones.lshoulder.rotation.z = 0; bones.lshoulder.rotation.x = 0; }
+                        if (bones.rshoulder) { bones.rshoulder.rotation.z = 0; bones.rshoulder.rotation.x = 0; }
+
+                        // Upper arms: Bring DOWN from T-pose + slight forward angle
+                        if (bones.lua) {
+                            bones.lua.rotation.z = -1.3;  // -75° brings left arm down
+                            bones.lua.rotation.x = 0.15;   // Slight forward
+                            bones.lua.rotation.y = 0.1;    // Slight inward
+                        }
+                        if (bones.rua) {
+                            bones.rua.rotation.z = 1.3;    // +75° brings right arm down (mirror)
+                            bones.rua.rotation.x = 0.15;   // Slight forward
+                            bones.rua.rotation.y = -0.1;   // Slight inward
+                        }
+
+                        // Lower arms: Natural elbow bend
+                        if (bones.lla) {
+                            bones.lla.rotation.x = -0.3;   // Bend elbow
+                            bones.lla.rotation.y = 0.05;   // Slight twist
+                            bones.lla.rotation.z = 0;
+                        }
+                        if (bones.rla) {
+                            bones.rla.rotation.x = -0.3;   // Bend elbow
+                            bones.rla.rotation.y = -0.05;  // Slight twist
+                            bones.rla.rotation.z = 0;
+                        }
+
+                        // Hands: Natural relaxed position
+                        if (bones.lhand) {
+                            bones.lhand.rotation.z = 0.15;  // Slight curl
+                            bones.lhand.rotation.x = -0.1;  // Natural wrist angle
+                            bones.lhand.rotation.y = 0.05;  // Slight turn
+                        }
+                        if (bones.rhand) {
+                            bones.rhand.rotation.z = -0.15; // Slight curl
+                            bones.rhand.rotation.x = -0.1;  // Natural wrist angle
+                            bones.rhand.rotation.y = -0.05; // Slight turn
+                        }
+
+                        // Body: Natural posture
                         if (bones.spine) bones.spine.rotation.x = 0.02;
                         if (bones.chest) bones.chest.rotation.x = 0.01;
 
@@ -360,39 +392,101 @@
                                 const breath = Math.sin(time * 1.2) * 0.015;
                                 const breathSlow = Math.sin(time * 0.7) * 0.01;
 
-                                // Speech-driven gesture system with multiple patterns
+                                // SMOOTH REALISTIC GESTURES (Grok-level quality)
                                 const gesturePhase = time * 1.8;
                                 const emphasisCycle = Math.floor(time / 3) % 3; // Cycle through 3 gesture types
 
-                                let gestureL = { shoulder: 0, elbow: 0, hand: 0, lift: 0 };
-                                let gestureR = { shoulder: 0, elbow: 0, hand: 0, lift: 0 };
+                                let gestureL = { shoulderZ: 0, shoulderX: 0, elbow: 0, handZ: 0, handX: 0, handY: 0 };
+                                let gestureR = { shoulderZ: 0, shoulderX: 0, elbow: 0, handZ: 0, handX: 0, handY: 0 };
 
                                 if (isSpeaking) {
-                                    // Alternate between different gesture patterns for variety
+                                    // Smooth wave functions with easing
+                                    const wave1 = Math.sin(gesturePhase);
+                                    const wave2 = Math.sin(gesturePhase * 0.7 + 0.5);
+                                    const wave3 = Math.sin(gesturePhase * 1.3);
+
+                                    // Add organic variation
+                                    const noiseL = noise(time * 0.5) * 0.08;
+                                    const noiseR = noise(time * 0.5 + 50) * 0.08;
+
                                     if (emphasisCycle === 0) {
-                                        // Pattern 1: Open gestures (explaining) - arms out and bent
-                                        const wave = Math.sin(gesturePhase);
-                                        gestureL = { shoulder: 0.4 + wave * 0.2, elbow: -0.8 + wave * 0.15, hand: wave * 0.08, lift: 0 };
-                                        gestureR = { shoulder: -0.4 - wave * 0.2, elbow: -0.8 - wave * 0.15, hand: -wave * 0.08, lift: 0 };
+                                        // Pattern 1: Expressive open gestures
+                                        gestureL = {
+                                            shoulderZ: 0.4 + wave1 * 0.25 + noiseL,
+                                            shoulderX: -0.15 + wave2 * 0.1,
+                                            elbow: -0.4 + wave1 * 0.2,
+                                            handZ: wave1 * 0.12 + wave2 * 0.05,
+                                            handX: wave2 * 0.08,
+                                            handY: wave1 * 0.06
+                                        };
+                                        gestureR = {
+                                            shoulderZ: -0.4 - wave1 * 0.25 + noiseR,
+                                            shoulderX: -0.15 - wave2 * 0.1,
+                                            elbow: -0.4 - wave1 * 0.2,
+                                            handZ: -wave1 * 0.12 - wave2 * 0.05,
+                                            handX: -wave2 * 0.08,
+                                            handY: -wave1 * 0.06
+                                        };
                                     } else if (emphasisCycle === 1) {
-                                        // Pattern 2: Emphatic (one hand up, one relaxed)
-                                        const alt = Math.sin(gesturePhase * 1.3);
-                                        gestureL = { shoulder: 0.5 + alt * 0.25, elbow: -0.9 + alt * 0.2, hand: alt * 0.1, lift: 0 };
-                                        gestureR = { shoulder: -0.2 - alt * 0.1, elbow: -0.5 - alt * 0.12, hand: -alt * 0.05, lift: 0 };
+                                        // Pattern 2: Emphatic pointing/gesturing
+                                        const emphasis = wave3;
+                                        gestureL = {
+                                            shoulderZ: 0.5 + emphasis * 0.3,
+                                            shoulderX: -0.2 + emphasis * 0.15,
+                                            elbow: -0.5 + emphasis * 0.25,
+                                            handZ: emphasis * 0.15,
+                                            handX: emphasis * 0.12,
+                                            handY: emphasis * 0.08
+                                        };
+                                        gestureR = {
+                                            shoulderZ: -0.25 - emphasis * 0.15,
+                                            shoulderX: -0.1,
+                                            elbow: -0.25 - emphasis * 0.12,
+                                            handZ: -emphasis * 0.08,
+                                            handX: -emphasis * 0.06,
+                                            handY: -emphasis * 0.04
+                                        };
                                     } else {
-                                        // Pattern 3: Conversational (natural, alternating)
-                                        const subtle = Math.sin(gesturePhase * 0.9);
-                                        const noise1 = noise(time * 0.8) * 0.1;
-                                        const noise2 = noise(time * 0.8 + 100) * 0.1;
-                                        gestureL = { shoulder: 0.3 + subtle * 0.15 + noise1, elbow: -0.65 + subtle * 0.18, hand: subtle * 0.06, lift: 0 };
-                                        gestureR = { shoulder: -0.3 - subtle * 0.15 + noise2, elbow: -0.65 - subtle * 0.18, hand: -subtle * 0.06, lift: 0 };
+                                        // Pattern 3: Natural conversational
+                                        gestureL = {
+                                            shoulderZ: 0.3 + wave2 * 0.18 + noiseL,
+                                            shoulderX: -0.12 + wave1 * 0.08,
+                                            elbow: -0.35 + wave2 * 0.15,
+                                            handZ: wave2 * 0.1 + noiseL * 0.5,
+                                            handX: wave1 * 0.07,
+                                            handY: wave2 * 0.05
+                                        };
+                                        gestureR = {
+                                            shoulderZ: -0.3 - wave2 * 0.18 + noiseR,
+                                            shoulderX: -0.12 - wave1 * 0.08,
+                                            elbow: -0.35 - wave2 * 0.15,
+                                            handZ: -wave2 * 0.1 + noiseR * 0.5,
+                                            handX: -wave1 * 0.07,
+                                            handY: -wave2 * 0.05
+                                        };
                                     }
                                 } else {
-                                    // Idle: arms straight down at sides with minimal movement
-                                    const idleWave = noise(time * 0.4) * 0.03;
-                                    const idleWave2 = noise(time * 0.4 + 50) * 0.03;
-                                    gestureL = { shoulder: idleWave, elbow: -0.05 + breathSlow, hand: 0, lift: 0 };
-                                    gestureR = { shoulder: idleWave2, elbow: -0.05 - breathSlow, hand: 0, lift: 0 };
+                                    // Idle: Subtle natural breathing movement
+                                    const idleWaveL = noise(time * 0.3) * 0.04;
+                                    const idleWaveR = noise(time * 0.3 + 50) * 0.04;
+                                    const microMovement = Math.sin(time * 0.6) * 0.02;
+
+                                    gestureL = {
+                                        shoulderZ: idleWaveL,
+                                        shoulderX: microMovement * 0.5,
+                                        elbow: -0.02 + breathSlow * 2,
+                                        handZ: breathSlow * 0.5,
+                                        handX: microMovement * 0.3,
+                                        handY: 0
+                                    };
+                                    gestureR = {
+                                        shoulderZ: idleWaveR,
+                                        shoulderX: -microMovement * 0.5,
+                                        elbow: -0.02 - breathSlow * 2,
+                                        handZ: -breathSlow * 0.5,
+                                        handX: -microMovement * 0.3,
+                                        handY: 0
+                                    };
                                 }
 
                                 // Apply animations with smooth damping
@@ -418,34 +512,36 @@
                                     head.rotation.z = damp(head.rotation.z, basePoseRef.current.head.z + headTilt, 4, dt);
                                 }
 
-                                // Left arm - natural bending with shoulder, elbow, hand coordination
+                                // Left arm - SMOOTH coordinated movement
                                 if (lua && basePoseRef.current.lua) {
-                                    lua.rotation.z = damp(lua.rotation.z, basePoseRef.current.lua.z + gestureL.shoulder, 3.5, dt);
-                                    lua.rotation.x = damp(lua.rotation.x, basePoseRef.current.lua.x - 0.1 + gestureL.lift, 3.5, dt);
-                                    lua.rotation.y = damp(lua.rotation.y, basePoseRef.current.lua.y + sway * 0.3, 4, dt);
+                                    lua.rotation.z = damp(lua.rotation.z, basePoseRef.current.lua.z + gestureL.shoulderZ, 3, dt);
+                                    lua.rotation.x = damp(lua.rotation.x, basePoseRef.current.lua.x + gestureL.shoulderX, 3, dt);
+                                    lua.rotation.y = damp(lua.rotation.y, basePoseRef.current.lua.y + sway * 0.2, 4, dt);
                                 }
                                 if (lla && basePoseRef.current.lla) {
-                                    lla.rotation.x = damp(lla.rotation.x, basePoseRef.current.lla.x + gestureL.elbow, 3, dt);
-                                    lla.rotation.z = damp(lla.rotation.z, basePoseRef.current.lla.z + gestureL.hand * 0.3, 4, dt);
+                                    lla.rotation.x = damp(lla.rotation.x, basePoseRef.current.lla.x + gestureL.elbow, 2.5, dt);
+                                    lla.rotation.y = damp(lla.rotation.y, basePoseRef.current.lla.y, 3.5, dt);
                                 }
                                 if (lhand && basePoseRef.current.lhand) {
-                                    lhand.rotation.z = damp(lhand.rotation.z, basePoseRef.current.lhand.z + gestureL.hand, 4.5, dt);
-                                    lhand.rotation.x = damp(lhand.rotation.x, basePoseRef.current.lhand.x + gestureL.hand * 0.2, 5, dt);
+                                    lhand.rotation.z = damp(lhand.rotation.z, basePoseRef.current.lhand.z + gestureL.handZ, 4, dt);
+                                    lhand.rotation.x = damp(lhand.rotation.x, basePoseRef.current.lhand.x + gestureL.handX, 4, dt);
+                                    lhand.rotation.y = damp(lhand.rotation.y, basePoseRef.current.lhand.y + gestureL.handY, 4.5, dt);
                                 }
 
-                                // Right arm - mirror with slight offset for asymmetry
+                                // Right arm - SMOOTH coordinated movement (mirror)
                                 if (rua && basePoseRef.current.rua) {
-                                    rua.rotation.z = damp(rua.rotation.z, basePoseRef.current.rua.z + gestureR.shoulder, 3.5, dt);
-                                    rua.rotation.x = damp(rua.rotation.x, basePoseRef.current.rua.x - 0.1 + gestureR.lift, 3.5, dt);
-                                    rua.rotation.y = damp(rua.rotation.y, basePoseRef.current.rua.y - sway * 0.3, 4, dt);
+                                    rua.rotation.z = damp(rua.rotation.z, basePoseRef.current.rua.z + gestureR.shoulderZ, 3, dt);
+                                    rua.rotation.x = damp(rua.rotation.x, basePoseRef.current.rua.x + gestureR.shoulderX, 3, dt);
+                                    rua.rotation.y = damp(rua.rotation.y, basePoseRef.current.rua.y - sway * 0.2, 4, dt);
                                 }
                                 if (rla && basePoseRef.current.rla) {
-                                    rla.rotation.x = damp(rla.rotation.x, basePoseRef.current.rla.x + gestureR.elbow, 3, dt);
-                                    rla.rotation.z = damp(rla.rotation.z, basePoseRef.current.rla.z + gestureR.hand * 0.3, 4, dt);
+                                    rla.rotation.x = damp(rla.rotation.x, basePoseRef.current.rla.x + gestureR.elbow, 2.5, dt);
+                                    rla.rotation.y = damp(rla.rotation.y, basePoseRef.current.rla.y, 3.5, dt);
                                 }
                                 if (rhand && basePoseRef.current.rhand) {
-                                    rhand.rotation.z = damp(rhand.rotation.z, basePoseRef.current.rhand.z + gestureR.hand, 4.5, dt);
-                                    rhand.rotation.x = damp(rhand.rotation.x, basePoseRef.current.rhand.x + gestureR.hand * 0.2, 5, dt);
+                                    rhand.rotation.z = damp(rhand.rotation.z, basePoseRef.current.rhand.z + gestureR.handZ, 4, dt);
+                                    rhand.rotation.x = damp(rhand.rotation.x, basePoseRef.current.rhand.x + gestureR.handX, 4, dt);
+                                    rhand.rotation.y = damp(rhand.rotation.y, basePoseRef.current.rhand.y + gestureR.handY, 4.5, dt);
                                 }
                             }
                         }
