@@ -597,12 +597,17 @@
             const lastActivityRef = useRef(Date.now());
             const idleCheckRef = useRef(null);
             const heartbeatIntervalRef = useRef(null);
+            const sessionMetaRef = useRef(null);
 
             useEffect(() => {
                 const sid = new URLSearchParams(window.location.search).get('session');
                 if (!started || !sid) return;
                 fetch('/api/sessions').then(r => r.json()).then(sessions => {
-                    const s = sessions.find(s => s.id === sid); if (s) setSessionMeta(s);
+                    const s = sessions.find(s => s.id === sid);
+                    if (s) {
+                        setSessionMeta(s);
+                        sessionMetaRef.current = s; // Store in ref for use in intervals
+                    }
                 });
 
                 // Track user activity (mouse, keyboard, touch) - silently update timestamp
@@ -632,7 +637,7 @@
 
                 // Check for idle every 10 seconds
                 const checkIdle = () => {
-                    const idleTimeout = (sessionMeta?.settings?.idleTimeout || 30) * 60 * 1000; // Default 30 min
+                    const idleTimeout = (sessionMetaRef.current?.settings?.idleTimeout || 30) * 60 * 1000; // Default 30 min
                     const timeSinceActivity = Date.now() - lastActivityRef.current;
                     if (timeSinceActivity > idleTimeout && !isIdle) {
                         console.log(`[Idle] User idle for ${Math.round(timeSinceActivity / 1000 / 60)} minutes`);
@@ -668,7 +673,7 @@
                     window.removeEventListener('touchstart', trackActivity);
                     window.removeEventListener('scroll', trackActivity);
                 };
-            }, [started, isIdle, sessionMeta]);
+            }, [started, isIdle]); // Removed sessionMeta to prevent interval duplication
 
             const processQueue = async () => {
                 if (isProcessingRef.current || queueRef.current.length === 0) return;
