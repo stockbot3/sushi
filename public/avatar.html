@@ -271,6 +271,22 @@
                             lshoulder: humanoid.getNormalizedBoneNode('leftShoulder'),
                             rshoulder: humanoid.getNormalizedBoneNode('rightShoulder')
                         };
+
+                        // ========== LOG RAW BONE ROTATIONS BEFORE MODIFICATION ==========
+                        console.log('========== VRM MODEL RAW BONE ROTATIONS (DEFAULT POSE) ==========');
+                        console.log('[ARMS] Left Upper Arm (raw):', bones.lua ? `X:${bones.lua.rotation.x.toFixed(3)} Y:${bones.lua.rotation.y.toFixed(3)} Z:${bones.lua.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Right Upper Arm (raw):', bones.rua ? `X:${bones.rua.rotation.x.toFixed(3)} Y:${bones.rua.rotation.y.toFixed(3)} Z:${bones.rua.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Left Lower Arm (raw):', bones.lla ? `X:${bones.lla.rotation.x.toFixed(3)} Y:${bones.lla.rotation.y.toFixed(3)} Z:${bones.lla.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Right Lower Arm (raw):', bones.rla ? `X:${bones.rla.rotation.x.toFixed(3)} Y:${bones.rla.rotation.y.toFixed(3)} Z:${bones.rla.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Left Shoulder (raw):', bones.lshoulder ? `X:${bones.lshoulder.rotation.x.toFixed(3)} Y:${bones.lshoulder.rotation.y.toFixed(3)} Z:${bones.lshoulder.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Right Shoulder (raw):', bones.rshoulder ? `X:${bones.rshoulder.rotation.x.toFixed(3)} Y:${bones.rshoulder.rotation.y.toFixed(3)} Z:${bones.rshoulder.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Left Hand (raw):', bones.lhand ? `X:${bones.lhand.rotation.x.toFixed(3)} Y:${bones.lhand.rotation.y.toFixed(3)} Z:${bones.lhand.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Right Hand (raw):', bones.rhand ? `X:${bones.rhand.rotation.x.toFixed(3)} Y:${bones.rhand.rotation.y.toFixed(3)} Z:${bones.rhand.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[BODY] Spine (raw):', bones.spine ? `X:${bones.spine.rotation.x.toFixed(3)} Y:${bones.spine.rotation.y.toFixed(3)} Z:${bones.spine.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[BODY] Chest (raw):', bones.chest ? `X:${bones.chest.rotation.x.toFixed(3)} Y:${bones.chest.rotation.y.toFixed(3)} Z:${bones.chest.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[BODY] Head (raw):', bones.head ? `X:${bones.head.rotation.x.toFixed(3)} Y:${bones.head.rotation.y.toFixed(3)} Z:${bones.head.rotation.z.toFixed(3)}` : 'null');
+                        console.log('================================================================');
+
                         // Natural resting pose - arms hanging naturally at sides
                         if (bones.lshoulder) bones.lshoulder.rotation.z = 0;
                         if (bones.rshoulder) bones.rshoulder.rotation.z = 0;
@@ -285,6 +301,14 @@
                         if (bones.rhand) { bones.rhand.rotation.z = -0.05; bones.rhand.rotation.x = -0.05; }
                         if (bones.spine) bones.spine.rotation.x = 0.02;
                         if (bones.chest) bones.chest.rotation.x = 0.01;
+
+                        // ========== LOG WHAT WE SET THEM TO ==========
+                        console.log('========== VRM BONE ROTATIONS AFTER MY MODIFICATIONS ==========');
+                        console.log('[ARMS] Left Upper Arm (SET):', bones.lua ? `X:${bones.lua.rotation.x.toFixed(3)} Y:${bones.lua.rotation.y.toFixed(3)} Z:${bones.lua.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Right Upper Arm (SET):', bones.rua ? `X:${bones.rua.rotation.x.toFixed(3)} Y:${bones.rua.rotation.y.toFixed(3)} Z:${bones.rua.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Left Lower Arm (SET):', bones.lla ? `X:${bones.lla.rotation.x.toFixed(3)} Y:${bones.lla.rotation.y.toFixed(3)} Z:${bones.lla.rotation.z.toFixed(3)}` : 'null');
+                        console.log('[ARMS] Right Lower Arm (SET):', bones.rla ? `X:${bones.rla.rotation.x.toFixed(3)} Y:${bones.rla.rotation.y.toFixed(3)} Z:${bones.rla.rotation.z.toFixed(3)}` : 'null');
+                        console.log('================================================================');
 
                         const rot = (b) => b ? { x: b.rotation.x, y: b.rotation.y, z: b.rotation.z } : null;
                         basePoseRef.current = {
