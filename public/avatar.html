@@ -387,6 +387,31 @@
 
                                 const isSpeaking = speakerRef.current === side;
 
+                                // ELBOW BEND TEST MODE - Cycle through different axes every 5 seconds
+                                const testCycle = Math.floor(time / 5) % 12; // 12 different tests
+                                const testAmount = 1.2; // Large rotation to see effect clearly
+
+                                if (Math.floor(time) % 5 === 0 && Math.abs(time - Math.floor(time)) < 0.1) {
+                                    const tests = [
+                                        'Elbow X: +1.2 (bend forward)',
+                                        'Elbow X: -1.2 (bend backward)',
+                                        'Elbow Y: +1.2 (twist right)',
+                                        'Elbow Y: -1.2 (twist left)',
+                                        'Elbow Z: +1.2 (roll clockwise)',
+                                        'Elbow Z: -1.2 (roll counter-clockwise)',
+                                        'Upper Arm X: +0.5',
+                                        'Upper Arm Y: +0.5',
+                                        'Upper Arm Z: +0.5',
+                                        'Shoulder X: +0.5',
+                                        'Shoulder Y: +0.5',
+                                        'Shoulder Z: +0.5'
+                                    ];
+                                    console.log(`========== ELBOW TEST ${testCycle + 1}/12 ==========`);
+                                    console.log(`Testing: ${tests[testCycle]}`);
+                                    console.log('Watch the LEFT arm to see if it bends');
+                                    console.log('=======================================');
+                                }
+
                                 // Base animation layers
                                 const sway = noise(time * 0.35) * 0.02;
                                 const breath = Math.sin(time * 1.2) * 0.015;
@@ -523,15 +548,33 @@
                                     head.rotation.z = damp(head.rotation.z, basePoseRef.current.head.z + headTilt, 4, dt);
                                 }
 
-                                // Left arm - SMOOTH coordinated movement
+                                // Left arm - TEST MODE: Apply different rotations based on test cycle
                                 if (lua && basePoseRef.current.lua) {
-                                    lua.rotation.z = damp(lua.rotation.z, basePoseRef.current.lua.z + gestureL.shoulderZ, 3, dt);
-                                    lua.rotation.x = damp(lua.rotation.x, basePoseRef.current.lua.x + gestureL.shoulderX, 3, dt);
-                                    lua.rotation.y = damp(lua.rotation.y, basePoseRef.current.lua.y + sway * 0.2, 4, dt);
+                                    let testX = 0, testY = 0, testZ = 0;
+                                    if (testCycle === 6) testX = 0.5;
+                                    if (testCycle === 7) testY = 0.5;
+                                    if (testCycle === 8) testZ = 0.5;
+
+                                    lua.rotation.z = damp(lua.rotation.z, basePoseRef.current.lua.z + testZ, 3, dt);
+                                    lua.rotation.x = damp(lua.rotation.x, basePoseRef.current.lua.x + testX, 3, dt);
+                                    lua.rotation.y = damp(lua.rotation.y, basePoseRef.current.lua.y + testY, 4, dt);
                                 }
                                 if (lla && basePoseRef.current.lla) {
-                                    lla.rotation.x = damp(lla.rotation.x, basePoseRef.current.lla.x + gestureL.elbow, 2.5, dt);
-                                    lla.rotation.y = damp(lla.rotation.y, basePoseRef.current.lla.y, 3.5, dt);
+                                    let elbowX = basePoseRef.current.lla.x;
+                                    let elbowY = basePoseRef.current.lla.y;
+                                    let elbowZ = basePoseRef.current.lla.z;
+
+                                    // Apply test rotations
+                                    if (testCycle === 0) elbowX += testAmount;  // X positive
+                                    if (testCycle === 1) elbowX -= testAmount;  // X negative
+                                    if (testCycle === 2) elbowY += testAmount;  // Y positive
+                                    if (testCycle === 3) elbowY -= testAmount;  // Y negative
+                                    if (testCycle === 4) elbowZ += testAmount;  // Z positive
+                                    if (testCycle === 5) elbowZ -= testAmount;  // Z negative
+
+                                    lla.rotation.x = damp(lla.rotation.x, elbowX, 2.5, dt);
+                                    lla.rotation.y = damp(lla.rotation.y, elbowY, 3.5, dt);
+                                    lla.rotation.z = damp(lla.rotation.z, elbowZ, 3.5, dt);
                                 }
                                 if (lhand && basePoseRef.current.lhand) {
                                     lhand.rotation.z = damp(lhand.rotation.z, basePoseRef.current.lhand.z + gestureL.handZ, 4, dt);
