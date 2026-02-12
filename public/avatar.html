@@ -500,10 +500,12 @@
                                 // REAL-TIME ELBOW LOGGING (every 2 seconds when speaking)
                                 if (isSpeaking && Math.floor(time * 0.5) % 2 === 0 && Math.abs(time - Math.floor(time)) < 0.05) {
                                     console.log('[ANIMATION] Elbow rotations:', {
-                                        leftElbowGesture: gestureL.elbow.toFixed(3),
-                                        rightElbowGesture: gestureR.elbow.toFixed(3),
-                                        leftElbowBase: basePoseRef.current.lla?.x.toFixed(3),
-                                        rightElbowBase: basePoseRef.current.rla?.x.toFixed(3),
+                                        leftElbowY: gestureL.elbowY?.toFixed(3),
+                                        leftElbowZ: gestureL.elbowZ?.toFixed(3),
+                                        rightElbowY: gestureR.elbowY?.toFixed(3),
+                                        rightElbowZ: gestureR.elbowZ?.toFixed(3),
+                                        leftElbowBaseY: basePoseRef.current.lla?.y.toFixed(3),
+                                        leftElbowBaseZ: basePoseRef.current.lla?.z.toFixed(3),
                                         pattern: emphasisCycle
                                     });
                                 }
