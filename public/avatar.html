@@ -306,14 +306,14 @@
                             bones.rua.rotation.y = -0.1;   // Slight inward
                         }
 
-                        // Lower arms: Natural elbow bend
+                        // Lower arms: Natural elbow bend (increased for visibility)
                         if (bones.lla) {
-                            bones.lla.rotation.x = -0.3;   // Bend elbow
+                            bones.lla.rotation.x = -0.6;   // Bend elbow more visibly
                             bones.lla.rotation.y = 0.05;   // Slight twist
                             bones.lla.rotation.z = 0;
                         }
                         if (bones.rla) {
-                            bones.rla.rotation.x = -0.3;   // Bend elbow
+                            bones.rla.rotation.x = -0.6;   // Bend elbow more visibly
                             bones.rla.rotation.y = -0.05;  // Slight twist
                             bones.rla.rotation.z = 0;
                         }
@@ -410,11 +410,11 @@
                                     const noiseR = noise(time * 0.5 + 50) * 0.08;
 
                                     if (emphasisCycle === 0) {
-                                        // Pattern 1: Expressive open gestures
+                                        // Pattern 1: Expressive open gestures - DRAMATIC elbow bending
                                         gestureL = {
                                             shoulderZ: 0.4 + wave1 * 0.25 + noiseL,
                                             shoulderX: -0.15 + wave2 * 0.1,
-                                            elbow: -0.4 + wave1 * 0.2,
+                                            elbow: -0.8 + wave1 * 0.4,  // INCREASED: -0.4 to -1.2 radians (-23° to -69°)
                                             handZ: wave1 * 0.12 + wave2 * 0.05,
                                             handX: wave2 * 0.08,
                                             handY: wave1 * 0.06
@@ -422,18 +422,18 @@
                                         gestureR = {
                                             shoulderZ: -0.4 - wave1 * 0.25 + noiseR,
                                             shoulderX: -0.15 - wave2 * 0.1,
-                                            elbow: -0.4 - wave1 * 0.2,
+                                            elbow: -0.8 - wave1 * 0.4,  // INCREASED: mirror left arm
                                             handZ: -wave1 * 0.12 - wave2 * 0.05,
                                             handX: -wave2 * 0.08,
                                             handY: -wave1 * 0.06
                                         };
                                     } else if (emphasisCycle === 1) {
-                                        // Pattern 2: Emphatic pointing/gesturing
+                                        // Pattern 2: Emphatic pointing/gesturing - MAXIMUM bending
                                         const emphasis = wave3;
                                         gestureL = {
                                             shoulderZ: 0.5 + emphasis * 0.3,
                                             shoulderX: -0.2 + emphasis * 0.15,
-                                            elbow: -0.5 + emphasis * 0.25,
+                                            elbow: -1.0 + emphasis * 0.5,  // INCREASED: -0.5 to -1.5 radians (-29° to -86°)
                                             handZ: emphasis * 0.15,
                                             handX: emphasis * 0.12,
                                             handY: emphasis * 0.08
@@ -441,17 +441,17 @@
                                         gestureR = {
                                             shoulderZ: -0.25 - emphasis * 0.15,
                                             shoulderX: -0.1,
-                                            elbow: -0.25 - emphasis * 0.12,
+                                            elbow: -0.6 - emphasis * 0.3,  // INCREASED: less dramatic on non-dominant arm
                                             handZ: -emphasis * 0.08,
                                             handX: -emphasis * 0.06,
                                             handY: -emphasis * 0.04
                                         };
                                     } else {
-                                        // Pattern 3: Natural conversational
+                                        // Pattern 3: Natural conversational - VISIBLE bending
                                         gestureL = {
                                             shoulderZ: 0.3 + wave2 * 0.18 + noiseL,
                                             shoulderX: -0.12 + wave1 * 0.08,
-                                            elbow: -0.35 + wave2 * 0.15,
+                                            elbow: -0.7 + wave2 * 0.35,  // INCREASED: -0.35 to -1.05 radians (-20° to -60°)
                                             handZ: wave2 * 0.1 + noiseL * 0.5,
                                             handX: wave1 * 0.07,
                                             handY: wave2 * 0.05
@@ -459,7 +459,7 @@
                                         gestureR = {
                                             shoulderZ: -0.3 - wave2 * 0.18 + noiseR,
                                             shoulderX: -0.12 - wave1 * 0.08,
-                                            elbow: -0.35 - wave2 * 0.15,
+                                            elbow: -0.7 - wave2 * 0.35,  // INCREASED: mirror left arm
                                             handZ: -wave2 * 0.1 + noiseR * 0.5,
                                             handX: -wave1 * 0.07,
                                             handY: -wave2 * 0.05
@@ -474,7 +474,7 @@
                                     gestureL = {
                                         shoulderZ: idleWaveL,
                                         shoulderX: microMovement * 0.5,
-                                        elbow: -0.02 + breathSlow * 2,
+                                        elbow: -0.05 + breathSlow * 3,  // Subtle breathing in elbows
                                         handZ: breathSlow * 0.5,
                                         handX: microMovement * 0.3,
                                         handY: 0
@@ -482,11 +482,22 @@
                                     gestureR = {
                                         shoulderZ: idleWaveR,
                                         shoulderX: -microMovement * 0.5,
-                                        elbow: -0.02 - breathSlow * 2,
+                                        elbow: -0.05 - breathSlow * 3,  // Subtle breathing in elbows
                                         handZ: -breathSlow * 0.5,
                                         handX: -microMovement * 0.3,
                                         handY: 0
                                     };
+                                }
+
+                                // REAL-TIME ELBOW LOGGING (every 2 seconds when speaking)
+                                if (isSpeaking && Math.floor(time * 0.5) % 2 === 0 && Math.abs(time - Math.floor(time)) < 0.05) {
+                                    console.log('[ANIMATION] Elbow rotations:', {
+                                        leftElbowGesture: gestureL.elbow.toFixed(3),
+                                        rightElbowGesture: gestureR.elbow.toFixed(3),
+                                        leftElbowBase: basePoseRef.current.lla?.x.toFixed(3),
+                                        rightElbowBase: basePoseRef.current.rla?.x.toFixed(3),
+                                        pattern: emphasisCycle
+                                    });
                                 }
 
                                 // Apply animations with smooth damping
