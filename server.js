@@ -285,15 +285,17 @@ TOP HOME PLAYERS: ${summary.playerStats[1]?.categories?.[0]?.athletes.slice(0, 3
 
 ${context}
 
-[A] ${session.commentators[0].name} is pro-${game.away.abbreviation} and very critical of ${game.home.abbreviation}.
-[B] ${session.commentators[1].name} is pro-${game.home.abbreviation} and very critical of ${game.away.abbreviation}.
+[A] ${session.commentators[0].name} is pro-${game.away.name} and very critical of ${game.home.name}.
+[B] ${session.commentators[1].name} is pro-${game.home.name} and very critical of ${game.away.name}.
 
 Focus on: ${focus}
 
-Requirements:
-- EXACTLY 10 turns alternating between speakers (A,B,A,B,A,B,A,B,A,B)
+IMPORTANT RULES:
+- Use FULL team names (${game.away.name}, ${game.home.name}) NOT abbreviations (${game.away.abbreviation}, ${game.home.abbreviation})
+- Use team nicknames like "Lakers", "Mavs", "Celtics" when natural
+- EXACTLY 10 turns alternating speakers (A,B,A,B,A,B,A,B,A,B)
 - Start with speaker A, then B, then A, etc.
-- Reference actual team stats, players, matchup details
+- Reference actual stats, players, matchup details
 - HEATED debate - they strongly disagree
 - Be specific: mention player names, stats, team strengths/weaknesses
 - SNAPPY and SHORT (1-2 sentences each, max 100 chars per turn)
