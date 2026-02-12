@@ -676,6 +676,7 @@ function escapeRegExp(input) {
 
 function strip(text, name, otherName) {
   if (!text) return "";
+  const original = text;
   const nameRe = name ? new RegExp(`^\\s*${escapeRegExp(name)}\\s*(\\([^)]*\\))?\\s*[:\\-—–]*\\s*`, 'i') : null;
   const otherRe = otherName ? new RegExp(`^\\s*${escapeRegExp(otherName)}\\s*(\\([^)]*\\))?\\s*[:\\-—–]*\\s*`, 'i') : null;
   let cleaned = text
@@ -698,7 +699,10 @@ function strip(text, name, otherName) {
     .replace(otherRe || /$^/, '')
     .replace(/^[a-z\s]+[:\\s—-]+/i, (match) => {
        const prefix = match.split(':')[0].trim().toLowerCase();
-       if (prefix.length < 20) return ""; 
+       if (prefix.length < 20) {
+         console.log(`[Strip] Removing label: "${match}" from start`);
+         return "";
+       }
        return match;
     })
     .replace(/^["']|["']$/g, '')
@@ -711,6 +715,13 @@ function strip(text, name, otherName) {
     const otherInline = new RegExp(`\\b${escapeRegExp(otherName)}\\b`, 'gi');
     cleaned = cleaned.replace(otherInline, 'you');
   }
+
+  if (cleaned !== original && original.length - cleaned.length > 20) {
+    console.log(`[Strip] WARNING: Removed ${original.length - cleaned.length} chars`);
+    console.log(`  Before: "${original.substring(0, 100)}..."`);
+    console.log(`  After:  "${cleaned.substring(0, 100)}..."`);
+  }
+
   return cleaned;
 }
 
