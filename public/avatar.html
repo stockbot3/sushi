@@ -657,7 +657,7 @@
                         }
                     } catch (e) {}
                 };
-                poll(); const itv = setInterval(poll, 8000);
+                poll(); const itv = setInterval(poll, 30000); // Poll every 30s instead of 8s
                 return () => {
                     clearInterval(itv);
                     clearInterval(heartbeatIntervalRef.current);
