@@ -387,42 +387,17 @@
 
                                 const isSpeaking = speakerRef.current === side;
 
-                                // ELBOW BEND TEST MODE - Cycle through different axes every 5 seconds
-                                const testCycle = Math.floor(time / 5) % 12; // 12 different tests
-                                const testAmount = 1.2; // Large rotation to see effect clearly
-
-                                if (Math.floor(time) % 5 === 0 && Math.abs(time - Math.floor(time)) < 0.1) {
-                                    const tests = [
-                                        'Elbow X: +1.2 (bend forward)',
-                                        'Elbow X: -1.2 (bend backward)',
-                                        'Elbow Y: +1.2 (twist right)',
-                                        'Elbow Y: -1.2 (twist left)',
-                                        'Elbow Z: +1.2 (roll clockwise)',
-                                        'Elbow Z: -1.2 (roll counter-clockwise)',
-                                        'Upper Arm X: +0.5',
-                                        'Upper Arm Y: +0.5',
-                                        'Upper Arm Z: +0.5',
-                                        'Shoulder X: +0.5',
-                                        'Shoulder Y: +0.5',
-                                        'Shoulder Z: +0.5'
-                                    ];
-                                    console.log(`========== ELBOW TEST ${testCycle + 1}/12 ==========`);
-                                    console.log(`Testing: ${tests[testCycle]}`);
-                                    console.log('Watch the LEFT arm to see if it bends');
-                                    console.log('=======================================');
-                                }
-
                                 // Base animation layers
                                 const sway = noise(time * 0.35) * 0.02;
                                 const breath = Math.sin(time * 1.2) * 0.015;
                                 const breathSlow = Math.sin(time * 0.7) * 0.01;
 
-                                // SMOOTH REALISTIC GESTURES (Grok-level quality)
+                                // SMOOTH REALISTIC GESTURES with PROPER ELBOW BENDING (Y and Z axes)
                                 const gesturePhase = time * 1.8;
                                 const emphasisCycle = Math.floor(time / 3) % 3; // Cycle through 3 gesture types
 
-                                let gestureL = { shoulderZ: 0, shoulderX: 0, elbow: 0, handZ: 0, handX: 0, handY: 0 };
-                                let gestureR = { shoulderZ: 0, shoulderX: 0, elbow: 0, handZ: 0, handX: 0, handY: 0 };
+                                let gestureL = { shoulderZ: 0, shoulderX: 0, elbowY: 0, elbowZ: 0, handZ: 0, handX: 0, handY: 0 };
+                                let gestureR = { shoulderZ: 0, shoulderX: 0, elbowY: 0, elbowZ: 0, handZ: 0, handX: 0, handY: 0 };
 
                                 if (isSpeaking) {
                                     // Smooth wave functions with easing
@@ -435,11 +410,12 @@
                                     const noiseR = noise(time * 0.5 + 50) * 0.08;
 
                                     if (emphasisCycle === 0) {
-                                        // Pattern 1: Expressive open gestures - DRAMATIC elbow bending
+                                        // Pattern 1: Expressive open gestures - Use Y and Z for elbow bend
                                         gestureL = {
                                             shoulderZ: 0.4 + wave1 * 0.25 + noiseL,
                                             shoulderX: -0.15 + wave2 * 0.1,
-                                            elbow: -0.8 + wave1 * 0.4,  // INCREASED: -0.4 to -1.2 radians (-23° to -69°)
+                                            elbowY: -0.6 + wave1 * 0.3,  // Y-axis: negative bends up/left
+                                            elbowZ: 0.4 + wave1 * 0.2,   // Z-axis: positive raises
                                             handZ: wave1 * 0.12 + wave2 * 0.05,
                                             handX: wave2 * 0.08,
                                             handY: wave1 * 0.06
@@ -447,18 +423,20 @@
                                         gestureR = {
                                             shoulderZ: -0.4 - wave1 * 0.25 + noiseR,
                                             shoulderX: -0.15 - wave2 * 0.1,
-                                            elbow: -0.8 - wave1 * 0.4,  // INCREASED: mirror left arm
+                                            elbowY: 0.6 - wave1 * 0.3,   // Mirror Y
+                                            elbowZ: -0.4 - wave1 * 0.2,  // Mirror Z
                                             handZ: -wave1 * 0.12 - wave2 * 0.05,
                                             handX: -wave2 * 0.08,
                                             handY: -wave1 * 0.06
                                         };
                                     } else if (emphasisCycle === 1) {
-                                        // Pattern 2: Emphatic pointing/gesturing - MAXIMUM bending
+                                        // Pattern 2: Emphatic pointing - Maximum Y/Z bending
                                         const emphasis = wave3;
                                         gestureL = {
                                             shoulderZ: 0.5 + emphasis * 0.3,
                                             shoulderX: -0.2 + emphasis * 0.15,
-                                            elbow: -1.0 + emphasis * 0.5,  // INCREASED: -0.5 to -1.5 radians (-29° to -86°)
+                                            elbowY: -0.8 + emphasis * 0.4,  // Dramatic Y bend
+                                            elbowZ: 0.6 + emphasis * 0.3,   // Dramatic Z raise
                                             handZ: emphasis * 0.15,
                                             handX: emphasis * 0.12,
                                             handY: emphasis * 0.08
@@ -466,17 +444,19 @@
                                         gestureR = {
                                             shoulderZ: -0.25 - emphasis * 0.15,
                                             shoulderX: -0.1,
-                                            elbow: -0.6 - emphasis * 0.3,  // INCREASED: less dramatic on non-dominant arm
+                                            elbowY: 0.5 - emphasis * 0.25,
+                                            elbowZ: -0.4 - emphasis * 0.2,
                                             handZ: -emphasis * 0.08,
                                             handX: -emphasis * 0.06,
                                             handY: -emphasis * 0.04
                                         };
                                     } else {
-                                        // Pattern 3: Natural conversational - VISIBLE bending
+                                        // Pattern 3: Natural conversational - Visible Y/Z bending
                                         gestureL = {
                                             shoulderZ: 0.3 + wave2 * 0.18 + noiseL,
                                             shoulderX: -0.12 + wave1 * 0.08,
-                                            elbow: -0.7 + wave2 * 0.35,  // INCREASED: -0.35 to -1.05 radians (-20° to -60°)
+                                            elbowY: -0.5 + wave2 * 0.3,  // Natural Y bend
+                                            elbowZ: 0.3 + wave2 * 0.2,   // Natural Z raise
                                             handZ: wave2 * 0.1 + noiseL * 0.5,
                                             handX: wave1 * 0.07,
                                             handY: wave2 * 0.05
@@ -484,7 +464,8 @@
                                         gestureR = {
                                             shoulderZ: -0.3 - wave2 * 0.18 + noiseR,
                                             shoulderX: -0.12 - wave1 * 0.08,
-                                            elbow: -0.7 - wave2 * 0.35,  // INCREASED: mirror left arm
+                                            elbowY: 0.5 - wave2 * 0.3,   // Mirror Y
+                                            elbowZ: -0.3 - wave2 * 0.2,  // Mirror Z
                                             handZ: -wave2 * 0.1 + noiseR * 0.5,
                                             handX: -wave1 * 0.07,
                                             handY: -wave2 * 0.05
@@ -499,7 +480,8 @@
                                     gestureL = {
                                         shoulderZ: idleWaveL,
                                         shoulderX: microMovement * 0.5,
-                                        elbow: -0.05 + breathSlow * 3,  // Subtle breathing in elbows
+                                        elbowY: breathSlow * 2,
+                                        elbowZ: breathSlow * 1.5,
                                         handZ: breathSlow * 0.5,
                                         handX: microMovement * 0.3,
                                         handY: 0
@@ -507,7 +489,8 @@
                                     gestureR = {
                                         shoulderZ: idleWaveR,
                                         shoulderX: -microMovement * 0.5,
-                                        elbow: -0.05 - breathSlow * 3,  // Subtle breathing in elbows
+                                        elbowY: -breathSlow * 2,
+                                        elbowZ: -breathSlow * 1.5,
                                         handZ: -breathSlow * 0.5,
                                         handX: -microMovement * 0.3,
                                         handY: 0
@@ -548,33 +531,17 @@
                                     head.rotation.z = damp(head.rotation.z, basePoseRef.current.head.z + headTilt, 4, dt);
                                 }
 
-                                // Left arm - TEST MODE: Apply different rotations based on test cycle
+                                // Left arm - SMOOTH coordinated movement with PROPER elbow bending
                                 if (lua && basePoseRef.current.lua) {
-                                    let testX = 0, testY = 0, testZ = 0;
-                                    if (testCycle === 6) testX = 0.5;
-                                    if (testCycle === 7) testY = 0.5;
-                                    if (testCycle === 8) testZ = 0.5;
-
-                                    lua.rotation.z = damp(lua.rotation.z, basePoseRef.current.lua.z + testZ, 3, dt);
-                                    lua.rotation.x = damp(lua.rotation.x, basePoseRef.current.lua.x + testX, 3, dt);
-                                    lua.rotation.y = damp(lua.rotation.y, basePoseRef.current.lua.y + testY, 4, dt);
+                                    lua.rotation.z = damp(lua.rotation.z, basePoseRef.current.lua.z + gestureL.shoulderZ, 3, dt);
+                                    lua.rotation.x = damp(lua.rotation.x, basePoseRef.current.lua.x + gestureL.shoulderX, 3, dt);
+                                    lua.rotation.y = damp(lua.rotation.y, basePoseRef.current.lua.y + sway * 0.2, 4, dt);
                                 }
                                 if (lla && basePoseRef.current.lla) {
-                                    let elbowX = basePoseRef.current.lla.x;
-                                    let elbowY = basePoseRef.current.lla.y;
-                                    let elbowZ = basePoseRef.current.lla.z;
-
-                                    // Apply test rotations
-                                    if (testCycle === 0) elbowX += testAmount;  // X positive
-                                    if (testCycle === 1) elbowX -= testAmount;  // X negative
-                                    if (testCycle === 2) elbowY += testAmount;  // Y positive
-                                    if (testCycle === 3) elbowY -= testAmount;  // Y negative
-                                    if (testCycle === 4) elbowZ += testAmount;  // Z positive
-                                    if (testCycle === 5) elbowZ -= testAmount;  // Z negative
-
-                                    lla.rotation.x = damp(lla.rotation.x, elbowX, 2.5, dt);
-                                    lla.rotation.y = damp(lla.rotation.y, elbowY, 3.5, dt);
-                                    lla.rotation.z = damp(lla.rotation.z, elbowZ, 3.5, dt);
+                                    // Use Y and Z axes for visible elbow bending!
+                                    lla.rotation.y = damp(lla.rotation.y, basePoseRef.current.lla.y + gestureL.elbowY, 2.5, dt);
+                                    lla.rotation.z = damp(lla.rotation.z, basePoseRef.current.lla.z + gestureL.elbowZ, 2.5, dt);
+                                    lla.rotation.x = damp(lla.rotation.x, basePoseRef.current.lla.x, 3.5, dt); // Keep X at base
                                 }
                                 if (lhand && basePoseRef.current.lhand) {
                                     lhand.rotation.z = damp(lhand.rotation.z, basePoseRef.current.lhand.z + gestureL.handZ, 4, dt);
@@ -582,15 +549,17 @@
                                     lhand.rotation.y = damp(lhand.rotation.y, basePoseRef.current.lhand.y + gestureL.handY, 4.5, dt);
                                 }
 
-                                // Right arm - SMOOTH coordinated movement (mirror)
+                                // Right arm - SMOOTH coordinated movement with PROPER elbow bending (mirror)
                                 if (rua && basePoseRef.current.rua) {
                                     rua.rotation.z = damp(rua.rotation.z, basePoseRef.current.rua.z + gestureR.shoulderZ, 3, dt);
                                     rua.rotation.x = damp(rua.rotation.x, basePoseRef.current.rua.x + gestureR.shoulderX, 3, dt);
                                     rua.rotation.y = damp(rua.rotation.y, basePoseRef.current.rua.y - sway * 0.2, 4, dt);
                                 }
                                 if (rla && basePoseRef.current.rla) {
-                                    rla.rotation.x = damp(rla.rotation.x, basePoseRef.current.rla.x + gestureR.elbow, 2.5, dt);
-                                    rla.rotation.y = damp(rla.rotation.y, basePoseRef.current.rla.y, 3.5, dt);
+                                    // Use Y and Z axes for visible elbow bending!
+                                    rla.rotation.y = damp(rla.rotation.y, basePoseRef.current.rla.y + gestureR.elbowY, 2.5, dt);
+                                    rla.rotation.z = damp(rla.rotation.z, basePoseRef.current.rla.z + gestureR.elbowZ, 2.5, dt);
+                                    rla.rotation.x = damp(rla.rotation.x, basePoseRef.current.rla.x, 3.5, dt); // Keep X at base
                                 }
                                 if (rhand && basePoseRef.current.rhand) {
                                     rhand.rotation.z = damp(rhand.rotation.z, basePoseRef.current.rhand.z + gestureR.handZ, 4, dt);
