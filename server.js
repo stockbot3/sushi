@@ -228,6 +228,14 @@ app.get('/api/admin/browse/:sport/:league', requireAdmin, async (req, res) => {
 
 // Generate batch of pre-game commentary (15-30 turns) with team/player context
 async function generatePreGameBatch(sessionId, session) {
+  // Prevent duplicate batch generation
+  if (batchGenerating.has(sessionId)) {
+    console.log(`[PreGame Batch] Already generating for session ${sessionId}, skipping duplicate request`);
+    return;
+  }
+
+  batchGenerating.add(sessionId);
+
   try {
     console.log(`[PreGame Batch] Generating for session ${sessionId}`);
 
@@ -237,6 +245,7 @@ async function generatePreGameBatch(sessionId, session) {
 
     if (!game) {
       console.error(`[PreGame Batch] Game not found: ${session.espnEventId}`);
+      batchGenerating.delete(sessionId);
       return;
     }
 
@@ -318,6 +327,8 @@ Format: Just numbered lines like:
 
   } catch (err) {
     console.error(`[PreGame Batch] Error for session ${sessionId}:`, err);
+  } finally {
+    batchGenerating.delete(sessionId);
   }
 }
 
@@ -602,6 +613,7 @@ const MODAL_MISTRAL_URL = 'https://mousears1090--claudeapps-mistral-mistralmodel
 const sessionRuntimes = new Map();
 const sessionViewers = new Map(); // Track active viewers
 const commentaryHistory = new Map(); // Store commentary history per session
+const batchGenerating = new Set(); // Track which sessions are currently generating batches
 
 function getRuntime(id) {
   if (!sessionRuntimes.has(id)) sessionRuntimes.set(id, { lastSeq: -1, lastPlayKey: null, lastScoreKey: null, cache: null, ts: 0 });
