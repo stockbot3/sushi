@@ -301,8 +301,9 @@ Format: Just numbered lines like:
 15. "text"`;
 
       try {
+        console.log(`[PreGame Batch ${i+1}/2] Sending request to Modal...`);
         const controller = new AbortController();
-        const timeout = setTimeout(() => controller.abort(), 30000);
+        const timeout = setTimeout(() => controller.abort(), 60000); // Increased to 60s
 
         const response = await fetch(MODAL_MISTRAL_URL, {
           method: 'POST',
@@ -312,8 +313,10 @@ Format: Just numbered lines like:
         });
         clearTimeout(timeout);
 
+        console.log(`[PreGame Batch ${i+1}/2] Modal responded with status: ${response.status}`);
+
         if (!response.ok) {
-          console.error(`[PreGame Batch ${i+1}/2] Modal returned ${response.status}`);
+          console.error(`[PreGame Batch ${i+1}/2] Modal error ${response.status}: ${await response.text()}`);
           continue;
         }
 
@@ -340,7 +343,10 @@ Format: Just numbered lines like:
         if (i === 0) await new Promise(r => setTimeout(r, 2000));
 
       } catch (err) {
-        console.error(`[PreGame Batch ${i+1}/2] Error:`, err.message);
+        console.error(`[PreGame Batch ${i+1}/2] Error: ${err.message}`);
+        if (err.name === 'AbortError') {
+          console.error(`[PreGame Batch ${i+1}/2] Request timed out after 60 seconds`);
+        }
       }
     }
 
