@@ -269,15 +269,23 @@ TOP HOME PLAYERS: ${summary.playerStats[1]?.categories?.[0]?.athletes.slice(0, 3
 ` : ''}
     `.trim();
 
-    const prompt = `Generate 30 unique pre-game commentary turns as an intense argument between two sports commentators about this matchup.
+    // Make 2 requests for variety (15 turns each = 30 total)
+    console.log(`[PreGame Batch] Generating 2 batches of 15 turns each...`);
+    const allTurns = [];
+
+    for (let i = 0; i < 2; i++) {
+      const focus = i === 0 ? 'team strengths, weaknesses, and key player matchups' : 'coaching strategies, recent form, and game predictions';
+      const prompt = `Generate 15 unique pre-game commentary turns as an intense argument between two sports commentators about this matchup.
 
 ${context}
 
 [A] ${session.commentators[0].name} is pro-${game.away.abbreviation} and very critical of ${game.home.abbreviation}.
 [B] ${session.commentators[1].name} is pro-${game.home.abbreviation} and very critical of ${game.away.abbreviation}.
 
+Focus on: ${focus}
+
 Requirements:
-- 30 numbered lines (1-30)
+- EXACTLY 15 numbered lines (1-15)
 - Alternate speakers: odd numbers = [A], even numbers = [B]
 - Reference actual team stats, players, matchup details
 - HEATED debate - they strongly disagree
@@ -289,46 +297,55 @@ Requirements:
 Format: Just numbered lines like:
 1. "text"
 2. "text"
-3. "text"
-...`;
+...
+15. "text"`;
 
-    console.log(`[PreGame Batch] Calling Modal with context...`);
-    const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 30000); // 30s timeout
+      try {
+        const controller = new AbortController();
+        const timeout = setTimeout(() => controller.abort(), 30000);
 
-    const response = await fetch(MODAL_MISTRAL_URL, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
-      signal: controller.signal
-    });
-    clearTimeout(timeout);
+        const response = await fetch(MODAL_MISTRAL_URL, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ messages: [{ role: 'user', content: prompt }] }),
+          signal: controller.signal
+        });
+        clearTimeout(timeout);
 
-    if (!response.ok) {
-      throw new Error(`Modal returned ${response.status}: ${response.statusText}`);
-    }
+        if (!response.ok) {
+          console.error(`[PreGame Batch ${i+1}/2] Modal returned ${response.status}`);
+          continue;
+        }
 
-    const json = await response.json();
-    const raw = json?.choices?.[0]?.message?.content || '';
+        const json = await response.json();
+        const raw = json?.choices?.[0]?.message?.content || '';
 
-    console.log(`[PreGame Batch] Modal returned ${raw.length} chars, parsed ${json?.choices?.length || 0} choices`);
+        // Parse numbered commentary
+        const numberedRegex = /(\d+)\.\s*["']?(.*?)["']?(?=\s*\d+\.|$)/gs;
+        let m;
+        while ((m = numberedRegex.exec(raw)) !== null) {
+          const num = parseInt(m[1]);
+          let txt = m[2].trim().replace(/^["']+|["']+$/g, '').replace(/["']+\s*$/g, '');
+          if (txt && txt.length > 5) {
+            const side = num % 2 === 1 ? 'A' : 'B';
+            const c = side === 'A' ? session.commentators[0] : session.commentators[1];
+            const other = side === 'A' ? session.commentators[1]?.name : session.commentators[0]?.name;
+            allTurns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+          }
+        }
 
-    // Parse numbered commentary
-    const turns = [];
-    const numberedRegex = /(\d+)\.\s*["']?(.*?)["']?(?=\s*\d+\.|$)/gs;
-    let m;
-    while ((m = numberedRegex.exec(raw)) !== null) {
-      const num = parseInt(m[1]);
-      let txt = m[2].trim().replace(/^["']+|["']+$/g, '').replace(/["']+\s*$/g, '');
-      if (txt && txt.length > 5) {
-        const side = num % 2 === 1 ? 'A' : 'B';
-        const c = side === 'A' ? session.commentators[0] : session.commentators[1];
-        const other = side === 'A' ? session.commentators[1]?.name : session.commentators[0]?.name;
-        turns.push({ speaker: side, name: c.name, text: strip(txt, c.name, other) });
+        console.log(`[PreGame Batch ${i+1}/2] Generated ${allTurns.length - (i * 15)} turns`);
+
+        // Small delay between requests
+        if (i === 0) await new Promise(r => setTimeout(r, 2000));
+
+      } catch (err) {
+        console.error(`[PreGame Batch ${i+1}/2] Error:`, err.message);
       }
     }
 
-    console.log(`[PreGame Batch] Generated ${turns.length} turns`);
+    const turns = allTurns;
+    console.log(`[PreGame Batch] Generated ${turns.length} total turns from 2 requests`);
 
     if (turns.length === 0) {
       console.error(`[PreGame Batch] No turns parsed from Modal response. Raw response: ${raw.substring(0, 500)}`);
@@ -766,9 +783,8 @@ app.get('/api/sessions/:id/commentary/latest', async (req, res) => {
 
       // Check if we have batch commentary
       if (!s.preGameCommentary || s.preGameCommentary.length === 0) {
-        console.log('[Commentary] No pre-game batch yet, generating fallback...');
-        // Trigger batch generation if not done yet
-        generatePreGameBatch(s.id, s).catch(e => console.error(e));
+        console.log('[Commentary] No pre-game batch yet, using basic fallback...');
+        // Don't trigger batch generation here - only happens once when creating game
       }
 
       // Get next 3 turns from batch (cycle through without caching to avoid repetition)
