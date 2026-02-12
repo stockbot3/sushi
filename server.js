@@ -1026,10 +1026,12 @@ Return ONLY valid JSON array with exactly 3 objects in this format:
 ]
 
 Requirements:
+- This is SPOKEN AUDIO - spell out ALL abbreviations (use "points per game" not "ppg", "rebounds per game" not "rpg")
 - Snappy, short comments (1-2 sentences)
 - They must disagree
 - Reference the play and score
-- Use full team names (${game.away.name}, ${game.home.name})
+- Use full team names (${game.away.name}, ${game.home.name}) NOT abbreviations
+- Use team nicknames like "Lakers", "Mavs" when natural
 - CRITICAL: speaker field MUST be "A" or "B" (not empty, not names)
 - CRITICAL: Text MUST NOT contain commentator names (no "Sakura says", "Steve groans", etc)
 - NO speaker names, labels, stage directions, or action descriptions in the text
