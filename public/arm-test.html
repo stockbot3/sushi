@@ -88,7 +88,7 @@
                 const loader = new GLTFLoader();
                 loader.register((parser) => new VRMLoaderPlugin(parser));
 
-                loader.load('/avatars/sakura.vrm', (gltf) => {
+                loader.load('https://raw.githubusercontent.com/pixiv/three-vrm/release/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm', (gltf) => {
                     const vrm = gltf.userData.vrm;
                     VRMUtils.removeUnnecessaryJoints(gltf.scene);
                     scene.add(vrm.scene);
