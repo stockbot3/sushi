@@ -71,6 +71,8 @@
 </head>
 <body>
     <div id="root"></div>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-app-compat.js"></script>
+    <script src="https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore-compat.js"></script>
     <script src="https://unpkg.com/react@18/umd/react.production.min.js"></script>
     <script src="https://unpkg.com/react-dom@18/umd/react-dom.production.min.js"></script>
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
@@ -84,6 +86,17 @@
         const { useState, useEffect, useRef, useCallback } = React;
         const DEFAULT_SAKURA_URL = 'https://raw.githubusercontent.com/pixiv/three-vrm/release/packages/three-vrm/examples/models/VRM1_Constraint_Twist_Sample.vrm';
         const DEFAULT_YUKI_URL = '/Avatar.vrm';
+
+        // Initialize Firebase - will be set up after fetching config
+        let db = null;
+        const initFirebase = async () => {
+            if (!firebase.apps.length) {
+                const config = await fetch('/api/firebase-config').then(r => r.json());
+                firebase.initializeApp(config);
+                db = firebase.firestore();
+                console.log('[Firebase] Initialized with project:', config.projectId);
+            }
+        };
 
         const damp = (current, target, lambda, delta) => THREE.MathUtils.damp(current, target, lambda, delta);
         const noise = (t) => Math.sin(t) + Math.sin(t * 2.5) * 0.5;
@@ -646,12 +659,15 @@
                 console.log('[SessionMeta] Initial load - sessionId:', sessionId, 'slug:', slug, 'started:', started);
                 if (!started || (!sessionId && !slug)) return;
 
-                // Fetch session by ID or slug
-                const fetchUrl = sessionId
-                    ? '/api/sessions'
-                    : `/api/sessions/by-slug/${slug}`;
+                // Initialize Firebase first
+                initFirebase().then(() => {
+                    // Fetch session by ID or slug
+                    const fetchUrl = sessionId
+                        ? '/api/sessions'
+                        : `/api/sessions/by-slug/${slug}`;
 
-                fetch(fetchUrl).then(r => r.json()).then(data => {
+                    return fetch(fetchUrl).then(r => r.json());
+                }).then(data => {
                     let session;
                     if (sessionId) {
                         // Query param mode: find session by ID
@@ -680,6 +696,27 @@
                 const initializeSession = (sid) => {
                 // Set session ID for TTS caching
                 voiceRef.current.setSessionId(sid);
+
+                // Real-time Firebase listener for session updates
+                const unsubscribeSession = db.collection('sessions').doc(sid).onSnapshot((doc) => {
+                    if (doc.exists) {
+                        const sessionData = doc.data();
+                        console.log('[Firebase] Session updated in real-time');
+                        setSessionMeta(sessionData);
+                        sessionMetaRef.current = sessionData;
+
+                        // Update poll interval if changed
+                        const newInterval = (sessionData.settings?.preGameInterval || 30) * 1000;
+                        if (newInterval !== currentPollInterval.current) {
+                            console.log(`[Firebase] Interval changed from ${currentPollInterval.current/1000}s to ${newInterval/1000}s`);
+                            currentPollInterval.current = newInterval;
+                            clearInterval(pollIntervalRef.current);
+                            pollIntervalRef.current = setInterval(poll, newInterval);
+                        }
+                    }
+                }, (error) => {
+                    console.error('[Firebase] Listener error:', error);
+                });
 
                 // Track user activity (mouse, keyboard, touch) - silently update timestamp
                 const trackActivity = () => {
@@ -773,6 +810,7 @@
                 poll();
                 pollIntervalRef.current = setInterval(poll, currentPollInterval.current);
                 return () => {
+                    unsubscribeSession();
                     clearInterval(pollIntervalRef.current);
                     clearInterval(heartbeatIntervalRef.current);
                     clearInterval(idleCheckRef.current);

@@ -208,6 +208,14 @@ app.get('/api/uploads/:name', async (req, res) => {
 });
 app.get('/api/admin/sports', requireAdmin, (req, res) => res.json(SPORTS_CONFIG));
 
+// Public Firebase config for client-side Firestore listeners
+app.get('/api/firebase-config', (req, res) => {
+  res.json({
+    apiKey: process.env.FIREBASE_API_KEY || "AIzaSyDummyKeyForLocalDev",
+    projectId: FIREBASE_PROJECT_ID || 'akan-2ed41'
+  });
+});
+
 app.get('/api/admin/browse/:sport/:league', requireAdmin, async (req, res) => {
   try {
     const slug = SPORTS_CONFIG[req.params.sport].leagues[req.params.league].espnSlug;
