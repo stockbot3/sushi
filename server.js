@@ -245,10 +245,11 @@ async function generatePreGameBatch(sessionId, session) {
   try {
     console.log(`[PreGame Batch] Generating for session ${sessionId}`);
 
-    // Fetch game data
-    const scoreboardUrl = `https://site.api.espn.com/apis/site/v2/sports/${session.espnSlug}/scoreboard`;
+    // Fetch game data (use gameDate if available to match admin browse)
+    const dateParam = session.gameDate ? `?dates=${session.gameDate}` : '';
+    const scoreboardUrl = `https://site.api.espn.com/apis/site/v2/sports/${session.espnSlug}/scoreboard${dateParam}`;
     console.log(`[PreGame Batch] Fetching from: ${scoreboardUrl}`);
-    const scoreData = await fetchCached(`score_${session.espnEventId}`, scoreboardUrl);
+    const scoreData = await fetchCached(`score_${session.espnEventId}_${session.gameDate || 'today'}`, scoreboardUrl);
     const allGames = parseScoreboard(scoreData);
     console.log(`[PreGame Batch] Found ${allGames.length} games in scoreboard`);
     const game = allGames.find(e => e.id === session.espnEventId);
