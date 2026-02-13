@@ -722,6 +722,9 @@
                 };
                 idleCheckRef.current = setInterval(checkIdle, 10000); // Every 10s
 
+                const pollIntervalRef = useRef(null);
+                const currentPollInterval = useRef(30000);
+
                 const poll = async () => {
                     if (isIdle) return; // Don't poll if idle
                     try {
@@ -738,6 +741,15 @@
                             console.log('[SessionMeta] Poll refresh - updating sessionMeta');
                             setSessionMeta(s);
                             sessionMetaRef.current = s;
+
+                            // Update poll interval if preGameInterval changed
+                            const newInterval = (s.settings?.preGameInterval || 30) * 1000;
+                            if (newInterval !== currentPollInterval.current) {
+                                console.log(`[Poll] Interval changed from ${currentPollInterval.current/1000}s to ${newInterval/1000}s`);
+                                currentPollInterval.current = newInterval;
+                                clearInterval(pollIntervalRef.current);
+                                pollIntervalRef.current = setInterval(poll, newInterval);
+                            }
                         } else {
                             console.error('[SessionMeta] Poll - session not found!');
                         }
@@ -756,9 +768,12 @@
                         console.error('[Poll] Error:', e);
                     }
                 };
-                poll(); const itv = setInterval(poll, 30000); // Poll every 30s instead of 8s
+
+                // Start with default interval, will adjust based on settings
+                poll();
+                pollIntervalRef.current = setInterval(poll, currentPollInterval.current);
                 return () => {
-                    clearInterval(itv);
+                    clearInterval(pollIntervalRef.current);
                     clearInterval(heartbeatIntervalRef.current);
                     clearInterval(idleCheckRef.current);
                     window.removeEventListener('mousemove', trackActivity);
