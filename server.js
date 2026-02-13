@@ -246,11 +246,16 @@ async function generatePreGameBatch(sessionId, session) {
     console.log(`[PreGame Batch] Generating for session ${sessionId}`);
 
     // Fetch game data
-    const scoreData = await fetchCached(`score_${session.espnEventId}`, `https://site.api.espn.com/apis/site/v2/sports/${session.espnSlug}/scoreboard`);
-    const game = parseScoreboard(scoreData).find(e => e.id === session.espnEventId);
+    const scoreboardUrl = `https://site.api.espn.com/apis/site/v2/sports/${session.espnSlug}/scoreboard`;
+    console.log(`[PreGame Batch] Fetching from: ${scoreboardUrl}`);
+    const scoreData = await fetchCached(`score_${session.espnEventId}`, scoreboardUrl);
+    const allGames = parseScoreboard(scoreData);
+    console.log(`[PreGame Batch] Found ${allGames.length} games in scoreboard`);
+    const game = allGames.find(e => e.id === session.espnEventId);
 
     if (!game) {
-      console.error(`[PreGame Batch] Game not found: ${session.espnEventId}`);
+      console.error(`[PreGame Batch] Game ${session.espnEventId} not found in ${allGames.length} games`);
+      console.error(`[PreGame Batch] Available game IDs: ${allGames.slice(0, 5).map(g => g.id).join(', ')}...`);
       batchGenerating.delete(sessionId);
       return;
     }
@@ -647,6 +652,7 @@ app.post('/api/tts', async (req, res) => {
     if (isPreGame && sessionId) {
       const hash = crypto.createHash('md5').update(`${voiceKey}:${text}`).digest('hex');
       const storagePath = `pregame-audio/${sessionId}/${hash}.mp3`;
+      console.log(`[TTS] Checking Firebase cache: ${storagePath} (text: "${text.substring(0, 30)}...")`);
 
       try {
         const bucket = admin.storage().bucket();
@@ -654,12 +660,14 @@ app.post('/api/tts', async (req, res) => {
         const [exists] = await file.exists();
 
         if (exists) {
-          console.log(`[TTS] Using cached Firebase pre-game audio: ${storagePath}`);
+          console.log(`[TTS] ✓ Cache HIT! Using cached Firebase pre-game audio: ${storagePath}`);
           const [audioBuffer] = await file.download();
           const base64Audio = audioBuffer.toString('base64');
           const result = { audio: base64Audio, format: 'mp3', provider: 'elevenlabs-cached' };
           ttsCache.set(key, result);
           return res.json(result);
+        } else {
+          console.log(`[TTS] ✗ Cache MISS - file doesn't exist, will generate`);
         }
       } catch (storageErr) {
         console.error('[TTS] Firebase Storage check error:', storageErr.message);
