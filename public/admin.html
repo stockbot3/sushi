@@ -94,6 +94,12 @@
         setEdit({ ...edit, commentators: n });
       };
 
+      const uploadPresetAvatar = async (file) => {
+        const fd = new FormData(); fd.append('file', file);
+        const d = await fetch('/api/admin/upload', { method: 'POST', body: fd, headers: { Authorization: `Bearer ${localStorage.getItem('sushi_token')}` } }).then(r => r.json());
+        setPresetEdit({ ...presetEdit, avatarUrl: d.url });
+      };
+
       if (!authed) return (
         <div className="min-h-screen flex items-center justify-center">
           <form onSubmit={login} className="glass p-8 rounded-2xl w-full max-w-sm text-center">
@@ -254,7 +260,13 @@
                     </optgroup>
                   </select>
                 </div>
-                <input value={presetEdit.avatarUrl} onChange={e => setPresetEdit({ ...presetEdit, avatarUrl: e.target.value })} className="w-full bg-white/5 p-3 rounded-xl text-white text-sm" placeholder="Avatar URL" />
+                <div className="flex gap-2 items-center">
+                  <input value={presetEdit.avatarUrl} onChange={e => setPresetEdit({ ...presetEdit, avatarUrl: e.target.value })} className="flex-1 bg-white/5 p-3 rounded-xl text-white text-sm" placeholder="Avatar URL or upload .vrm file" />
+                  <label className="cursor-pointer p-3 glass rounded-lg hover:bg-white/10">
+                    <Upload size={18}/>
+                    <input type="file" className="hidden" onChange={e => uploadPresetAvatar(e.target.files[0])} accept=".vrm" />
+                  </label>
+                </div>
                 <button onClick={savePreset} disabled={loading} className="w-full bg-green-500 text-black font-black p-4 rounded-xl flex items-center justify-center gap-2">
                   {loading ? <RefreshCw className="animate-spin" /> : <Save />} {presetEdit?.id ? 'UPDATE' : 'CREATE'}
                 </button>

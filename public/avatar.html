@@ -708,10 +708,15 @@
 
                 // Check for idle every 10 seconds
                 const checkIdle = () => {
-                    const idleTimeout = (sessionMetaRef.current?.settings?.idleTimeout || 30) * 60 * 1000; // Default 30 min
+                    const idleTimeoutMinutes = sessionMetaRef.current?.settings?.idleTimeout || 30;
+                    const idleTimeout = idleTimeoutMinutes * 60 * 1000;
                     const timeSinceActivity = Date.now() - lastActivityRef.current;
+                    const minutesIdle = Math.round(timeSinceActivity / 1000 / 60);
+
+                    console.log(`[Idle Check] Timeout: ${idleTimeoutMinutes}min, Idle: ${minutesIdle}min, Will trigger: ${timeSinceActivity > idleTimeout}`);
+
                     if (timeSinceActivity > idleTimeout && !isIdle) {
-                        console.log(`[Idle] User idle for ${Math.round(timeSinceActivity / 1000 / 60)} minutes`);
+                        console.log(`[Idle] User idle for ${minutesIdle} minutes, triggering idle mode`);
                         setIsIdle(true);
                     }
                 };
