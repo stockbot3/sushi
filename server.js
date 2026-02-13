@@ -293,7 +293,18 @@ TOP HOME PLAYERS: ${summary.playerStats[1]?.categories?.[0]?.athletes.slice(0, 3
         'game predictions and betting insights'
       ];
       const focus = focuses[i];
-      const prompt = `Generate 10 unique pre-game commentary turns as an intense argument between two sports commentators about this matchup.
+      const prompt = `*** CRITICAL: THIS IS TEXT-TO-SPEECH AUDIO - SPELL OUT ALL STATS ***
+DO NOT USE: ppg, rpg, apg, fg%, 3pt%, etc.
+ALWAYS USE: "points per game", "rebounds per game", "assists per game", "field goal percentage", "three point percentage"
+
+EXAMPLES:
+❌ BAD: "He averages 25 ppg and 8 rpg"
+✅ GOOD: "He averages 25 points per game and 8 rebounds per game"
+
+❌ BAD: "Shooting 45% from 3pt"
+✅ GOOD: "Shooting 45 percent from three point range"
+
+Generate 10 pre-game commentary turns as an intense argument between two sports commentators.
 
 ${context}
 
@@ -302,20 +313,16 @@ ${context}
 
 Focus on: ${focus}
 
-IMPORTANT RULES:
-- This is SPOKEN AUDIO - spell out ALL abbreviations fully
-- Use "points per game" NOT "ppg", "rebounds per game" NOT "rpg", "assists per game" NOT "apg"
-- Use FULL team names (${game.away.name}, ${game.home.name}) NOT abbreviations (${game.away.abbreviation}, ${game.home.abbreviation})
-- Use team nicknames like "Lakers", "Mavs", "Celtics" when natural
+RULES:
 - EXACTLY 10 turns alternating speakers (A,B,A,B,A,B,A,B,A,B)
 - Start with speaker A, then B, then A, etc.
 - Reference actual stats, players, matchup details
 - HEATED debate - they strongly disagree
-- Be specific: mention player names, stats, team strengths/weaknesses
-- SNAPPY and SHORT (1-2 sentences each, max 100 chars per turn)
-- NO speaker names/labels in the text itself
-- NO stage directions or parentheticals
-- Keep responses BRIEF to avoid truncation
+- Use FULL team names (${game.away.name}, ${game.home.name}) or nicknames
+- SNAPPY and SHORT (1-2 sentences each, max 100 chars)
+- NO speaker names/labels in the text
+- NO stage directions
+- Remember: SPELL OUT ALL ABBREVIATIONS
 
 Return ONLY valid JSON array. NO markdown blocks, NO extra text:
 [{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"},{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"},{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"},{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"},{"speaker":"A","text":"commentary"},{"speaker":"B","text":"commentary"}]`;
